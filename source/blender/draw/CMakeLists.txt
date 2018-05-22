@@ -294,6 +294,8 @@ add_definitions(-DKORE_G1)
 add_definitions(-DKORE_G2)
 # add_definitions(-DKORE_G3)
 add_definitions(-DKORE_G4)
+# add_definitions(-DKORE_G5)
+add_definitions(-DKORE_G5ONG4)
 add_definitions(-DKORE_A1)
 add_definitions(-DKORE_A2)
 add_definitions(-DKORE_A3)
@@ -308,6 +310,8 @@ list(APPEND INC
 list(APPEND SRC
 	engines/armory/armory_engine.c
 	engines/armory/armory_engine.h
+	engines/armory/Krom.cpp
+	engines/armory/Krom.h
 
 	engines/armory/V8/include/libplatform/libplatform-export.h
 	engines/armory/V8/include/libplatform/libplatform.h

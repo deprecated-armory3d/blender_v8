@@ -22,6 +22,8 @@ namespace Kore {
 		void* windowHandle(int windowId);
 		int windowWidth(int id = 0);
 		int windowHeight(int id = 0);
+		void setWindowWidth(int id, int w);
+		void setWindowHeight(int id, int h);
 		int windowCount();
 
 		int screenDpi();

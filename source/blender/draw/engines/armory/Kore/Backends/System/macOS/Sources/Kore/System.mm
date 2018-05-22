@@ -90,11 +90,11 @@ bool System::handleMessages() {
 }
 
 void System::swapBuffers(int windowId) {
-#ifdef KORE_METAL
-	endGL();
-#else
-	[windows[windowId]->view switchBuffers];
-#endif
+// #ifdef KORE_METAL
+	// endGL();
+// #else
+	// [windows[windowId]->view switchBuffers];
+// #endif
 }
 
 int Kore::System::windowCount() {
@@ -104,29 +104,30 @@ int Kore::System::windowCount() {
 int createWindow(Kore::WindowOptions options) {
 	int width = options.width;
 	int height = options.height;
-	int styleMask = NSTitledWindowMask | NSClosableWindowMask;
-	if (options.resizable || options.maximizable) {
-		styleMask |= NSResizableWindowMask;
-	}
-	if (options.minimizable) {
-		styleMask |= NSMiniaturizableWindowMask;
-	}
+	// int styleMask = NSTitledWindowMask | NSClosableWindowMask;
+	// if (options.resizable || options.maximizable) {
+	// 	styleMask |= NSResizableWindowMask;
+	// }
+	// if (options.minimizable) {
+	// 	styleMask |= NSMiniaturizableWindowMask;
+	// }
 
-	BasicOpenGLView* view = [[BasicOpenGLView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
-	[view registerForDraggedTypes:[NSArray arrayWithObjects:NSURLPboardType, nil]];
-	NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, width, height) styleMask:styleMask backing:NSBackingStoreBuffered defer:TRUE];
-	delegate = [MyAppDelegate alloc];
-	[window setDelegate:delegate];
-	[window setTitle:[NSString stringWithCString:options.title encoding:NSUTF8StringEncoding]];
-	[window setAcceptsMouseMovedEvents:YES];
-	[[window contentView] addSubview:view];
-	[window center];
-	if (Kore::System::hasShowWindowFlag()) {
-		[window makeKeyAndOrderFront:nil];
-	}
+	// BasicOpenGLView* view = [[BasicOpenGLView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+	// [view registerForDraggedTypes:[NSArray arrayWithObjects:NSURLPboardType, nil]];
+	// NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, width, height) styleMask:styleMask backing:NSBackingStoreBuffered defer:TRUE];
+	// delegate = [MyAppDelegate alloc];
+	// [window setDelegate:delegate];
+	// [window setTitle:[NSString stringWithCString:options.title encoding:NSUTF8StringEncoding]];
+	// [window setAcceptsMouseMovedEvents:YES];
+	// [[window contentView] addSubview:view];
+	// [window center];
+	// if (Kore::System::hasShowWindowFlag()) {
+	// 	[window makeKeyAndOrderFront:nil];
+	// }
 
 	++windowCounter;
-	windows[windowCounter] = new KoreWindow(window, view, options.x, options.y, width, height);
+	// windows[windowCounter] = new KoreWindow(window, view, options.x, options.y, width, height);
+	windows[windowCounter] = new KoreWindow(NULL, view, options.x, options.y, width, height);
 	Kore::System::makeCurrent(windowCounter);
 	return windowCounter;
 }
@@ -146,15 +147,23 @@ void Graphics4::makeCurrent(int contextId) {
 #endif
 
 int Kore::System::windowWidth(int id) {
-	NSWindow* window = windows[id]->handle;
-	return [[window contentView] frame].size.width;
-	// return windows[id]->width;
+	// NSWindow* window = windows[id]->handle;
+	// return [[window contentView] frame].size.width;
+	return windows[id]->width;
 }
 
 int Kore::System::windowHeight(int id) {
-	NSWindow* window = windows[id]->handle;
-	return [[window contentView] frame].size.height;
-	// return windows[id]->height;
+	// NSWindow* window = windows[id]->handle;
+	// return [[window contentView] frame].size.height;
+	return windows[id]->height;
+}
+
+void Kore::System::setWindowWidth(int id, int w) {
+	windows[id]->width = w;
+}
+
+void Kore::System::setWindowHeight(int id, int h) {
+	windows[id]->height = h;
 }
 
 int System::desktopWidth() {
@@ -200,15 +209,15 @@ const char* System::savePath() {
 	return ::savePath;
 }
 
-int main(int argc, char** argv) {
-	::argc = argc;
-	::argv = argv;
-	@autoreleasepool {
-		myapp = [MyApplication sharedApplication];
-		[myapp performSelectorOnMainThread:@selector(run) withObject:nil waitUntilDone:YES];
-	}
-	return 0;
-}
+// int main(int argc, char** argv) {
+// 	::argc = argc;
+// 	::argv = argv;
+// 	@autoreleasepool {
+// 		myapp = [MyApplication sharedApplication];
+// 		[myapp performSelectorOnMainThread:@selector(run) withObject:nil waitUntilDone:YES];
+// 	}
+// 	return 0;
+// }
 
 #ifdef KOREC
 extern "C"

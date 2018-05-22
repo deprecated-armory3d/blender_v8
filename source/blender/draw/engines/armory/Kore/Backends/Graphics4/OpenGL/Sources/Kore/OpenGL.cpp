@@ -113,109 +113,109 @@ void Graphics4::setup() {}
 #endif
 
 void Graphics4::init(int windowId, int depthBufferBits, int stencilBufferBits, bool vsync) {
-#ifdef KORE_WINDOWS
-	HWND windowHandle = (HWND)System::windowHandle(windowId);
+// #ifdef KORE_WINDOWS
+// 	HWND windowHandle = (HWND)System::windowHandle(windowId);
 
-#ifndef VR_RIFT
-	// TODO (DK) use provided settings for depth/stencil buffer
+// #ifndef VR_RIFT
+// 	// TODO (DK) use provided settings for depth/stencil buffer
 
-	PIXELFORMATDESCRIPTOR pfd = // pfd Tells Windows How We Want Things To Be
-	{
-	    sizeof(PIXELFORMATDESCRIPTOR), // Size Of This Pixel Format Descriptor
-	    1,                             // Version Number
-	    PFD_DRAW_TO_WINDOW |           // Format Must Support Window
-	        PFD_SUPPORT_OPENGL |       // Format Must Support OpenGL
-	        PFD_DOUBLEBUFFER,          // Must Support Double Buffering
-	    PFD_TYPE_RGBA,                 // Request An RGBA Format
-	    32,                            // Select Our Color Depth
-	    0,
-	    0, 0, 0, 0, 0,     // Color Bits Ignored
-	    0,                 // No Alpha Buffer
-	    0,                 // Shift Bit Ignored
-	    0,                 // No Accumulation Buffer
-	    0, 0, 0, 0,        // Accumulation Bits Ignored
-	    static_cast<BYTE>(depthBufferBits),   // 16Bit Z-Buffer (Depth Buffer)
-	    static_cast<BYTE>(stencilBufferBits), // 8Bit Stencil Buffer
-	    0,                 // No Auxiliary Buffer
-	    PFD_MAIN_PLANE,    // Main Drawing Layer
-	    0,                 // Reserved
-	    0, 0, 0            // Layer Masks Ignored
-	};
+// 	PIXELFORMATDESCRIPTOR pfd = // pfd Tells Windows How We Want Things To Be
+// 	{
+// 	    sizeof(PIXELFORMATDESCRIPTOR), // Size Of This Pixel Format Descriptor
+// 	    1,                             // Version Number
+// 	    PFD_DRAW_TO_WINDOW |           // Format Must Support Window
+// 	        PFD_SUPPORT_OPENGL |       // Format Must Support OpenGL
+// 	        PFD_DOUBLEBUFFER,          // Must Support Double Buffering
+// 	    PFD_TYPE_RGBA,                 // Request An RGBA Format
+// 	    32,                            // Select Our Color Depth
+// 	    0,
+// 	    0, 0, 0, 0, 0,     // Color Bits Ignored
+// 	    0,                 // No Alpha Buffer
+// 	    0,                 // Shift Bit Ignored
+// 	    0,                 // No Accumulation Buffer
+// 	    0, 0, 0, 0,        // Accumulation Bits Ignored
+// 	    static_cast<BYTE>(depthBufferBits),   // 16Bit Z-Buffer (Depth Buffer)
+// 	    static_cast<BYTE>(stencilBufferBits), // 8Bit Stencil Buffer
+// 	    0,                 // No Auxiliary Buffer
+// 	    PFD_MAIN_PLANE,    // Main Drawing Layer
+// 	    0,                 // Reserved
+// 	    0, 0, 0            // Layer Masks Ignored
+// 	};
 
-	deviceContexts[windowId] = GetDC(windowHandle);
-	GLuint pixelFormat = ChoosePixelFormat(deviceContexts[windowId], &pfd);
-	SetPixelFormat(deviceContexts[windowId], pixelFormat, &pfd);
-	HGLRC tempGlContext = wglCreateContext(deviceContexts[windowId]);
-	wglMakeCurrent(deviceContexts[windowId], tempGlContext);
-	Kore::System::currentDeviceId = windowId;
+// 	deviceContexts[windowId] = GetDC(windowHandle);
+// 	GLuint pixelFormat = ChoosePixelFormat(deviceContexts[windowId], &pfd);
+// 	SetPixelFormat(deviceContexts[windowId], pixelFormat, &pfd);
+// 	HGLRC tempGlContext = wglCreateContext(deviceContexts[windowId]);
+// 	wglMakeCurrent(deviceContexts[windowId], tempGlContext);
+// 	Kore::System::currentDeviceId = windowId;
 
-	// TODO (DK) make a Graphics::setup() (called from System::setup()) and call it there only once?
-	if (windowId == 0) {
-		glewInit();
-	}
+// 	// TODO (DK) make a Graphics::setup() (called from System::setup()) and call it there only once?
+// 	if (windowId == 0) {
+// 		glewInit();
+// 	}
 
-	if (wglewIsSupported("WGL_ARB_create_context") == 1) {
-		int attributes[] = {WGL_CONTEXT_MAJOR_VERSION_ARB,
-		                    4,
-		                    WGL_CONTEXT_MINOR_VERSION_ARB,
-		                    2,
-		                    WGL_CONTEXT_FLAGS_ARB,
-		                    WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
-		                    WGL_CONTEXT_PROFILE_MASK_ARB,
-		                    WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-		                    0};
+// 	if (wglewIsSupported("WGL_ARB_create_context") == 1) {
+// 		int attributes[] = {WGL_CONTEXT_MAJOR_VERSION_ARB,
+// 		                    4,
+// 		                    WGL_CONTEXT_MINOR_VERSION_ARB,
+// 		                    2,
+// 		                    WGL_CONTEXT_FLAGS_ARB,
+// 		                    WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+// 		                    WGL_CONTEXT_PROFILE_MASK_ARB,
+// 		                    WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+// 		                    0};
 
-		glContexts[windowId] = wglCreateContextAttribsARB(deviceContexts[windowId], glContexts[0], attributes);
-		glCheckErrors();
-		wglMakeCurrent(nullptr, nullptr);
-		wglDeleteContext(tempGlContext);
-		wglMakeCurrent(deviceContexts[windowId], glContexts[windowId]);
-		glCheckErrors();
-	}
-	else {
-		glContexts[windowId] = tempGlContext;
-	}
+// 		glContexts[windowId] = wglCreateContextAttribsARB(deviceContexts[windowId], glContexts[0], attributes);
+// 		glCheckErrors();
+// 		wglMakeCurrent(nullptr, nullptr);
+// 		wglDeleteContext(tempGlContext);
+// 		wglMakeCurrent(deviceContexts[windowId], glContexts[windowId]);
+// 		glCheckErrors();
+// 	}
+// 	else {
+// 		glContexts[windowId] = tempGlContext;
+// 	}
 
-	if (System::hasShowWindowFlag()) {
-		ShowWindow(windowHandle, SW_SHOW);
-		SetForegroundWindow(windowHandle); // Slightly Higher Priority
-		SetFocus(windowHandle);            // Sets Keyboard Focus To The Window
-	}
-#else
-	deviceContexts[windowId] = GetDC(windowHandle);
-	glContexts[windowId] = wglGetCurrentContext();
-	glewInit();
-#endif
-#endif
+// 	if (System::hasShowWindowFlag()) {
+// 		ShowWindow(windowHandle, SW_SHOW);
+// 		SetForegroundWindow(windowHandle); // Slightly Higher Priority
+// 		SetFocus(windowHandle);            // Sets Keyboard Focus To The Window
+// 	}
+// #else
+// 	deviceContexts[windowId] = GetDC(windowHandle);
+// 	glContexts[windowId] = wglGetCurrentContext();
+// 	glewInit();
+// #endif
+// #endif
 
-#ifndef VR_RIFT
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glViewport(0, 0, System::windowWidth(windowId), System::windowHeight(windowId));
+// #ifndef VR_RIFT
+// 	glEnable(GL_BLEND);
+// 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+// 	glViewport(0, 0, System::windowWidth(windowId), System::windowHeight(windowId));
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &originalFramebuffer[windowId]);
 
-	for (int i = 0; i < 32; ++i) {
-		minFilters[windowId][i] = LinearFilter;
-		mipFilters[windowId][i] = NoMipFilter;
-	}
-#endif
+// 	for (int i = 0; i < 32; ++i) {
+// 		minFilters[windowId][i] = LinearFilter;
+// 		mipFilters[windowId][i] = NoMipFilter;
+// 	}
+// #endif
 
-#ifdef KORE_WINDOWS
-	if (windowId == 0) {
-#ifdef KORE_VR
-		vsync = false;
-#endif
-		if (wglSwapIntervalEXT != nullptr) wglSwapIntervalEXT(vsync);
-	}
-#endif
+// #ifdef KORE_WINDOWS
+// 	if (windowId == 0) {
+// #ifdef KORE_VR
+// 		vsync = false;
+// #endif
+// 		if (wglSwapIntervalEXT != nullptr) wglSwapIntervalEXT(vsync);
+// 	}
+// #endif
 
-#ifdef KORE_IOS
-	glGenVertexArraysOES(1, &arrayId[windowId]);
-	glCheckErrors();
-#elif !defined(KORE_ANDROID) && !defined(KORE_HTML5) && !defined(KORE_TIZEN) && !defined(KORE_PI)
-	glGenVertexArrays(1, &arrayId[windowId]);
-	glCheckErrors();
-#endif
+// #ifdef KORE_IOS
+// 	glGenVertexArraysOES(1, &arrayId[windowId]);
+// 	glCheckErrors();
+// #elif !defined(KORE_ANDROID) && !defined(KORE_HTML5) && !defined(KORE_TIZEN) && !defined(KORE_PI)
+// 	glGenVertexArrays(1, &arrayId[windowId]);
+// 	glCheckErrors();
+// #endif
 
 	_width = System::windowWidth(0);
 	_height = System::windowHeight(0);
@@ -223,9 +223,9 @@ void Graphics4::init(int windowId, int depthBufferBits, int stencilBufferBits, b
 	_renderTargetHeight = _height;
 	renderToBackbuffer = true;
 
-#if defined(KORE_OPENGL_ES) && defined(KORE_ANDROID) && KORE_ANDROID_API >= 18
-	glesDrawBuffers = (void*)eglGetProcAddress("glDrawBuffers");
-#endif
+// #if defined(KORE_OPENGL_ES) && defined(KORE_ANDROID) && KORE_ANDROID_API >= 18
+	// glesDrawBuffers = (void*)eglGetProcAddress("glDrawBuffers");
+// #endif
 
 	// glEnable(GL_DEBUG_OUTPUT);
 	// glDebugMessageCallback(debugCallback, nullptr);
@@ -387,32 +387,36 @@ void Graphics4::makeCurrent(int contextId) {
 }
 #endif
 
+GLint m_viewport[4];
+GLint m_scissor[4];
 void Graphics4::begin(int contextId) {
-	if (System::currentDevice() != -1) {
-		if (System::currentDevice() != contextId) {
-			log(Warning, "begin: wrong glContext is active");
-		}
-		else {
-			//**log(Warning, "begin: a glContext is still active");
-		}
+// 	if (System::currentDevice() != -1) {
+// 		if (System::currentDevice() != contextId) {
+// 			log(Warning, "begin: wrong glContext is active");
+// 		}
+// 		else {
+// 			//**log(Warning, "begin: a glContext is still active");
+// 		}
 
-		// return; // TODO (DK) return here?
-	}
+// 		// return; // TODO (DK) return here?
+// 	}
 
-	// System::setCurrentDevice(contextId);
-	System::makeCurrent(contextId);
+// 	// System::setCurrentDevice(contextId);
+// 	System::makeCurrent(contextId);
 
-	glViewport(0, 0, _width, _height);
+// 	glViewport(0, 0, _width, _height);
 
-#ifdef KORE_IOS
-	beginGL();
-#endif
+// #ifdef KORE_IOS
+// 	beginGL();
+// #endif
 
-#ifdef KORE_ANDROID
-	// if rendered to a texture, strange things happen if the backbuffer is not cleared
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-#endif
+// #ifdef KORE_ANDROID
+// 	// if rendered to a texture, strange things happen if the backbuffer is not cleared
+// 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+// 	glClear(GL_COLOR_BUFFER_BIT);
+// #endif
+	glGetIntegerv(GL_VIEWPORT, m_viewport);
+	glGetIntegerv(GL_SCISSOR_BOX, m_scissor);
 }
 
 void Graphics4::viewport(int x, int y, int width, int height) {
@@ -688,6 +692,7 @@ void Graphics4::setRenderTargets(RenderTarget** targets, int count) {
 	// System::makeCurrent(texture->contextId);
 	glBindFramebuffer(GL_FRAMEBUFFER, targets[0]->_framebuffer);
 	glCheckErrors();
+	glDisable(GL_SCISSOR_TEST); //////////
 #ifndef KORE_OPENGL_ES
 	if (targets[0]->isCubeMap) glFramebufferTexture(GL_FRAMEBUFFER, targets[0]->isDepthAttachment ? GL_DEPTH_ATTACHMENT : GL_COLOR_ATTACHMENT0, targets[0]->_texture, 0); // Layered
 #endif
@@ -717,6 +722,7 @@ void Graphics4::setRenderTargets(RenderTarget** targets, int count) {
 void Graphics4::setRenderTargetFace(RenderTarget* texture, int face) {
 	glBindFramebuffer(GL_FRAMEBUFFER, texture->_framebuffer);
 	glCheckErrors();
+	glDisable(GL_SCISSOR_TEST); //////////
 	glFramebufferTexture2D(GL_FRAMEBUFFER, texture->isDepthAttachment ? GL_DEPTH_ATTACHMENT : GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture->_texture, 0);
 	glViewport(0, 0, texture->width, texture->height);
 	_renderTargetWidth = texture->width;
@@ -728,11 +734,20 @@ void Graphics4::setRenderTargetFace(RenderTarget* texture, int face) {
 void Graphics4::restoreRenderTarget() {
 	glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer[System::currentDevice()]);
 	glCheckErrors();
-	int w = System::windowWidth(System::currentDevice());
-	int h = System::windowHeight(System::currentDevice());
-	glViewport(0, 0, w, h);
-	_renderTargetWidth = w;
-	_renderTargetHeight = h;
+	// int w = System::windowWidth(System::currentDevice());
+	// int h = System::windowHeight(System::currentDevice());
+	// glViewport(0, 0, w, h);
+
+	glViewport(m_viewport[0], m_viewport[1], m_viewport[2], m_viewport[3]);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(m_scissor[0], m_scissor[1], m_scissor[2], m_scissor[3]);
+
+	// _renderTargetWidth = w;
+	// _renderTargetHeight = h;
+
+	_renderTargetWidth = m_viewport[2] - m_viewport[0];
+	_renderTargetHeight = m_viewport[3] - m_viewport[1];
+
 	renderToBackbuffer = true;
 	glCheckErrors();
 }

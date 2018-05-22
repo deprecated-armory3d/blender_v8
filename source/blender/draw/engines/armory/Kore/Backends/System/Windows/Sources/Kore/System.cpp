@@ -47,12 +47,12 @@
 // __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 // }
 
-LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #ifdef KOREC
 extern "C"
 #endif
-int kore(int argc, char** argv);
+// int kore(int argc, char** argv);
 
 namespace {
 	//typedef BOOL (WINAPI *GetPointerInfoType)(UINT32 pointerId, POINTER_INFO *pointerInfo);
@@ -92,19 +92,19 @@ namespace {
 #endif
 
 	void registerWindowClass(HINSTANCE hInstance, const wchar_t* className) {
-		WNDCLASSEXW wc = {sizeof(WNDCLASSEXA),
-		                  CS_OWNDC /*CS_CLASSDC*/,
-		                  MsgProc,
-		                  0L,
-		                  0L,
-		                  hInstance,
-		                  LoadIcon(hInstance, MAKEINTRESOURCE(107)),
-		                  nullptr /*LoadCursor(0, IDC_ARROW)*/,
-		                  0,
-		                  0,
-		                  className /*windowClassName*/,
-		                  0};
-		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+		// WNDCLASSEXW wc = {sizeof(WNDCLASSEXA),
+		//                   CS_OWNDC /*CS_CLASSDC*/,
+		//                   MsgProc,
+		//                   0L,
+		//                   0L,
+		//                   hInstance,
+		//                   LoadIcon(hInstance, MAKEINTRESOURCE(107)),
+		//                   nullptr /*LoadCursor(0, IDC_ARROW)*/,
+		//                   0,
+		//                   0,
+		//                   className /*windowClassName*/,
+		//                   0};
+		// wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 		//RegisterClassEx(&wc);
 	}
 }
@@ -132,19 +132,27 @@ namespace Kore {
 		}
 
 		int windowWidth(int id) {
-			RECT vRect;
-			GetClientRect(windows[id]->hwnd, &vRect);
-			int i = vRect.right;
-			return i;
-			// return windows[id]->width;
+			// RECT vRect;
+			// GetClientRect(windows[id]->hwnd, &vRect);
+			// int i = vRect.right;
+			// return i;
+			return windows[id]->width;
 		}
 
 		int windowHeight(int id) {
-			RECT vRect;
-			GetClientRect(windows[id]->hwnd, &vRect);
-			int i = vRect.bottom;
-			return i;
-			// return windows[id]->height;
+			// RECT vRect;
+			// GetClientRect(windows[id]->hwnd, &vRect);
+			// int i = vRect.bottom;
+			// return i;
+			return windows[id]->height;
+		}
+
+		void setWindowWidth(int id, int w) {
+			windows[id]->width = w;
+		}
+
+		void setWindowHeight(int id, int h) {
+			windows[id]->height = h;
 		}
 
 		int screenDpi() {
@@ -354,262 +362,262 @@ namespace {
 	}
 }
 
-LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-	int windowWidth;
-	int windowHeight;
-	int windowId;
-	DWORD pointerId;
-	//POINTER_INFO pointerInfo = {NULL};
-	//POINTER_PEN_INFO penInfo = {NULL};
-	static bool controlDown = false;
+// LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+// 	int windowWidth;
+// 	int windowHeight;
+// 	int windowId;
+// 	DWORD pointerId;
+// 	//POINTER_INFO pointerInfo = {NULL};
+// 	//POINTER_PEN_INFO penInfo = {NULL};
+// 	static bool controlDown = false;
 
-	switch (msg) {
-	case WM_MOVE:
-	case WM_MOVING:
-	case WM_SIZING:
-		// Scheduler::breakTime();
-		break;
-	case WM_SIZE:
-		windowWidth = LOWORD(lParam);
-		windowHeight = HIWORD(lParam);
-		Graphics::changeResolution(windowWidth, windowHeight);
-		break;
-	case WM_DESTROY:
-		Kore::System::stop();
-		return 0;
-	case WM_ERASEBKGND:
-		return 1;
-	case WM_ACTIVATE:
-		if (LOWORD(wParam) == WA_ACTIVE)
-			Mouse::the()->_activated(idFromHWND(hWnd), true);
-		else
-			Mouse::the()->_activated(idFromHWND(hWnd), false);
-		break;
-	case WM_MOUSELEAVE:
-		windowId = idFromHWND(hWnd);
-		windows[windowId]->isMouseInside = false;
-		Mouse::the()->___leave(windowId);
-		break;
-	case WM_MOUSEMOVE:
-		windowId = idFromHWND(hWnd);
-		if (!windows[windowId]->isMouseInside) {
-			windows[windowId]->isMouseInside = true;
-			TRACKMOUSEEVENT tme;
-			tme.cbSize = sizeof(TRACKMOUSEEVENT);
-			tme.dwFlags = TME_LEAVE;
-			tme.hwndTrack = hWnd;
-			TrackMouseEvent(&tme);
-		}
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_move(windowId, mouseX, mouseY);
-		break;
-	case WM_LBUTTONDOWN:
-		if (!Mouse::the()->isLocked(idFromHWND(hWnd)))
-			SetCapture(hWnd);
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_press(idFromHWND(hWnd), 0, mouseX, mouseY);
-		break;
-	case WM_LBUTTONUP:
-		if (!Mouse::the()->isLocked(idFromHWND(hWnd)))
-			ReleaseCapture();
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_release(idFromHWND(hWnd), 0, mouseX, mouseY);
-		break;
-	case WM_RBUTTONDOWN:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_press(idFromHWND(hWnd), 1, mouseX, mouseY);
-		break;
-	case WM_RBUTTONUP:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_release(idFromHWND(hWnd), 1, mouseX, mouseY);
-		break;
-	case WM_MBUTTONDOWN:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_press(idFromHWND(hWnd), 2, mouseX, mouseY);
-		break;
-	case WM_MBUTTONUP:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_release(idFromHWND(hWnd), 2, mouseX, mouseY);
-		break;
-	case WM_XBUTTONDOWN:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_press(idFromHWND(hWnd), HIWORD(wParam) + 2, mouseX, mouseY);
-		break;
-	case WM_XBUTTONUP:
-		mouseX = GET_X_LPARAM(lParam);
-		mouseY = GET_Y_LPARAM(lParam);
-		Mouse::the()->_release(idFromHWND(hWnd), HIWORD(wParam) + 2, mouseX, mouseY);
-		break;
-	case WM_MOUSEWHEEL:
-		Mouse::the()->_scroll(idFromHWND(hWnd), GET_WHEEL_DELTA_WPARAM(wParam) / -120);
-		break;
-	/*case WM_POINTERDOWN:
-		pointerId = GET_POINTERID_WPARAM(wParam);
-		MyGetPointerInfo(pointerId, &pointerInfo);
-		if (pointerInfo.pointerType == PT_PEN) {
-			MyGetPointerPenInfo(pointerId, &penInfo);
-			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
-			Pen::the()->_press(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
-		}
-		break;
-	case WM_POINTERUP:
-		pointerId = GET_POINTERID_WPARAM(wParam);
-		MyGetPointerInfo(pointerId, &pointerInfo);
-		if (pointerInfo.pointerType == PT_PEN) {
-			MyGetPointerPenInfo(pointerId, &penInfo);
-			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
-			Pen::the()->_release(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
-		}
-		break;
-	case WM_POINTERUPDATE:
-		pointerId = GET_POINTERID_WPARAM(wParam);
-		MyGetPointerInfo(pointerId, &pointerInfo);
-		if (pointerInfo.pointerType == PT_PEN) {
-			MyGetPointerPenInfo(pointerId, &penInfo);
-			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
-			Pen::the()->_move(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
-		}
-		break;*/
-	case WM_KEYDOWN:
-	case WM_SYSKEYDOWN:
-		if (!keyPressed[wParam]) {
-			keyPressed[wParam] = true;
+// 	switch (msg) {
+// 	case WM_MOVE:
+// 	case WM_MOVING:
+// 	case WM_SIZING:
+// 		// Scheduler::breakTime();
+// 		break;
+// 	case WM_SIZE:
+// 		windowWidth = LOWORD(lParam);
+// 		windowHeight = HIWORD(lParam);
+// 		Graphics::changeResolution(windowWidth, windowHeight);
+// 		break;
+// 	case WM_DESTROY:
+// 		Kore::System::stop();
+// 		return 0;
+// 	case WM_ERASEBKGND:
+// 		return 1;
+// 	case WM_ACTIVATE:
+// 		if (LOWORD(wParam) == WA_ACTIVE)
+// 			Mouse::the()->_activated(idFromHWND(hWnd), true);
+// 		else
+// 			Mouse::the()->_activated(idFromHWND(hWnd), false);
+// 		break;
+// 	case WM_MOUSELEAVE:
+// 		windowId = idFromHWND(hWnd);
+// 		windows[windowId]->isMouseInside = false;
+// 		Mouse::the()->___leave(windowId);
+// 		break;
+// 	case WM_MOUSEMOVE:
+// 		windowId = idFromHWND(hWnd);
+// 		if (!windows[windowId]->isMouseInside) {
+// 			windows[windowId]->isMouseInside = true;
+// 			TRACKMOUSEEVENT tme;
+// 			tme.cbSize = sizeof(TRACKMOUSEEVENT);
+// 			tme.dwFlags = TME_LEAVE;
+// 			tme.hwndTrack = hWnd;
+// 			TrackMouseEvent(&tme);
+// 		}
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_move(windowId, mouseX, mouseY);
+// 		break;
+// 	case WM_LBUTTONDOWN:
+// 		if (!Mouse::the()->isLocked(idFromHWND(hWnd)))
+// 			SetCapture(hWnd);
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_press(idFromHWND(hWnd), 0, mouseX, mouseY);
+// 		break;
+// 	case WM_LBUTTONUP:
+// 		if (!Mouse::the()->isLocked(idFromHWND(hWnd)))
+// 			ReleaseCapture();
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_release(idFromHWND(hWnd), 0, mouseX, mouseY);
+// 		break;
+// 	case WM_RBUTTONDOWN:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_press(idFromHWND(hWnd), 1, mouseX, mouseY);
+// 		break;
+// 	case WM_RBUTTONUP:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_release(idFromHWND(hWnd), 1, mouseX, mouseY);
+// 		break;
+// 	case WM_MBUTTONDOWN:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_press(idFromHWND(hWnd), 2, mouseX, mouseY);
+// 		break;
+// 	case WM_MBUTTONUP:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_release(idFromHWND(hWnd), 2, mouseX, mouseY);
+// 		break;
+// 	case WM_XBUTTONDOWN:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_press(idFromHWND(hWnd), HIWORD(wParam) + 2, mouseX, mouseY);
+// 		break;
+// 	case WM_XBUTTONUP:
+// 		mouseX = GET_X_LPARAM(lParam);
+// 		mouseY = GET_Y_LPARAM(lParam);
+// 		Mouse::the()->_release(idFromHWND(hWnd), HIWORD(wParam) + 2, mouseX, mouseY);
+// 		break;
+// 	case WM_MOUSEWHEEL:
+// 		Mouse::the()->_scroll(idFromHWND(hWnd), GET_WHEEL_DELTA_WPARAM(wParam) / -120);
+// 		break;
+// 	case WM_POINTERDOWN:
+// 		pointerId = GET_POINTERID_WPARAM(wParam);
+// 		MyGetPointerInfo(pointerId, &pointerInfo);
+// 		if (pointerInfo.pointerType == PT_PEN) {
+// 			MyGetPointerPenInfo(pointerId, &penInfo);
+// 			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
+// 			Pen::the()->_press(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
+// 		}
+// 		break;
+// 	case WM_POINTERUP:
+// 		pointerId = GET_POINTERID_WPARAM(wParam);
+// 		MyGetPointerInfo(pointerId, &pointerInfo);
+// 		if (pointerInfo.pointerType == PT_PEN) {
+// 			MyGetPointerPenInfo(pointerId, &penInfo);
+// 			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
+// 			Pen::the()->_release(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
+// 		}
+// 		break;
+// 	case WM_POINTERUPDATE:
+// 		pointerId = GET_POINTERID_WPARAM(wParam);
+// 		MyGetPointerInfo(pointerId, &pointerInfo);
+// 		if (pointerInfo.pointerType == PT_PEN) {
+// 			MyGetPointerPenInfo(pointerId, &penInfo);
+// 			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
+// 			Pen::the()->_move(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
+// 		}
+// 		break;
+// 	case WM_KEYDOWN:
+// 	case WM_SYSKEYDOWN:
+// 		if (!keyPressed[wParam]) {
+// 			keyPressed[wParam] = true;
 
-			if (keyTranslated[wParam] == Kore::KeyControl) {
-				controlDown = true;
-			}
-			else {
-				if (controlDown && keyTranslated[wParam] == Kore::KeyX) {
-					char* text = System::cutCallback();
-					if (text != nullptr) {
-						wchar_t wtext[4096];
-						MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
-						OpenClipboard(hWnd);
-						EmptyClipboard();
-						int size = (wcslen(wtext) + 1) * sizeof(wchar_t);
-						HANDLE handle = GlobalAlloc(GMEM_MOVEABLE, size);
-						void* data = GlobalLock(handle);
-						memcpy(data, wtext, size);
-						GlobalUnlock(handle);
-						SetClipboardData(CF_UNICODETEXT, handle);
-						CloseClipboard();
-					}
-				}
+// 			if (keyTranslated[wParam] == Kore::KeyControl) {
+// 				controlDown = true;
+// 			}
+// 			else {
+// 				if (controlDown && keyTranslated[wParam] == Kore::KeyX) {
+// 					char* text = System::cutCallback();
+// 					if (text != nullptr) {
+// 						wchar_t wtext[4096];
+// 						MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
+// 						OpenClipboard(hWnd);
+// 						EmptyClipboard();
+// 						int size = (wcslen(wtext) + 1) * sizeof(wchar_t);
+// 						HANDLE handle = GlobalAlloc(GMEM_MOVEABLE, size);
+// 						void* data = GlobalLock(handle);
+// 						memcpy(data, wtext, size);
+// 						GlobalUnlock(handle);
+// 						SetClipboardData(CF_UNICODETEXT, handle);
+// 						CloseClipboard();
+// 					}
+// 				}
 				
-				if (controlDown && keyTranslated[wParam] == Kore::KeyC) {
-					char* text = System::copyCallback();
-					if (text != nullptr) {
-						wchar_t wtext[4096];
-						MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
-						OpenClipboard(hWnd);
-						EmptyClipboard();
-						int size = (wcslen(wtext) + 1) * sizeof(wchar_t);
-						HANDLE handle = GlobalAlloc(GMEM_MOVEABLE, size);
-						void* data = GlobalLock(handle);
-						memcpy(data, wtext, size);
-						GlobalUnlock(handle);
-						SetClipboardData(CF_UNICODETEXT, handle);
-						CloseClipboard();
-					}
-				}
+// 				if (controlDown && keyTranslated[wParam] == Kore::KeyC) {
+// 					char* text = System::copyCallback();
+// 					if (text != nullptr) {
+// 						wchar_t wtext[4096];
+// 						MultiByteToWideChar(CP_UTF8, 0, text, -1, wtext, 4096);
+// 						OpenClipboard(hWnd);
+// 						EmptyClipboard();
+// 						int size = (wcslen(wtext) + 1) * sizeof(wchar_t);
+// 						HANDLE handle = GlobalAlloc(GMEM_MOVEABLE, size);
+// 						void* data = GlobalLock(handle);
+// 						memcpy(data, wtext, size);
+// 						GlobalUnlock(handle);
+// 						SetClipboardData(CF_UNICODETEXT, handle);
+// 						CloseClipboard();
+// 					}
+// 				}
 				
-				if (controlDown && keyTranslated[wParam] == Kore::KeyV) {
-					if (IsClipboardFormatAvailable(CF_UNICODETEXT)) {
-						OpenClipboard(hWnd);
-						HANDLE handle = GetClipboardData(CF_UNICODETEXT);
-						if (handle != nullptr) {
-							wchar_t* wtext = (wchar_t*)GlobalLock(handle);
-							if (wtext != nullptr) {
-								char text[4096];
-								WideCharToMultiByte(CP_UTF8, 0, wtext, -1, text, 4096, nullptr, nullptr);
-								System::pasteCallback(text);
-								GlobalUnlock(handle);
-							}
-						}
-						CloseClipboard();
-					}
-				}
-			}
+// 				if (controlDown && keyTranslated[wParam] == Kore::KeyV) {
+// 					if (IsClipboardFormatAvailable(CF_UNICODETEXT)) {
+// 						OpenClipboard(hWnd);
+// 						HANDLE handle = GetClipboardData(CF_UNICODETEXT);
+// 						if (handle != nullptr) {
+// 							wchar_t* wtext = (wchar_t*)GlobalLock(handle);
+// 							if (wtext != nullptr) {
+// 								char text[4096];
+// 								WideCharToMultiByte(CP_UTF8, 0, wtext, -1, text, 4096, nullptr, nullptr);
+// 								System::pasteCallback(text);
+// 								GlobalUnlock(handle);
+// 							}
+// 						}
+// 						CloseClipboard();
+// 					}
+// 				}
+// 			}
 
-			Keyboard::the()->_keydown(keyTranslated[wParam]);
-		}
-		break;
-	case WM_KEYUP:
-	case WM_SYSKEYUP:
-		keyPressed[wParam] = false;
+// 			Keyboard::the()->_keydown(keyTranslated[wParam]);
+// 		}
+// 		break;
+// 	case WM_KEYUP:
+// 	case WM_SYSKEYUP:
+// 		keyPressed[wParam] = false;
 
-		if (keyTranslated[wParam] == Kore::KeyControl) {
-			controlDown = false;
-		}
+// 		if (keyTranslated[wParam] == Kore::KeyControl) {
+// 			controlDown = false;
+// 		}
 
-		Keyboard::the()->_keyup(keyTranslated[wParam]);
-		break;
-	case WM_CHAR:
-		switch (wParam) {
-		case 0x08: // backspace
-			break;
-		case 0x0A: // linefeed
-			Keyboard::the()->_keypress(L'\n');
-			break;
-		case 0x1B: // escape
-			break;
-		case 0x09: // tab
-			Keyboard::the()->_keypress(L'\t');
-			break;
-		case 0x0D: // carriage return
-			Keyboard::the()->_keypress(L'\r');
-			break;
-		default:
-			Keyboard::the()->_keypress((wchar_t)wParam);
-			break;
-		}
-		break;
-	case WM_SYSCOMMAND:
-		// printf("WS_SYSCOMMAND %5d %5d %5d\n", msg, wParam, lParam);
-		switch (wParam) {
-		case SC_KEYMENU: // Ignorieren, wenn Alt f�r das WS_SYSMENU gedr�ckt wird.
-			return 0;
-		case SC_SCREENSAVE:
-		case SC_MONITORPOWER:
-			return 0; // Prevent From Happening
+// 		Keyboard::the()->_keyup(keyTranslated[wParam]);
+// 		break;
+// 	case WM_CHAR:
+// 		switch (wParam) {
+// 		case 0x08: // backspace
+// 			break;
+// 		case 0x0A: // linefeed
+// 			Keyboard::the()->_keypress(L'\n');
+// 			break;
+// 		case 0x1B: // escape
+// 			break;
+// 		case 0x09: // tab
+// 			Keyboard::the()->_keypress(L'\t');
+// 			break;
+// 		case 0x0D: // carriage return
+// 			Keyboard::the()->_keypress(L'\r');
+// 			break;
+// 		default:
+// 			Keyboard::the()->_keypress((wchar_t)wParam);
+// 			break;
+// 		}
+// 		break;
+// 	case WM_SYSCOMMAND:
+// 		// printf("WS_SYSCOMMAND %5d %5d %5d\n", msg, wParam, lParam);
+// 		switch (wParam) {
+// 		case SC_KEYMENU: // Ignorieren, wenn Alt f�r das WS_SYSMENU gedr�ckt wird.
+// 			return 0;
+// 		case SC_SCREENSAVE:
+// 		case SC_MONITORPOWER:
+// 			return 0; // Prevent From Happening
 
-		// Pause game when window is minimized, continue when it's restored or maximized.
-		//
-		// Unfortunately, if the game would continue to run when minimized, the graphics in
-		// the Windows Vista/7 taskbar would not be updated, even when Direct3DDevice::Present()
-		// is called without error. I do not know why.
-		case SC_MINIMIZE:
-			// Scheduler::haltTime(); // haltTime()/unhaltTime() is incremental, meaning that this doesn't interfere with when the game itself calls these
-			// functions
-			break;
-		case SC_RESTORE:
-		case SC_MAXIMIZE:
-			// Scheduler::unhaltTime();
-			break;
-		}
-		break;
-	case WM_DROPFILES:
-		HDROP hDrop = (HDROP)wParam;
-		uint count = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, NULL);
-		if (count == 1) { // Single file only for now
-			//wchar_t filePath[260];
-			//if (DragQueryFile(hDrop, 0, filePath, 260)) {
-				//Kore::System::dropFilesCallback(filePath);
-			//}
-		}	
-		DragFinish(hDrop);
-		break;
-	}
-	return DefWindowProc(hWnd, msg, wParam, lParam);
-}
+// 		// Pause game when window is minimized, continue when it's restored or maximized.
+// 		//
+// 		// Unfortunately, if the game would continue to run when minimized, the graphics in
+// 		// the Windows Vista/7 taskbar would not be updated, even when Direct3DDevice::Present()
+// 		// is called without error. I do not know why.
+// 		case SC_MINIMIZE:
+// 			// Scheduler::haltTime(); // haltTime()/unhaltTime() is incremental, meaning that this doesn't interfere with when the game itself calls these
+// 			// functions
+// 			break;
+// 		case SC_RESTORE:
+// 		case SC_MAXIMIZE:
+// 			// Scheduler::unhaltTime();
+// 			break;
+// 		}
+// 		break;
+// 	case WM_DROPFILES:
+// 		HDROP hDrop = (HDROP)wParam;
+// 		uint count = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, NULL);
+// 		if (count == 1) { // Single file only for now
+// 			//wchar_t filePath[260];
+// 			//if (DragQueryFile(hDrop, 0, filePath, 260)) {
+// 				//Kore::System::dropFilesCallback(filePath);
+// 			//}
+// 		}	
+// 		DragFinish(hDrop);
+// 		break;
+// 	}
+// 	return DefWindowProc(hWnd, msg, wParam, lParam);
+// }
 
 namespace {
 	float axes[12 * 6];
@@ -1122,6 +1130,7 @@ int createWindow(const wchar_t* title, int x, int y, int width, int height, Wind
 #//endif /*#else // #ifdef KORE_OCULUS  */
 
 	//windows[windowCounter] = new KoreWindow(hwnd, dstx, dsty, width, height);
+	windows[windowCounter] = new KoreWindow(NULL, 0, 0, width, height);
 	return windowCounter;
 }
 
@@ -1161,12 +1170,12 @@ void Kore::System::makeCurrent(int contextId) {
 	}
 
 	currentDeviceId = contextId;
-	Graphics::makeCurrent(contextId);
+	// Graphics::makeCurrent(contextId);
 }
 
 void Kore::System::clearCurrent() {
 	currentDeviceId = -1;
-	Graphics::clearCurrent();
+	// Graphics::clearCurrent();
 }
 
 int Kore::System::initWindow(WindowOptions options) {
@@ -1360,87 +1369,87 @@ double Kore::System::time() {
 	return double(stamp.QuadPart - startCount.QuadPart) / (double)::frequency.QuadPart;
 }
 
-int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int /*nCmdShow*/) {
-	// Pen functions are only in Windows 8 and later, so load them dynamically
-	HMODULE user32 = LoadLibraryA("user32.dll");
-	//MyGetPointerInfo = (GetPointerInfoType)GetProcAddress(user32, "GetPointerInfo");
-	//MyGetPointerPenInfo = (GetPointerPenInfoType)GetProcAddress(user32, "GetPointerPenInfo");
+// int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int /*nCmdShow*/) {
+// 	// Pen functions are only in Windows 8 and later, so load them dynamically
+// 	HMODULE user32 = LoadLibraryA("user32.dll");
+// 	//MyGetPointerInfo = (GetPointerInfoType)GetProcAddress(user32, "GetPointerInfo");
+// 	//MyGetPointerPenInfo = (GetPointerPenInfoType)GetProcAddress(user32, "GetPointerPenInfo");
 
-	initKeyTranslation();
-	for (int i = 0; i < 256; ++i) keyPressed[i] = false;
+// 	initKeyTranslation();
+// 	for (int i = 0; i < 256; ++i) keyPressed[i] = false;
 
-	QueryPerformanceCounter(&startCount);
-	QueryPerformanceFrequency(&::frequency);
+// 	QueryPerformanceCounter(&startCount);
+// 	QueryPerformanceFrequency(&::frequency);
 
-	int argc = 1;
-	for (unsigned i = 0; i < strlen(lpCmdLine); ++i) {
-		while (lpCmdLine[i] == ' ' && i < strlen(lpCmdLine)) ++i;
-		if (lpCmdLine[i] == '\"') {
-			++i;
-			while (lpCmdLine[i] != '\"' && i < strlen(lpCmdLine)) ++i;
-			++argc;
-		}
-		else {
-			while (lpCmdLine[i] != ' ' && i < strlen(lpCmdLine)) ++i;
-			++argc;
-		}
-	}
+// 	int argc = 1;
+// 	for (unsigned i = 0; i < strlen(lpCmdLine); ++i) {
+// 		while (lpCmdLine[i] == ' ' && i < strlen(lpCmdLine)) ++i;
+// 		if (lpCmdLine[i] == '\"') {
+// 			++i;
+// 			while (lpCmdLine[i] != '\"' && i < strlen(lpCmdLine)) ++i;
+// 			++argc;
+// 		}
+// 		else {
+// 			while (lpCmdLine[i] != ' ' && i < strlen(lpCmdLine)) ++i;
+// 			++argc;
+// 		}
+// 	}
 
-	char** argv = (char**)malloc(sizeof(char*) * (argc + 1));
+// 	char** argv = (char**)malloc(sizeof(char*) * (argc + 1));
 
-	argv[0] = (char*)malloc(1024);
-	GetModuleFileNameA(0, argv[0], 1024);
+// 	argv[0] = (char*)malloc(1024);
+// 	GetModuleFileNameA(0, argv[0], 1024);
 
-	for (int i = 1; i < argc; ++i) argv[i] = (char*)malloc(strlen(lpCmdLine) + 10);
-	argv[argc] = 0;
+// 	for (int i = 1; i < argc; ++i) argv[i] = (char*)malloc(strlen(lpCmdLine) + 10);
+// 	argv[argc] = 0;
 
-	argc = 1;
-	int pos = 0;
-	for (unsigned i = 0; i < strlen(lpCmdLine); ++i) {
-		while (lpCmdLine[i] == ' ' && i < strlen(lpCmdLine)) ++i;
-		if (lpCmdLine[i] == '\"') {
-			++i;
-			while (lpCmdLine[i] != '\"' && i < strlen(lpCmdLine)) {
-				argv[argc][pos] = lpCmdLine[i];
-				++i;
-				++pos;
-			}
-			argv[argc][pos] = '\0';
-			++argc;
-			pos = 0;
-		}
-		else {
-			while (lpCmdLine[i] != ' ' && i < strlen(lpCmdLine)) {
-				argv[argc][pos] = lpCmdLine[i];
-				++i;
-				++pos;
-			}
-			argv[argc][pos] = '\0';
-			++argc;
-			pos = 0;
-		}
-	}
-	argv[argc] = 0;
+// 	argc = 1;
+// 	int pos = 0;
+// 	for (unsigned i = 0; i < strlen(lpCmdLine); ++i) {
+// 		while (lpCmdLine[i] == ' ' && i < strlen(lpCmdLine)) ++i;
+// 		if (lpCmdLine[i] == '\"') {
+// 			++i;
+// 			while (lpCmdLine[i] != '\"' && i < strlen(lpCmdLine)) {
+// 				argv[argc][pos] = lpCmdLine[i];
+// 				++i;
+// 				++pos;
+// 			}
+// 			argv[argc][pos] = '\0';
+// 			++argc;
+// 			pos = 0;
+// 		}
+// 		else {
+// 			while (lpCmdLine[i] != ' ' && i < strlen(lpCmdLine)) {
+// 				argv[argc][pos] = lpCmdLine[i];
+// 				++i;
+// 				++pos;
+// 			}
+// 			argv[argc][pos] = '\0';
+// 			++argc;
+// 			pos = 0;
+// 		}
+// 	}
+// 	argv[argc] = 0;
 
-	int ret = 0;
-#ifndef _DEBUG
-	try {
-#endif
-		for (int i = 0; i < 256; ++i) keyPressed[i] = false;
+// 	int ret = 0;
+// #ifndef _DEBUG
+// 	try {
+// #endif
+// 		for (int i = 0; i < 256; ++i) keyPressed[i] = false;
 
-		ret = kore(argc, argv);
-#ifndef _DEBUG
-	} catch (std::exception& ex) {
-		ret = 1;
-		MessageBoxA(0, ex.what(), "Exception", MB_OK);
-	} catch (...) {
-		ret = 1;
-		MessageBox(0, L"Unknown Exception", L"Exception", MB_OK);
-	}
-#endif
+// 		ret = kore(argc, argv);
+// #ifndef _DEBUG
+// 	} catch (std::exception& ex) {
+// 		ret = 1;
+// 		MessageBoxA(0, ex.what(), "Exception", MB_OK);
+// 	} catch (...) {
+// 		ret = 1;
+// 		MessageBox(0, L"Unknown Exception", L"Exception", MB_OK);
+// 	}
+// #endif
 
-	for (int i = 0; i < argc; ++i) free(argv[i]);
-	free(argv);
+// 	for (int i = 0; i < argc; ++i) free(argv[i]);
+// 	free(argv);
 
-	return ret;
-}
+// 	return ret;
+// }
