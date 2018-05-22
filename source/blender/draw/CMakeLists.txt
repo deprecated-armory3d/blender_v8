@@ -88,6 +88,7 @@ set(SRC
 	modes/pose_mode.c
 	modes/sculpt_mode.c
 	engines/basic/basic_engine.c
+	engines/armory/armory_engine.c
 	engines/clay/clay_engine.c
 	engines/eevee/eevee_bloom.c
 	engines/eevee/eevee_data.c
@@ -124,6 +125,7 @@ set(SRC
 	modes/draw_mode_engines.h
 	modes/edit_mesh_mode_intern.h
 	engines/basic/basic_engine.h
+	engines/armory/armory_engine.h
 	engines/clay/clay_engine.h
 	engines/eevee/eevee_engine.h
 	engines/eevee/eevee_lut.h
