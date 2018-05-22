@@ -30,7 +30,7 @@ void Kore::logArgs(LogLevel level, const char* format, va_list args) {
 	wchar_t buffer[4096];
 	Microsoft::format(format, args, buffer);
 	wcscat(buffer, L"\r\n");
-	OutputDebugString(buffer);
+	//OutputDebugString(buffer);
 #ifdef KORE_WINDOWS
 	DWORD written;
 	WriteConsole(GetStdHandle(level == Info ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE), buffer, wcslen(buffer), &written, nullptr);

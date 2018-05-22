@@ -52,7 +52,7 @@ void Kore::error(const char* format, ...) {
 		va_start(args, format);
 		wchar_t buffer[4096];
 		Microsoft::format(format, args, buffer);
-		MessageBox(nullptr, buffer, L"Error", 0);
+		//MessageBox(nullptr, buffer, L"Error", 0);
 		va_end(args);
 	}
 #endif
@@ -66,7 +66,7 @@ void Kore::errorArgs(const char* format, va_list args) {
 #ifdef KORE_WINDOWS
 	wchar_t buffer[4096];
 	Microsoft::format(format, args, buffer);
-	MessageBox(nullptr, buffer, L"Error", 0);
+	//MessageBox(nullptr, buffer, L"Error", 0);
 #endif
 
 	exit(EXIT_FAILURE);

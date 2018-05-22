@@ -42,10 +42,10 @@
 #define Graphics Graphics3
 #endif
 
-extern "C" {
-__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
-__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
-}
+// extern "C" {
+// __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+// __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+// }
 
 LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -55,10 +55,10 @@ extern "C"
 int kore(int argc, char** argv);
 
 namespace {
-	typedef BOOL (WINAPI *GetPointerInfoType)(UINT32 pointerId, POINTER_INFO *pointerInfo);
-	GetPointerInfoType MyGetPointerInfo;
-	typedef BOOL (WINAPI *GetPointerPenInfoType)(UINT32 pointerId, POINTER_PEN_INFO *penInfo);
-	GetPointerPenInfoType MyGetPointerPenInfo;
+	//typedef BOOL (WINAPI *GetPointerInfoType)(UINT32 pointerId, POINTER_INFO *pointerInfo);
+	//GetPointerInfoType MyGetPointerInfo;
+	//typedef BOOL (WINAPI *GetPointerPenInfoType)(UINT32 pointerId, POINTER_PEN_INFO *penInfo);
+	//GetPointerPenInfoType MyGetPointerPenInfo;
 
 	struct KoreWindow : public Kore::KoreWindowBase {
 		HWND hwnd;
@@ -105,7 +105,7 @@ namespace {
 		                  className /*windowClassName*/,
 		                  0};
 		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-		RegisterClassEx(&wc);
+		//RegisterClassEx(&wc);
 	}
 }
 
@@ -359,8 +359,8 @@ LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	int windowHeight;
 	int windowId;
 	DWORD pointerId;
-	POINTER_INFO pointerInfo = {NULL};
-	POINTER_PEN_INFO penInfo = {NULL};
+	//POINTER_INFO pointerInfo = {NULL};
+	//POINTER_PEN_INFO penInfo = {NULL};
 	static bool controlDown = false;
 
 	switch (msg) {
@@ -451,7 +451,7 @@ LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	case WM_MOUSEWHEEL:
 		Mouse::the()->_scroll(idFromHWND(hWnd), GET_WHEEL_DELTA_WPARAM(wParam) / -120);
 		break;
-	case WM_POINTERDOWN:
+	/*case WM_POINTERDOWN:
 		pointerId = GET_POINTERID_WPARAM(wParam);
 		MyGetPointerInfo(pointerId, &pointerInfo);
 		if (pointerInfo.pointerType == PT_PEN) {
@@ -477,7 +477,7 @@ LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			ScreenToClient(hWnd, &pointerInfo.ptPixelLocation);
 			Pen::the()->_move(idFromHWND(hWnd), pointerInfo.ptPixelLocation.x, pointerInfo.ptPixelLocation.y, float(penInfo.pressure) / 1024.0f);
 		}
-		break;
+		break;*/
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
 		if (!keyPressed[wParam]) {
@@ -600,10 +600,10 @@ LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		HDROP hDrop = (HDROP)wParam;
 		uint count = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, NULL);
 		if (count == 1) { // Single file only for now
-			wchar_t filePath[260];
-			if (DragQueryFile(hDrop, 0, filePath, 260)) {
-				Kore::System::dropFilesCallback(filePath);
-			}
+			//wchar_t filePath[260];
+			//if (DragQueryFile(hDrop, 0, filePath, 260)) {
+				//Kore::System::dropFilesCallback(filePath);
+			//}
 		}	
 		DragFinish(hDrop);
 		break;
@@ -619,7 +619,7 @@ namespace {
 	XInputGetStateType InputGetState = nullptr;
 
 	void loadXInput() {
-		HMODULE lib = LoadLibrary(L"xinput1_4.dll");
+		/*HMODULE lib = LoadLibrary(L"xinput1_4.dll");
 		if (lib == nullptr) {
 			lib = LoadLibrary(L"xinput1_3.dll");
 		}
@@ -629,7 +629,7 @@ namespace {
 
 		if (lib != nullptr) {
 			InputGetState = (XInputGetStateType)GetProcAddress(lib, "XInputGetState");
-		}
+		}*/
 	}
 
 	IDirectInput8* di_instance = nullptr;
@@ -789,7 +789,7 @@ namespace {
 
 		HRESULT hr = di_instance->CreateDevice(ddi->guidInstance, &di_pads[padCount], nullptr);
 
-		if (SUCCEEDED(hr)) {
+		/*if (SUCCEEDED(hr)) {
 			hr = di_pads[padCount]->SetDataFormat(&c_dfDIJoystick2);
 
 			// TODO (DK) required?
@@ -844,7 +844,7 @@ namespace {
 			if (padCount >= XUSER_MAX_COUNT) {
 				return DIENUM_STOP;
 			}
-		}
+		}*/
 
 		return DIENUM_CONTINUE;
 	}
@@ -860,13 +860,13 @@ namespace {
 		HRESULT hr = DirectInput8Create(hinstance, DIRECTINPUT_VERSION, IID_IDirectInput8, (void**)&di_instance, nullptr);
 
 		if (SUCCEEDED(hr)) {
-			hr = di_instance->EnumDevices(DI8DEVCLASS_GAMECTRL, enumerateJoysticksCallback, nullptr, DIEDFL_ATTACHEDONLY);
+			//hr = di_instance->EnumDevices(DI8DEVCLASS_GAMECTRL, enumerateJoysticksCallback, nullptr, DIEDFL_ATTACHEDONLY);
 
-			if (SUCCEEDED(hr)) {
-			}
-			else {
-				cleanupDirectInput();
-			}
+			//if (SUCCEEDED(hr)) {
+			//}
+			//else {
+			//	cleanupDirectInput();
+			//}
 		}
 		else {
 			log(Warning, "DirectInput8Create failed (HRESULT=0x%x)", hr);
@@ -1012,7 +1012,7 @@ namespace {
 }
 
 int createWindow(const wchar_t* title, int x, int y, int width, int height, WindowMode windowMode, int targetDisplay) {
-	++windowCounter;
+	/*++windowCounter;
 
 	HINSTANCE inst = GetModuleHandle(nullptr);
 #ifdef KORE_OCULUS
@@ -1065,9 +1065,9 @@ int createWindow(const wchar_t* title, int x, int y, int width, int height, Wind
 		dmScreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
 
 		// Try To Set Selected Mode And Get Results.  NOTE: CDS_FULLSCREEN Gets Rid Of Start Bar.
-		if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL) {
+		//if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL) {
 			// return FALSE;
-		}
+		//}
 
 		dwExStyle = WS_EX_APPWINDOW;
 		dwStyle = WS_POPUP;
@@ -1118,10 +1118,10 @@ int createWindow(const wchar_t* title, int x, int y, int width, int height, Wind
 	if (windowCounter == 0) {
 		loadXInput();
 		initializeDirectInput();
-	}
-#endif /*#else // #ifdef KORE_OCULUS  */
+	}*/
+#//endif /*#else // #ifdef KORE_OCULUS  */
 
-	windows[windowCounter] = new KoreWindow(hwnd, dstx, dsty, width, height);
+	//windows[windowCounter] = new KoreWindow(hwnd, dstx, dsty, width, height);
 	return windowCounter;
 }
 
@@ -1130,7 +1130,7 @@ void* Kore::System::windowHandle(int windowId) {
 }
 
 void Kore::System::destroyWindow(int index) {
-	HWND hwnd = windows[index]->hwnd;
+	/*HWND hwnd = windows[index]->hwnd;
 
 	// TODO (DK) shouldn't 'hwnd = nullptr' moved out of here?
 	if (hwnd && !DestroyWindow(hwnd)) {
@@ -1146,7 +1146,7 @@ void Kore::System::destroyWindow(int index) {
 		// hInstance=NULL;
 	}
 
-	--windowCounter;
+	--windowCounter;*/
 }
 
 void Kore::System::_shutdown() {
@@ -1267,9 +1267,9 @@ bool Kore::System::showsKeyboard() {
 void Kore::System::loadURL(const char* url) {}
 
 void Kore::System::setTitle(const char* title) {
-	wchar_t buffer[1024];
-	MultiByteToWideChar(CP_UTF8, 0, title, -1, buffer, 1024);
-	SetWindowText(windows[currentDevice()]->hwnd, buffer);
+	//wchar_t buffer[1024];
+	//MultiByteToWideChar(CP_UTF8, 0, title, -1, buffer, 1024);
+	//SetWindowText(windows[currentDevice()]->hwnd, buffer);
 }
 
 void Kore::System::setKeepScreenOn(bool on) {}
@@ -1304,7 +1304,7 @@ namespace {
 	
 	void findSavePath() {
 		// CoInitialize(NULL);
-		IKnownFolderManager* folders = nullptr;
+		/*IKnownFolderManager* folders = nullptr;
 		CoCreateInstance(CLSID_KnownFolderManager, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&folders));
 		IKnownFolder* folder = nullptr;
 		folders->GetFolder(FOLDERID_SavedGames, &folder);
@@ -1324,7 +1324,7 @@ namespace {
 
 		CoTaskMemFree(path);
 		folder->Release();
-		folders->Release();
+		folders->Release();*/
 		// CoUninitialize();
 	}
 }
@@ -1363,8 +1363,8 @@ double Kore::System::time() {
 int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int /*nCmdShow*/) {
 	// Pen functions are only in Windows 8 and later, so load them dynamically
 	HMODULE user32 = LoadLibraryA("user32.dll");
-	MyGetPointerInfo = (GetPointerInfoType)GetProcAddress(user32, "GetPointerInfo");
-	MyGetPointerPenInfo = (GetPointerPenInfoType)GetProcAddress(user32, "GetPointerPenInfo");
+	//MyGetPointerInfo = (GetPointerInfoType)GetProcAddress(user32, "GetPointerInfo");
+	//MyGetPointerPenInfo = (GetPointerPenInfoType)GetProcAddress(user32, "GetPointerPenInfo");
 
 	initKeyTranslation();
 	for (int i = 0; i < 256; ++i) keyPressed[i] = false;

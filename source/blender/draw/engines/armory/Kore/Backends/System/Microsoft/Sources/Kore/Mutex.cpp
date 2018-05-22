@@ -31,14 +31,14 @@ void Mutex::unlock() {
 }
 
 bool UberMutex::create(const wchar_t* name) {
-	id = (void*)CreateMutex(NULL, FALSE, name);
-	HRESULT res = GetLastError();
-	if (res && res != ERROR_ALREADY_EXISTS) {
-		id = NULL;
-		affirm(false);
+	//id = (void*)CreateMutex(NULL, FALSE, name);
+	//HRESULT res = GetLastError();
+	//if (res && res != ERROR_ALREADY_EXISTS) {
+	//	id = NULL;
+	//	affirm(false);
 		return false;
-	}
-	return true;
+		//}
+	//return true;
 }
 
 void UberMutex::destroy() {
