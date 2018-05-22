@@ -213,7 +213,7 @@ void Graphics4::init(int windowId, int depthBufferBits, int stencilBufferBits, b
 // 	glGenVertexArraysOES(1, &arrayId[windowId]);
 // 	glCheckErrors();
 // #elif !defined(KORE_ANDROID) && !defined(KORE_HTML5) && !defined(KORE_TIZEN) && !defined(KORE_PI)
-// 	glGenVertexArrays(1, &arrayId[windowId]);
+	glGenVertexArrays(1, &arrayId[windowId]);
 // 	glCheckErrors();
 // #endif
 
@@ -517,13 +517,13 @@ void Graphics4::clear(uint flags, uint color, float depth, int stencil) {
 }
 
 void Graphics4::setVertexBuffers(VertexBuffer** vertexBuffers, int count) {
-#if defined(KORE_IOS)
-	glBindVertexArrayOES(arrayId[0]);
-	glCheckErrors();
-#elif !defined(KORE_ANDROID) && !defined(KORE_HTML5) && !defined(KORE_TIZEN) && !defined(KORE_PI)
+// #if defined(KORE_IOS)
+	// glBindVertexArrayOES(arrayId[0]);
+	// glCheckErrors();
+// #elif !defined(KORE_ANDROID) && !defined(KORE_HTML5) && !defined(KORE_TIZEN) && !defined(KORE_PI)
 	glBindVertexArray(arrayId[System::currentDevice()]);
 	glCheckErrors();
-#endif
+// #endif
 
 	int offset = 0;
 	for (int i = 0; i < count; ++i) {
