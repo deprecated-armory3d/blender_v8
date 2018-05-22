@@ -1349,6 +1349,8 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	Scene *scene = DEG_get_input_scene(depsgraph);
 	ViewLayer *view_layer = DEG_get_input_view_layer(depsgraph);
 
+	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: ARMORY temp
+
 	/* TODO(sergey): Some functions here are changing global state,
 	 * for example, clearing update tags from bmain.
 	 */
@@ -1366,6 +1368,9 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	DEG_evaluate_on_refresh(depsgraph);
 	/* Update sound system animation (TODO, move to depsgraph). */
 	BKE_sound_update_scene(bmain, scene);
+
+	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: ARMORY temp
+	
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, false);
 	/* Clear recalc flags. */
@@ -1385,6 +1390,7 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	const float ctime = BKE_scene_frame_get(scene);
 	/* Keep this first. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_PRE);
+	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: ARMORY temp
 	/* Update animated image textures for particles, modifiers, gpu, etc,
 	 * call this at the start so modifiers with textures don't lag 1 frame.
 	 */
@@ -1408,6 +1414,7 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	BKE_sound_update_scene(bmain, scene);
 	/* Notify editors and python about recalc. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_POST);
+	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: ARMORY temp
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, true);
 	/* clear recalc flags */

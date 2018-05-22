@@ -59,6 +59,8 @@ static PyStructSequence_Field app_cb_info_fields[] = {
 	{(char *)"load_post",         (char *)"on loading a new blend file (after)"},
 	{(char *)"save_pre",          (char *)"on saving a blend file (before)"},
 	{(char *)"save_post",         (char *)"on saving a blend file (after)"},
+	{(char *)"scene_update_pre",  (char *)"on updating the scenes data (before)"}, //// TODO: temp
+	{(char *)"scene_update_post", (char *)"on updating the scenes data (after)"}, //// TODO: temp
 	{(char *)"version_update",    (char *)"on ending the versioning code"},
 
 	/* sets the permanent tag */
