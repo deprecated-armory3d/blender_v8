@@ -81,7 +81,12 @@
 #include "engines/basic/basic_engine.h"
 #include "engines/workbench/workbench_engine.h"
 #include "engines/external/external_engine.h"
+
+// armory
 #include "engines/armory/armory_engine.h"
+#include "engines/armory/Krom.h"
+#include "BKE_main.h"
+// armory
 
 #include "../../../intern/gawain/gawain/gwn_context.h"
 
@@ -880,10 +885,15 @@ static void drw_engines_draw_background(void)
 	}
 }
 
+bool hasArmory = false; // armory
+bool hadArmory = false; // armory
 static void drw_engines_draw_scene(void)
 {
 	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
 		DrawEngineType *engine = link->data;
+
+		if (hasArmory && strcmp(engine->idname, "Armory") != 0) continue; // armory
+
 		ViewportEngineData *data = drw_viewport_engine_data_ensure(engine);
 		PROFILE_START(stime);
 
@@ -1303,7 +1313,28 @@ void DRW_draw_render_loop_ex(
 	/* Start Drawing */
 	DRW_state_reset();
 
-	drw_engines_draw_background();
+	// armory
+	hadArmory = hasArmory;
+	hasArmory = false;
+	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
+		DrawEngineType *engine = link->data;
+		if (strcmp(engine->idname, "Armory") == 0) {
+			hasArmory = true;
+			break;
+		}
+	}
+	if (!hadArmory && hasArmory && DST.draw_ctx.evil_C) {
+		const DRWContextState *draw_ctx = DRW_context_state_get();
+		const bContext *C = DST.draw_ctx.evil_C;
+		ARegion *ar = DST.draw_ctx.ar;
+		int w = ar->winrct.xmax - ar->winrct.xmin;
+		int h = ar->winrct.ymax - ar->winrct.ymin;
+		Main *main = CTX_data_main(C);
+		armoryBegin(main->name, w, h);
+	}
+	if (hadArmory && !hasArmory) armoryEnd();
+	if (!hasArmory) drw_engines_draw_background();
+	// armory
 
 	/* WIP, single image drawn over the camera view (replace) */
 	bool do_bg_image = false;
@@ -1338,7 +1369,7 @@ void DRW_draw_render_loop_ex(
 
 	drw_engines_draw_text();
 
-	if (DST.draw_ctx.evil_C) {
+	if (!hasArmory && DST.draw_ctx.evil_C) { // armory
 		/* needed so manipulator isn't obscured */
 		glDisable(GL_DEPTH_TEST);
 		DRW_draw_manipulator_3d();
