@@ -25,30 +25,14 @@
      extern "C" {
 #endif
 
-    // void armoryNew(void);
-    // void armoryShow(const char* name, int x, int y, int w, int h);
-    // void armoryExit(void);
-    void armoryDraw(const char* name, int x, int y, int w, int h);
-    // void armoryFree(void);
-    // bool armoryStarted(void);
-    // void armoryUpdatePosition(int x, int y, int w, int h);
-    
-    // void armoryMouseMove(int x, int y);
-    // void armoryMousePress(int button, int x, int y);
-    // void armoryMouseRelease(int button, int x, int y);
-    // void armoryKeyDown(int code);
-    // void armoryKeyUp(int code);
-
-    // void armoryCallJS();
-    // void armoryParseCode();
-
-    // void filesLocationChanged();
-    // extern char armory_url[512]; // Passed from Python
-    // extern char armory_jssource[512];
-    // extern char armory_console[512];
-	// extern int armory_console_updated;
-    // extern char armory_operator[512];
-    // extern int armory_operator_updated;
+    void armoryBegin(const char* name, int w, int h);
+    void armoryEnd();
+    void armoryDraw();
+    void armoryMouseMove(int x, int y);
+    void armoryMousePress(int button, int x, int y);
+    void armoryMouseRelease(int button, int x, int y);
+    void armoryKeyDown(int code);
+    void armoryKeyUp(int code);
 
 #ifdef __cplusplus
     }

@@ -2909,31 +2909,22 @@ extern "C" void filechanged(char* path) {
 // 	return 0;
 // }
 
-// char armory_url[512];
-// char armory_jssource[512];
-// char armory_console[512];
-// int armory_console_updated;
-// char armory_operator[512];
-// int armory_operator_updated;
+// int kore(int argc, char** argv) { return 0; }
 
-// void armoryNew() {
-
-// }
-
-bool armory_started = false;
 bool first = true;
 bool good = false;
+const char *lastName;
+int lastW;
+int lastH;
 
-// void filesLocationChanged() {
-	// good = false;
-	// Kore::setFilesLocation(armory_url);
-// }
+void armoryBegin(const char* name, int w, int h) {
+	lastName = name;
+	lastW = w;
+	lastH = h;
+	good = false;
+}
 
-// int kore(int argc, char** argv) { return 0; }
-// int kore(int argc, char** argv) {
-
-void armoryShow(const char* name, int x, int y, int w, int h) {
-
+void armoryLoad(const char* name, int w, int h) {
 #ifdef KORE_LINUX
 	const char *path = NULL;
 	path = br_find_exe_dir(NULL);
@@ -2954,32 +2945,36 @@ void armoryShow(const char* name, int x, int y, int w, int h) {
 
 	std::string s1(name);
 	std::string s2 = s1.substr(0, s1.find_last_of("\\/"));
-	char armory_url[512];
-	strcpy(armory_url, s2.c_str());
+	std::string s3 = s1.substr(s1.find_last_of("\\/") + 1);
+	s3 = s3.substr(0, s3.length() - 6); // Strip .blend
+	char blend_basename[512];
+	char krom_dir[512];
+	strcpy(krom_dir, s2.c_str());
+	strcpy(blend_basename, s3.c_str());
+
+	strcat(krom_dir, "/build_");
+	strcat(krom_dir, blend_basename);
+	strcat(krom_dir, "/krom");
 
 	// Check for krom.js
-	char armpath[512];
-	strcpy(armpath, armory_url);
-	strcat(armpath, "krom.js");
-	std::ifstream f(armpath);
+	char krom_file[512];
+	strcpy(krom_file, krom_dir);
+	strcat(krom_file, "/krom.js");
+	std::ifstream f(krom_file);
 	if (!f.good()) {
 		good = false;
 		return;
 	}
-	good = true;
 
 	if (first) {
 		first = false;
-		// kromjs = assetsdir + "/krom.js";
-		kromjs = armpath;
+		kromjs = krom_file;
 		Kore::System::setName("Krom");
 		Kore::System::setup();
 		Kore::WindowOptions options;
 		Kore::System::initWindow(options);
 		Kore::Random::init(Kore::System::time() * 1000);
-
-		Kore::System::setCallback(update);
-		
+		// Kore::System::setCallback(update);
 		Kore::Keyboard::the()->KeyDown = keyDown;
 		Kore::Keyboard::the()->KeyUp = keyUp;
         Kore::Keyboard::the()->KeyPress = keyPress;
@@ -2995,7 +2990,6 @@ void armoryShow(const char* name, int x, int y, int w, int h) {
 		Kore::Gamepad::get(2)->Button = gamepad3Button;
 		Kore::Gamepad::get(3)->Axis = gamepad4Axis;
 		Kore::Gamepad::get(3)->Button = gamepad4Button;
-		// startV8();
 		startV8("./");
 	}
 	else {
@@ -3005,7 +2999,7 @@ void armoryShow(const char* name, int x, int y, int w, int h) {
 	Kore::System::setWindowWidth(0, w);
 	Kore::System::setWindowHeight(0, h);
 
-	Kore::setFilesLocation(armory_url);
+	Kore::setFilesLocation(krom_dir);
 	Kore::FileReader reader;
 	reader.open("krom.js");
 	char* code = new char[reader.size() + 1];
@@ -3016,95 +3010,68 @@ void armoryShow(const char* name, int x, int y, int w, int h) {
 	// parseCode();
 	// Kore::threadsInit();
 	// startDebugger(isolate);
-
 	startKrom(code);
 	// Kore::System::start();
-
-	armory_started = true;
+	good = true;
 }
 
-// void armoryExit() {
-	// if (!good) return;
-	// armory_started = false;
-	// startKrom("iron.Data.deleteAll();");
-// }
-
-void armoryDraw(const char* name, int x, int y, int w, int h) {
-	if (!armory_started) armoryShow(name, x, y, w, h);
+void armoryEnd() {
 	if (!good) return;
-	update();
-
-	// int flags = 0;
-	// flags |= 1; // Color
-	// flags |= 2; // Depth
-	// Kore::Graphics4::clear(flags, 0xffff0000, 1.0, 0.0);
-
-	//Kore::System::callback();
-	//Kore::System::handleMessages();
+	good = false;
+	startKrom("armory.Data.deleteAll();");
 }
 
-// bool armoryStarted() {
-	// return armory_started;
-// }
-
-// void armoryUpdatePosition(int x, int y, int w, int h) {
-	// if (!good) return;
-	// Kore::System::setWindowWidth(0, w);
-	// Kore::System::setWindowHeight(0, h);
-// }
+void armoryDraw() {
+	if (!good) {
+		int flags = 0;
+		flags |= 1; // Color
+		flags |= 2; // Depth
+		Kore::Graphics4::clear(flags, 0xff333333, 1.0, 0.0);
+		armoryLoad(lastName, lastW, lastH);
+	}
+	update();
+}
 
 // void armoryFree() {
 	// endV8();
 // }
 
-// void armoryCallJS() {
-	// if (!good) return;
-	// startKrom(armory_jssource);
-// }
+void armoryMouseMove(int x, int y) {
+	if (!good) return;
+	Kore::Mouse::the()->_move(0, x, y);
+}
 
-// void armoryParseCode() {
-	// codechanged = true;
-	// parseCode();
-// }
+void armoryMousePress(int button, int x, int y) {
+	if (!good) return;
+	Kore::Mouse::the()->_press(0, button, x, y);
+}
 
-// void armoryMouseMove(int x, int y) {
-// 	if (!good) return;
-// 	Kore::Mouse::the()->_move(0, x, y);
-// }
+void armoryMouseRelease(int button, int x, int y) {
+	if (!good) return;
+	Kore::Mouse::the()->_release(0, button, x, y);
+}
 
-// void armoryMousePress(int button, int x, int y) {
-// 	if (!good) return;
-// 	// window, button
-// 	Kore::Mouse::the()->_press(0, button, x, y);
-// }
+Kore::KeyCode keyCode(int code) {
+	switch (code) {
+	case 137: return Kore::KeyLeft;
+	case 138: return Kore::KeyDown;
+	case 139: return Kore::KeyRight;
+	case 140: return Kore::KeyUp;
+	case 217: return Kore::KeyShift;
+	case 218: return Kore::KeyEscape;
+	default: return (Kore::KeyCode)code;
+	}
+}
 
-// void armoryMouseRelease(int button, int x, int y) {
-// 	if (!good) return;
-// 	Kore::Mouse::the()->_release(0, button, x, y);
-// }
+void armoryKeyDown(int code) {
+	if (!good) return;
+	Kore::Keyboard::the()->_keydown(keyCode(code));
+}
 
-
-// Kore::KeyCode keyCode(int code) {
-// 	switch (code) {
-// 	case 137: return Kore::KeyLeft;
-// 	case 138: return Kore::KeyDown;
-// 	case 139: return Kore::KeyRight;
-// 	case 140: return Kore::KeyUp;
-// 	case 217: return Kore::KeyShift;
-// 	case 218: return Kore::KeyEscape;
-// 	default: return (Kore::KeyCode)code;
-// 	}
-// }
-
-// void armoryKeyDown(int code) {
-// 	if (!good) return;
-// 	Kore::Keyboard::the()->_keydown(keyCode(code));
-// }
-
-// void armoryKeyUp(int code) {
-// 	if (!good) return;
-// 	Kore::Keyboard::the()->_keyup(keyCode(code));
-// }
+void armoryKeyUp(int code) {
+	if (!good) return;
+	Kore::Keyboard::the()->_keyup(keyCode(code));
+}
 
 // LEFTARROWKEY    = 0x0089,  /* 137 */
 // DOWNARROWKEY    = 0x008a,  /* 138 */
