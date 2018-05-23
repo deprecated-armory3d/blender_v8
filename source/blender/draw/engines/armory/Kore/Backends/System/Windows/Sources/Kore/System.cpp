@@ -1020,9 +1020,9 @@ namespace {
 }
 
 int createWindow(const wchar_t* title, int x, int y, int width, int height, WindowMode windowMode, int targetDisplay) {
-	/*++windowCounter;
+	++windowCounter;
 
-	HINSTANCE inst = GetModuleHandle(nullptr);
+	/*HINSTANCE inst = GetModuleHandle(nullptr);
 #ifdef KORE_OCULUS
 	::registerWindowClass(inst, windowClassName);
 	//::windows[0] = new W32KoreWindow((HWND)VrInterface::Init(inst));
@@ -1364,9 +1364,10 @@ Kore::System::ticks Kore::System::timestamp() {
 }
 
 double Kore::System::time() {
-	LARGE_INTEGER stamp;
-	QueryPerformanceCounter(&stamp);
-	return double(stamp.QuadPart - startCount.QuadPart) / (double)::frequency.QuadPart;
+	return GetTickCount() / 1000.0;
+	// LARGE_INTEGER stamp;
+	// QueryPerformanceCounter(&stamp);
+	// return double(stamp.QuadPart - startCount.QuadPart) / (double)::frequency.QuadPart;
 }
 
 // int WINAPI WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR lpCmdLine, int /*nCmdShow*/) {
