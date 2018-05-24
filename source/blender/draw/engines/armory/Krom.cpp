@@ -3029,10 +3029,10 @@ void armoryEnd() {
 
 void armoryDraw() {
 	if (!good) {
-		int flags = 0;
-		flags |= 1; // Color
-		flags |= 2; // Depth
-		Kore::Graphics4::clear(flags, 0xff333333, 1.0, 0.0);
+		// int flags = 0;
+		// flags |= 1; // Color
+		// flags |= 2; // Depth
+		// Kore::Graphics4::clear(flags, 0xff333333, 1.0, 0.0);
 		armoryLoad(lastName, lastW, lastH);
 		return;
 	}
