@@ -887,6 +887,7 @@ static void drw_engines_draw_background(void)
 
 bool hasArmory = false; // armory
 bool hadArmory = false; // armory
+ListBase ar_handlers; // armory
 static void drw_engines_draw_scene(void)
 {
 	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
@@ -1330,9 +1331,18 @@ void DRW_draw_render_loop_ex(
 		int w = ar->winrct.xmax - ar->winrct.xmin;
 		int h = ar->winrct.ymax - ar->winrct.ymin;
 		Main *main = CTX_data_main(C);
+		ar_handlers = ar->handlers; // Keep only game input in the area
+		ListBase lb = {NULL, NULL};
+		ar->handlers = lb;
 		armoryBegin(main->name, w, h);
 	}
-	if (hadArmory && !hasArmory) armoryEnd();
+	if (hadArmory && !hasArmory) {
+		const DRWContextState *draw_ctx = DRW_context_state_get();
+		const bContext *C = DST.draw_ctx.evil_C;
+		ARegion *ar = DST.draw_ctx.ar;
+		ar->handlers = ar_handlers; // Restore handlers
+		armoryEnd();
+	}
 	if (!hasArmory) drw_engines_draw_background();
 	// armory
 

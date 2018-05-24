@@ -2241,7 +2241,7 @@ static void rna_def_space_view3d_shading(BlenderRNA *brna)
 	RNA_def_struct_path_func(srna, "rna_View3DShading_path");
 	RNA_def_struct_ui_text(srna, "3D View Shading Settings", "Settings for shading in the 3D viewport");
 
-	prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_EDITABLE); /* TODO: armory PROP_NONE */
+	prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "drawtype");
 	RNA_def_property_enum_items(prop, rna_enum_shading_type_items);
 	RNA_def_property_enum_funcs(prop, "rna_3DViewShading_type_get", "rna_3DViewShading_type_set",
