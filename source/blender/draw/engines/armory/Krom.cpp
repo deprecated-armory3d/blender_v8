@@ -2958,13 +2958,18 @@ void armoryLoad(const char* name, int w, int h) {
 
 	// Check for krom.js
 	char krom_file[512];
+	char krom_lock[512];
 	strcpy(krom_file, krom_dir);
 	strcat(krom_file, "/krom.js");
-	std::ifstream f(krom_file);
+	strcpy(krom_lock, krom_dir);
+	strcat(krom_lock, "/krom.lock");
+	std::ifstream f(krom_lock);
 	if (!f.good()) {
 		good = false;
 		return;
 	}
+	f.close();
+	remove(krom_lock);
 
 	if (first) {
 		first = false;
@@ -3019,6 +3024,7 @@ void armoryEnd() {
 	if (!good) return;
 	good = false;
 	startKrom("armory.Data.deleteAll();");
+	// endV8();
 }
 
 void armoryDraw() {
@@ -3028,13 +3034,10 @@ void armoryDraw() {
 		flags |= 2; // Depth
 		Kore::Graphics4::clear(flags, 0xff333333, 1.0, 0.0);
 		armoryLoad(lastName, lastW, lastH);
+		return;
 	}
 	update();
 }
-
-// void armoryFree() {
-	// endV8();
-// }
 
 void armoryMouseMove(int x, int y) {
 	if (!good) return;
