@@ -234,6 +234,19 @@ static void armory_draw_scene(void *vedata)
 	}
 
 	armoryDraw();
+
+	// Cursor hide
+	if (armoryIsMouseLocked()) {
+		wmWindow *win = CTX_wm_window(C);
+		WM_cursor_set(win, CURSOR_NONE);
+	}
+	else{
+		wmWindow *win = CTX_wm_window(C);
+		WM_cursor_set(win, CURSOR_STD);
+	}
+
+	// Draw constantly
+	ar->do_draw = -1;
 }
 
 static void armory_engine_free(void)

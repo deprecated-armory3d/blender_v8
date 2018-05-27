@@ -76,6 +76,8 @@ const char* macgetresourcepath();
 #include <direct.h> //
 #endif //
 
+char krom_dir[512]; //
+
 Global<Context> globalContext;
 Isolate* isolate;
 
@@ -88,8 +90,7 @@ namespace {
 	char** _argv;
 	bool debugMode = false;
 	bool watch = false;
-	// bool nosound = false;
-	bool nosound = true;
+	bool nosound = false;
 	bool nowindow = false;
 
 	Platform* plat;
@@ -957,7 +958,7 @@ namespace {
 		HandleScope scope(args.GetIsolate());
 		String::Utf8Value utf8_value(args[0]);
 
-		Kore::log(Kore::Info, "Load Sound %s", *utf8_value);
+		// Kore::log(Kore::Info, "Load Sound %s", *utf8_value);
 
 		Kore::Sound* sound = new Kore::Sound(*utf8_value);
 		Local<ArrayBuffer> buffer;
@@ -2948,7 +2949,6 @@ void armoryLoad(const char* name, int w, int h) {
 	std::string s3 = s1.substr(s1.find_last_of("\\/") + 1);
 	s3 = s3.substr(0, s3.length() - 6); // Strip .blend
 	char blend_basename[512];
-	char krom_dir[512];
 	strcpy(krom_dir, s2.c_str());
 	strcpy(blend_basename, s3.c_str());
 
@@ -2980,6 +2980,12 @@ void armoryLoad(const char* name, int w, int h) {
 		Kore::System::initWindow(options);
 		Kore::Random::init(Kore::System::time() * 1000);
 		// Kore::System::setCallback(update);
+		mutex.create();
+		if (!nosound) {
+			Kore::Audio2::audioCallback = mix;
+			Kore::Audio2::init();
+			initAudioBuffer();
+		}
 		Kore::Keyboard::the()->KeyDown = keyDown;
 		Kore::Keyboard::the()->KeyUp = keyUp;
         Kore::Keyboard::the()->KeyPress = keyPress;
@@ -3074,6 +3080,10 @@ void armoryKeyDown(int code) {
 void armoryKeyUp(int code) {
 	if (!good) return;
 	Kore::Keyboard::the()->_keyup(keyCode(code));
+}
+
+bool armoryIsMouseLocked() {
+	return Kore::Mouse::the()->isLocked(0);
 }
 
 // LEFTARROWKEY    = 0x0089,  /* 137 */

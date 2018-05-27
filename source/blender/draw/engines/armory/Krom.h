@@ -33,6 +33,7 @@
     void armoryMouseRelease(int button, int x, int y);
     void armoryKeyDown(int code);
     void armoryKeyUp(int code);
+    bool armoryIsMouseLocked();
 
 #ifdef __cplusplus
     }
