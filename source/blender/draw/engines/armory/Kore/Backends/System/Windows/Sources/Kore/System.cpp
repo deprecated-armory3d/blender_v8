@@ -1130,7 +1130,7 @@ int createWindow(const wchar_t* title, int x, int y, int width, int height, Wind
 #//endif /*#else // #ifdef KORE_OCULUS  */
 
 	//windows[windowCounter] = new KoreWindow(hwnd, dstx, dsty, width, height);
-	windows[windowCounter] = new KoreWindow(NULL, 0, 0, width, height);
+	windows[windowCounter] = new KoreWindow(GetActiveWindow(), 0, 0, width, height);
 	return windowCounter;
 }
 
@@ -1220,7 +1220,7 @@ int Kore::System::initWindow(WindowOptions options) {
 
 void Kore::System::changeResolution(int width, int height, bool fullscreen) {
 
-#pragma message("TODO (DK) implement changeResolution(w,h,fs) for d3d")
+// #pragma message("TODO (DK) implement changeResolution(w,h,fs) for d3d")
 
 #if !defined(KORE_OPENGL) && !defined(KORE_VULKAN)
 /*Application::the()->setWidth(width);

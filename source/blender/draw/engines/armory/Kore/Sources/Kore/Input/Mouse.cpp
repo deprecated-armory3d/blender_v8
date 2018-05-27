@@ -21,6 +21,11 @@ void Mouse::_move(int windowId, int x, int y) {
 	int movementX = 0;
 	int movementY = 0;
 	if (isLocked(windowId)) {
+
+		// armory patch
+		getPosition(windowId, x, y);
+		// armory patch
+
 		movementX = x - centerX;
 		movementY = y - centerY;
 		if (movementX != 0 || movementY != 0) {
