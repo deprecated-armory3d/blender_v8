@@ -357,11 +357,11 @@ namespace Kore {
 		}
 
 		void setWindowWidth(int id, int w) {
-			windows[id]->width = w;
+			windowimpl::windows[id]->width = w;
 		}
 
 		void setWindowHeight(int id, int h) {
-			windows[id]->height = h;
+			windowimpl::windows[id]->height = h;
 		}
 
 		void* windowHandle(int id) {
@@ -849,11 +849,11 @@ Kore::System::ticks Kore::System::timestamp() {
 	return static_cast<ticks>(now.tv_sec) * 1000000 + static_cast<ticks>(now.tv_usec);
 }
 
-extern
-#ifdef KOREC
-"C"
-#endif
-int kore(int argc, char** argv);
+// extern
+// #ifdef KOREC
+// "C"
+// #endif
+// int kore(int argc, char** argv);
 
 // int main(int argc, char** argv) {
 	// Kore::initHIDGamepads();

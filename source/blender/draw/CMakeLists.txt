@@ -637,6 +637,45 @@ endif()
 
 
 if(UNIX AND NOT APPLE)
+
+list(APPEND INC
+	./engines/armory/Kore/Backends/System/Linux/Sources
+	./engines/armory/Kore/Backends/System/POSIX/Sources
+)
+
+list(APPEND SRC
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/pch.h
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Display.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Display.h
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Display_Xinerama.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Display_XRandr.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Sound.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/System.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Video.h
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/VideoSoundStream.h
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Input/Gamepad.cpp
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Input/Gamepad.h
+	engines/armory/Kore/Backends/System/Linux/Sources/Kore/Input/Mouse.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Event.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/EventImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Mutex.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/MutexImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/pch.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Semaphore.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/SemaphoreImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Thread.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/ThreadLocal.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/ThreadLocalImpl.h
+)
+
+list(APPEND INC_SYS
+	${BINRELOC_INCLUDE_DIRS}
+)
+add_definitions(-DWITH_BINRELOC)
+
+add_definitions(-DKORE_LINUX)
+add_definitions(-DKORE_POSIX)
+
 endif()
 
 
@@ -680,4 +719,12 @@ target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/sourc
 endif()
 
 if(UNIX AND NOT APPLE)
+
+target_link_libraries(bf_draw asound)
+target_link_libraries(bf_draw dl)
+
+target_link_libraries(bf_draw /home/lubos/Downloads/blender-git/blender/source/blender/draw/engines/armory/V8/Libraries/linux/release/libv8.so)
+target_link_libraries(bf_draw /home/lubos/Downloads/blender-git/blender/source/blender/draw/engines/armory/V8/Libraries/linux/release/libv8_libbase.so)
+target_link_libraries(bf_draw /home/lubos/Downloads/blender-git/blender/source/blender/draw/engines/armory/V8/Libraries/linux/release/libv8_libplatform.so)
+
 endif()
