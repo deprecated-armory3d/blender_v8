@@ -591,6 +591,48 @@ endif()
 
 
 if(APPLE)
+
+list(APPEND INC
+	./engines/armory/Kore/Backends/System/Apple/Sources
+	./engines/armory/Kore/Backends/System/macOS/Sources
+	./engines/armory/Kore/Backends/System/POSIX/Sources
+)
+
+list(APPEND SRC
+	engines/armory/Kore/Backends/System/Apple/Sources/Kore/pch.h
+	engines/armory/Kore/Backends/System/Apple/Sources/Kore/Thread.mm
+	engines/armory/Kore/Backends/System/Apple/Sources/Kore/Video.h
+	engines/armory/Kore/Backends/System/Apple/Sources/Kore/Video.mm
+	engines/armory/Kore/Backends/System/Apple/Sources/Kore/VideoSoundStream.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Audio.cpp
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/BasicOpenGLView.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/BasicOpenGLView.mm
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Display.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Display.mm
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/pch.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/System.cpp
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/System.mm
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/HIDGamepad.cpp
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/HIDGamepad.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/HIDManager.cpp
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/HIDManager.h
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/Mouse.cpp
+	engines/armory/Kore/Backends/System/macOS/Sources/Kore/Input/pch.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Event.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/EventImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Mutex.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/MutexImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/pch.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Semaphore.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/SemaphoreImpl.h
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/Thread.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/ThreadLocal.cpp
+	engines/armory/Kore/Backends/System/POSIX/Sources/Kore/ThreadLocalImpl.h
+)
+
+add_definitions(-DKORE_MACOS)
+add_definitions(-DKORE_POSIX)
+
 endif()
 
 
@@ -614,6 +656,27 @@ target_link_libraries(bf_draw C:/Users/lubos/Downloads/blender-git/blender/sourc
 endif()
 
 if(APPLE)
+#target_link_libraries(bf_draw IOKit)
+#target_link_libraries(bf_draw Cocoa)
+#target_link_libraries(bf_draw AppKit)
+#target_link_libraries(bf_draw CoreAudio)
+#target_link_libraries(bf_draw CoreData)
+#target_link_libraries(bf_draw CoreMedia)
+#target_link_libraries(bf_draw CoreVideo)
+#target_link_libraries(bf_draw AVFoundation)
+#target_link_libraries(bf_draw Foundation)
+
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libicui18n.dylib)
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libicuuc.dylib)
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8_libbase.dylib)
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8_libplatform.dylib)
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8.dylib)
+#target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libc++.tbd)
+
+target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8_libbase.dylib)
+target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8_libplatform.dylib)
+target_link_libraries(bf_draw /Users/lubos/Downloads/blender-build/blender/source/blender/draw/engines/armory/V8/Libraries/macos/release/libv8.dylib)
+
 endif()
 
 if(UNIX AND NOT APPLE)
