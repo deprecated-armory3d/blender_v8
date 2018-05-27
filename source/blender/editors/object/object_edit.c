@@ -112,6 +112,7 @@
 #include "WM_api.h"
 #include "WM_types.h"
 #include "WM_message.h"
+#include "WM_toolsystem.h"
 
 #include "object_intern.h"  // own include
 
@@ -1645,7 +1646,7 @@ static void move_to_collection_menu_create(bContext *UNUSED(C), uiLayout *layout
 	uiItemIntO(layout,
 	           name,
 	           ICON_NONE,
-		       menu->ot->idname,
+	           menu->ot->idname,
 	           "collection_index",
 	           menu->index);
 	uiItemS(layout);

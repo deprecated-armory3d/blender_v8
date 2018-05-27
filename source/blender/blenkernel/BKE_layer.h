@@ -80,6 +80,8 @@ void BKE_view_layer_copy_data(
         struct ViewLayer *view_layer_dst, const struct ViewLayer *view_layer_src,
         const int flag);
 
+void BKE_view_layer_rename(struct Main *bmain, struct Scene *scene, struct ViewLayer *view_layer, const char *name);
+
 struct LayerCollection *BKE_layer_collection_get_active(struct ViewLayer *view_layer);
 bool BKE_layer_collection_activate(struct ViewLayer *view_layer, struct LayerCollection *lc);
 struct LayerCollection *BKE_layer_collection_activate_parent(struct ViewLayer *view_layer, struct LayerCollection *lc);
@@ -95,18 +97,25 @@ void BKE_layer_collection_sync(const struct Scene *scene, struct ViewLayer *view
 
 void BKE_main_collection_sync_remap(const struct Main *bmain);
 
-struct LayerCollection *BKE_layer_collection_first_from_scene_collection(struct ViewLayer *view_layer, const struct Collection *collection);
-bool BKE_view_layer_has_collection(struct ViewLayer *view_layer, const struct Collection *collection);
-bool BKE_scene_has_object(struct Scene *scene, struct Object *ob);
+struct LayerCollection *BKE_layer_collection_first_from_scene_collection(
+        struct ViewLayer *view_layer, const struct Collection *collection);
+bool BKE_view_layer_has_collection(
+        struct ViewLayer *view_layer, const struct Collection *collection);
+bool BKE_scene_has_object(
+        struct Scene *scene, struct Object *ob);
 
-bool BKE_layer_collection_objects_select(struct ViewLayer *view_layer, struct LayerCollection *lc, bool deselect);
+bool BKE_layer_collection_objects_select(
+        struct ViewLayer *view_layer, struct LayerCollection *lc, bool deselect);
 
 /* override */
 
-void BKE_override_view_layer_datablock_add(struct ViewLayer *view_layer, int id_type, const char *data_path, const struct ID *owner_id);
-void BKE_override_view_layer_int_add(struct ViewLayer *view_layer, int id_type, const char *data_path, const int value);
+void BKE_override_view_layer_datablock_add(
+        struct ViewLayer *view_layer, int id_type, const char *data_path, const struct ID *owner_id);
+void BKE_override_view_layer_int_add(
+        struct ViewLayer *view_layer, int id_type, const char *data_path, const int value);
 
-void BKE_override_layer_collection_boolean_add(struct LayerCollection *layer_collection, int id_type, const char *data_path, const bool value);
+void BKE_override_layer_collection_boolean_add(
+        struct LayerCollection *layer_collection, int id_type, const char *data_path, const bool value);
 
 /* evaluation */
 
@@ -129,6 +138,10 @@ void BKE_view_layer_selected_objects_iterator_end(BLI_Iterator *iter);
 void BKE_view_layer_visible_objects_iterator_begin(BLI_Iterator *iter, void *data_in);
 void BKE_view_layer_visible_objects_iterator_next(BLI_Iterator *iter);
 void BKE_view_layer_visible_objects_iterator_end(BLI_Iterator *iter);
+
+void BKE_view_layer_selected_editable_objects_iterator_begin(BLI_Iterator *iter, void *data_in);
+void BKE_view_layer_selected_editable_objects_iterator_next(BLI_Iterator *iter);
+void BKE_view_layer_selected_editable_objects_iterator_end(BLI_Iterator *iter);
 
 struct ObjectsInModeIteratorData {
 	int object_mode;
@@ -159,6 +172,15 @@ void BKE_view_layer_visible_bases_iterator_end(BLI_Iterator *iter);
 	           view_layer, Object *, _instance)
 
 #define FOREACH_SELECTED_OBJECT_END                                           \
+	ITER_END
+
+#define FOREACH_SELECTED_EDITABLE_OBJECT_BEGIN(view_layer, _instance)         \
+	ITER_BEGIN(BKE_view_layer_selected_editable_objects_iterator_begin,       \
+	           BKE_view_layer_selected_editable_objects_iterator_next,        \
+	           BKE_view_layer_selected_editable_objects_iterator_end,         \
+	           view_layer, Object *, _instance)
+
+#define FOREACH_SELECTED_EDITABLE_OBJECT_END                                  \
 	ITER_END
 
 #define FOREACH_VISIBLE_OBJECT_BEGIN(view_layer, _instance)                   \

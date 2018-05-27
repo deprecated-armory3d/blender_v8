@@ -56,6 +56,8 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
+#include "BKE_screen.h"
+#include "BKE_report.h"
 
 #include "ED_screen.h"
 
@@ -76,6 +78,11 @@ struct uiPopover {
 	uiBlock *block;
 	uiLayout *layout;
 	uiBut *but;
+
+	/* Needed for keymap removal. */
+	wmWindow *window;
+	wmKeyMap *keymap;
+	struct wmEventHandler *keymap_handler;
 
 	uiMenuCreateFunc menu_func;
 	void *menu_arg;
@@ -178,10 +185,26 @@ static uiBlock *ui_block_func_POPOVER(bContext *C, uiPopupBlockHandle *handle, v
 	}
 	else {
 		/* Not attached to a button. */
-		int offset[2] = {0, 0};  /* Dummy. */
+		int offset[2] = {0, 0};
 		UI_block_flag_enable(block, UI_BLOCK_LOOP);
 		UI_block_direction_set(block, block->direction);
 		block->minbounds = UI_MENU_WIDTH_MIN;
+		bool use_place_under_active = !handle->refresh;
+
+		if (use_place_under_active) {
+			uiBut *but = NULL;
+			for (but = block->buttons.first; but; but = but->next) {
+				if (but->flag & (UI_SELECT | UI_SELECT_DRAW)) {
+					break;
+				}
+			}
+
+			if (but) {
+				offset[0] = -(but->rect.xmin + 0.8f * BLI_rctf_size_x(&but->rect));
+				offset[1] = -(but->rect.ymin + 0.5f * BLI_rctf_size_y(&but->rect));
+			}
+		}
+
 		UI_block_bounds_set_popup(block, block_margin, offset[0], offset[1]);
 	}
 
@@ -191,6 +214,10 @@ static uiBlock *ui_block_func_POPOVER(bContext *C, uiPopupBlockHandle *handle, v
 static void ui_block_free_func_POPOVER(uiPopupBlockHandle *UNUSED(handle), void *arg_pup)
 {
 	uiPopover *pup = arg_pup;
+	if (pup->keymap != NULL) {
+		wmWindow *window = pup->window;
+		WM_event_remove_keymap_handler(&window->modalhandlers, pup->keymap);
+	}
 	MEM_freeN(pup);
 }
 
@@ -229,6 +256,44 @@ uiPopupBlockHandle *ui_popover_panel_create(
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Standard Popover Panels
+ * \{ */
+
+int UI_popover_panel_invoke(
+        bContext *C, int space_id, int region_id, const char *idname,
+        bool keep_open, ReportList *reports)
+{
+	uiLayout *layout;
+	PanelType *pt = UI_paneltype_find(space_id, region_id, idname);
+	if (pt == NULL) {
+		BKE_reportf(
+		        reports, RPT_ERROR,
+		        "Panel \"%s\" not found (space %d, region %d)",
+		        idname, space_id, region_id);
+		return OPERATOR_CANCELLED;
+	}
+
+	if (pt->poll && (pt->poll(C, pt) == false)) {
+		/* cancel but allow event to pass through, just like operators do */
+		return (OPERATOR_CANCELLED | OPERATOR_PASS_THROUGH);
+	}
+
+	if (keep_open) {
+		ui_popover_panel_create(C, NULL, NULL, ui_item_paneltype_func, pt);
+	}
+	else {
+		uiPopover *pup = UI_popover_begin(C);
+		layout = UI_popover_layout(pup);
+		UI_paneltype_draw(C, pt, layout);
+		UI_popover_end(C, pup, NULL);
+	}
+
+	return OPERATOR_INTERFACE;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Popup Menu API with begin & end
  * \{ */
 
@@ -248,26 +313,51 @@ uiPopover *UI_popover_begin(bContext *C)
 	return pup;
 }
 
-/* set the whole structure to work */
-void UI_popover_end(bContext *C, uiPopover *pup)
+static void popover_keymap_fn(wmKeyMap *UNUSED(keymap), wmKeyMapItem *UNUSED(kmi), void *user_data)
 {
+	uiPopover *pup = user_data;
+	pup->block->handle->menuretval = UI_RETURN_OK;
+}
+
+/* set the whole structure to work */
+void UI_popover_end(bContext *C, uiPopover *pup, wmKeyMap *keymap)
+{
+	wmWindow *window = CTX_wm_window(C);
 	/* Create popup block. No refresh support since the buttons were created
 	 * between begin/end and we have no callback to recreate them. */
 	uiPopupBlockHandle *handle;
+
+	if (keymap) {
+		/* Add so we get keymaps shown in the buttons. */
+		UI_block_flag_enable(pup->block, UI_BLOCK_SHOW_SHORTCUT_ALWAYS);
+		pup->keymap = keymap;
+		pup->keymap_handler = WM_event_add_keymap_handler_priority(&window->modalhandlers, keymap, 0);
+		WM_event_set_keymap_handler_callback(pup->keymap_handler, popover_keymap_fn, pup);
+	}
 
 	handle = ui_popup_block_create(C, NULL, NULL, NULL, ui_block_func_POPOVER, pup);
 	handle->popup_create_vars.free_func = ui_block_free_func_POPOVER;
 
 	/* Add handlers. */
-	wmWindow *window = CTX_wm_window(C);
 	UI_popup_handlers_add(C, &window->modalhandlers, handle, 0);
 	WM_event_add_mousemove(C);
 	handle->popup = true;
+
+	/* Re-add so it gets priority. */
+	if (keymap) {
+		BLI_remlink(&window->modalhandlers, pup->keymap_handler);
+		BLI_addhead(&window->modalhandlers, pup->keymap_handler);
+	}
+
+	pup->window = window;
 
 	/* TODO(campbell): we may want to make this configurable.
 	 * The begin/end stype of calling popups doesn't allow to 'can_refresh' to be set.
 	 * For now close this style of popvers when accessed. */
 	UI_block_flag_disable(pup->block, UI_BLOCK_KEEP_OPEN);
+
+	/* panels are created flipped (from event handling pov) */
+	pup->block->flag ^= UI_BLOCK_IS_FLIP;
 }
 
 uiLayout *UI_popover_layout(uiPopover *pup)
@@ -283,7 +373,3 @@ void UI_popover_once_clear(uiPopover *pup)
 #endif
 
 /** \} */
-
-/* We may want to support this in future */
-/* Similar to UI_popup_menu_invoke */
-// int UI_popover_panel_invoke(bContext *C, const char *idname, ReportList *reports);

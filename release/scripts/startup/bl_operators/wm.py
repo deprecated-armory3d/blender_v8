@@ -2361,19 +2361,30 @@ class WM_OT_toolbar(Operator):
     bl_label = "Toolbar"
 
     def execute(self, context):
+        from bl_ui.space_toolsystem_common import (
+            ToolSelectPanelHelper,
+            keymap_from_context,
+        )
         space_type = context.space_data.type
-        from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
+
         cls = ToolSelectPanelHelper._tool_class_from_space_type(space_type)
         if cls is None:
-            self.report({'WARNING'}, f"Toolbar not found for {space_type!r}")
+            # self.report({'WARNING'}, f"Toolbar not found for {space_type!r}")
+            # Passthrough to running search directly.
+            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
             return {'CANCELLED'}
 
-        def draw_menu(popover, context):
-            cls.draw_cls(popover.layout, context, detect_layout=False)
-
         wm = context.window_manager
-        # wm.popup_menu(draw_menu) # this also works
-        wm.popover(draw_menu)
+        keymap = keymap_from_context(context, space_type)
+
+        def draw_menu(popover, context):
+            layout = popover.layout
+            cls.draw_cls(layout, context, detect_layout=False)
+
+            layout.operator_context = 'INVOKE_DEFAULT'
+            layout.operator("wm.search_menu")
+
+        wm.popover(draw_menu, keymap=keymap)
         return {'FINISHED'}
 
 

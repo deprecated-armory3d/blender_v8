@@ -224,7 +224,8 @@ static void clay_view_layer_data_free(void *storage)
 
 static CLAY_ViewLayerData *CLAY_view_layer_data_get(void)
 {
-	CLAY_ViewLayerData **sldata = (CLAY_ViewLayerData **)DRW_view_layer_engine_data_ensure(&draw_engine_clay_type, &clay_view_layer_data_free);
+	CLAY_ViewLayerData **sldata = (CLAY_ViewLayerData **)DRW_view_layer_engine_data_ensure(
+	        &draw_engine_clay_type, &clay_view_layer_data_free);
 
 	if (*sldata == NULL) {
 		*sldata = MEM_callocN(sizeof(**sldata), "CLAY_ViewLayerData");
@@ -751,7 +752,8 @@ static DRWShadingGroup *CLAY_object_shgrp_get(CLAY_Data *vedata, Object *ob, boo
 	return shgrps[id];
 }
 
-static DRWShadingGroup *CLAY_hair_shgrp_get(CLAY_Data *UNUSED(vedata), Object *ob, CLAY_StorageList *stl, CLAY_PassList *psl)
+static DRWShadingGroup *CLAY_hair_shgrp_get(
+        CLAY_Data *UNUSED(vedata), Object *ob, CLAY_StorageList *stl, CLAY_PassList *psl)
 {
 	DRWShadingGroup **hair_shgrps = stl->storage->hair_shgrps;
 
@@ -782,13 +784,13 @@ static void clay_cache_init(void *vedata)
 
 	/* Solid Passes */
 	{
-		DRWState state = DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS;
+		DRWState state = DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS_EQUAL;
 		psl->clay_ps =           DRW_pass_create("Clay", state);
 		psl->clay_cull_ps =      DRW_pass_create("Clay Culled", state | DRW_STATE_CULL_BACK);
 		psl->clay_flat_ps =      DRW_pass_create("Clay Flat", state);
 		psl->clay_flat_cull_ps = DRW_pass_create("Clay Flat Culled", state | DRW_STATE_CULL_BACK);
 
-		DRWState prepass_state = DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS;
+		DRWState prepass_state = DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS_EQUAL;
 		DRWState prepass_cull_state = prepass_state | DRW_STATE_CULL_BACK;
 		psl->clay_pre_ps =           DRW_pass_create("Clay Deferred Pre", prepass_state);
 		psl->clay_pre_cull_ps =      DRW_pass_create("Clay Deferred Pre Culled", prepass_cull_state);
@@ -803,8 +805,8 @@ static void clay_cache_init(void *vedata)
 	/* Hair Pass */
 	{
 		psl->hair_pass = DRW_pass_create(
-		                     "Hair Pass",
-		                     DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS | DRW_STATE_WIRE);
+		        "Hair Pass",
+		        DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS_EQUAL | DRW_STATE_WIRE);
 	}
 
 	{

@@ -191,7 +191,7 @@ static void rna_ObjectBase_select_update(Main *UNUSED(bmain), Scene *UNUSED(scen
 static void rna_LayerCollection_use_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr)
 {
 	Scene *scene = (Scene *)ptr->id.data;
-	LayerCollection *lc = (LayerCollection*)ptr->data;
+	LayerCollection *lc = (LayerCollection *)ptr->data;
 	ViewLayer *view_layer = BKE_view_layer_find_from_collection(scene, lc);
 
 	BKE_layer_collection_sync(scene, view_layer);
@@ -305,7 +305,7 @@ void RNA_def_view_layer(BlenderRNA *brna)
 	PropertyRNA *prop;
 
 	srna = RNA_def_struct(brna, "ViewLayer", NULL);
-	RNA_def_struct_ui_text(srna, "Render Layer", "Render layer");
+	RNA_def_struct_ui_text(srna, "View Layer", "View layer");
 	RNA_def_struct_ui_icon(srna, ICON_RENDER_RESULT);
 	RNA_def_struct_path_func(srna, "rna_ViewLayer_path");
 	RNA_def_struct_idprops_func(srna, "rna_ViewLayer_idprops");
