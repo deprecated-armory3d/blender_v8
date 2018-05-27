@@ -222,8 +222,8 @@ const char* System::savePath() {
 #ifdef KOREC
 extern "C"
 #endif
-    void
-    kore(int, char**);
+    // void
+    // kore(int, char**);
 
 @implementation MyApplication
 
@@ -232,7 +232,7 @@ extern "C"
 		[self finishLaunching];
 		hidManager = new HIDManager();
 		// try {
-		kore(argc, argv);
+		// kore(argc, argv);
 		//}
 		// catch (Kt::Exception& ex) {
 		//	printf("Exception caught");
