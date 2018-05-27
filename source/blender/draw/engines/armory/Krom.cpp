@@ -90,7 +90,11 @@ namespace {
 	char** _argv;
 	bool debugMode = false;
 	bool watch = false;
+	#ifdef KORE_MACOS
+	bool nosound = true;
+	#else
 	bool nosound = false;
+	#endif
 	bool nowindow = false;
 
 	Platform* plat;
@@ -2912,7 +2916,7 @@ extern "C" void filechanged(char* path) {
 
 // int kore(int argc, char** argv) { return 0; }
 
-bool first = true;
+bool krom_first = true;
 bool good = false;
 const char *lastName;
 int lastW;
@@ -2971,8 +2975,8 @@ void armoryLoad(const char* name, int w, int h) {
 	f.close();
 	remove(krom_lock);
 
-	if (first) {
-		first = false;
+	if (krom_first) {
+		krom_first = false;
 		kromjs = krom_file;
 		Kore::System::setName("Krom");
 		Kore::System::setup();
@@ -2980,8 +2984,8 @@ void armoryLoad(const char* name, int w, int h) {
 		Kore::System::initWindow(options);
 		Kore::Random::init(Kore::System::time() * 1000);
 		// Kore::System::setCallback(update);
-		mutex.create();
 		if (!nosound) {
+			mutex.create();
 			Kore::Audio2::audioCallback = mix;
 			Kore::Audio2::init();
 			initAudioBuffer();
