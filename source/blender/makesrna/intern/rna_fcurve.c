@@ -481,6 +481,18 @@ static void rna_FCurve_update_data(Main *UNUSED(bmain), Scene *UNUSED(scene), Po
 	rna_FCurve_update_data_ex((FCurve *)ptr->data);
 }
 
+/* RNA update callback for F-Curves to indicate that there are copy-on-write tagging/flushing needed
+ * (e.g. for properties that affect how animation gets evaluated)
+ */
+static void rna_FCurve_update_eval(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
+{
+	IdAdtTemplate *iat = (IdAdtTemplate *)ptr->id.data;
+	if (iat && iat->adt && iat->adt->action) {
+		/* action is separate datablock, needs separate tag */
+		DEG_id_tag_update(&iat->adt->action->id, DEG_TAG_COPY_ON_WRITE);
+	}
+}
+
 
 static PointerRNA rna_FCurve_active_modifier_get(PointerRNA *ptr)
 {
@@ -590,10 +602,22 @@ static void rna_FModifier_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Poin
 	ID *id = ptr->id.data;
 	FModifier *fcm = (FModifier *)ptr->data;
 	AnimData *adt = BKE_animdata_from_id(id);
+	
 	DEG_id_tag_update(id, (GS(id->name) == ID_OB) ? OB_RECALC_OB : OB_RECALC_DATA);
+	
+	/* tag datablock for time update so that animation is recalculated,
+	 * as FModifiers affect how animation plays...
+	 */
+	DEG_id_tag_update(id, DEG_TAG_TIME);
 	if (adt != NULL) {
 		adt->recalc |= ADT_RECALC_ANIM;
+		
+		if (adt->action != NULL) {
+			/* action is separate datablock, needs separate tag */
+			DEG_id_tag_update(&adt->action->id, DEG_TAG_COPY_ON_WRITE);
+		}
 	}
+	
 	if (fcm->curve && fcm->type == FMODIFIER_TYPE_CYCLES) {
 		calchandles_fcurve(fcm->curve);
 	}
@@ -1473,7 +1497,7 @@ static void rna_def_drivertarget(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "id", PROP_POINTER, PROP_NONE);
 	RNA_def_property_struct_type(prop, "ID");
 	RNA_def_property_flag(prop, PROP_EDITABLE);
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_editable_func(prop, "rna_DriverTarget_id_editable");
 	/* note: custom set function is ONLY to avoid rna setting a user for this. */
 	RNA_def_property_pointer_funcs(prop, NULL, "rna_DriverTarget_id_set", "rna_DriverTarget_id_typef", NULL);
@@ -1558,7 +1582,7 @@ static void rna_def_drivervar(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "targets", PROP_COLLECTION, PROP_NONE);
 	RNA_def_property_collection_sdna(prop, NULL, "targets", "num_targets");
 	RNA_def_property_struct_type(prop, "DriverTarget");
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_ui_text(prop, "Targets", "Sources of input data for evaluating this variable");
 	
 	/* Name Validity Flags */
@@ -1635,7 +1659,7 @@ static void rna_def_channeldriver(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "variables", PROP_COLLECTION, PROP_NONE);
 	RNA_def_property_collection_sdna(prop, NULL, "variables", NULL);
 	RNA_def_property_struct_type(prop, "DriverVariable");
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_ui_text(prop, "Variables", "Properties acting as inputs for this driver");
 	rna_def_channeldriver_variables(brna, prop);
 	
@@ -1915,7 +1939,7 @@ static void rna_def_fcurve(BlenderRNA *brna)
 
 	/* Pointers */
 	prop = RNA_def_property(srna, "driver", PROP_POINTER, PROP_NONE);
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 	RNA_def_property_ui_text(prop, "Driver", "Channel Driver (only set for Driver F-Curves)");
 	
@@ -1967,7 +1991,7 @@ static void rna_def_fcurve(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "mute", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", FCURVE_MUTED);
 	RNA_def_property_ui_text(prop, "Muted", "F-Curve is not evaluated");
-	RNA_def_property_update(prop, NC_ANIMATION | ND_ANIMCHAN | NA_EDITED, NULL);
+	RNA_def_property_update(prop, NC_ANIMATION | ND_ANIMCHAN | NA_EDITED, "rna_FCurve_update_eval");
 	
 	prop = RNA_def_property(srna, "hide", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_negative_sdna(prop, NULL, "flag", FCURVE_VISIBLE);

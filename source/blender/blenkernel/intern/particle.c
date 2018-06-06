@@ -3089,6 +3089,9 @@ void object_remove_particle_system(Scene *UNUSED(scene), Object *ob)
 
 	DEG_relations_tag_update(G.main);
 	DEG_id_tag_update(&ob->id, OB_RECALC_DATA);
+	
+	/* Flush object mode. */
+	DEG_id_tag_update(&ob->id, DEG_TAG_COPY_ON_WRITE);
 }
 
 static void default_particle_settings(ParticleSettings *part)
@@ -3169,6 +3172,12 @@ static void default_particle_settings(ParticleSettings *part)
 	part->omat = 1;
 	part->use_modifier_stack = false;
 	part->draw_size = 0.1f;
+
+	part->shape_flag = PART_SHAPE_CLOSE_TIP;
+	part->shape = 0.0f;
+	part->rad_root = 1.0f;
+	part->rad_tip = 0.0f;
+	part->rad_scale = 0.01f;
 }
 
 

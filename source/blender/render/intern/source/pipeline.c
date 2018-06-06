@@ -4,7 +4,7 @@
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version. 
+ * of the License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1678,7 +1678,12 @@ static void do_render_seq(Render *re)
 
 	if (recurs_depth == 0) {
 		/* otherwise sequencer animation isn't updated */
-		BKE_animsys_evaluate_all_animation(re->main, re->scene, (float)cfra); // XXX, was BKE_scene_frame_get(re->scene)
+		/* TODO(sergey): Currently depsgraph is only used to check whether it is an active
+		 * edit window or not to deal with unkeyed changes. We don't have depsgraph here yet,
+		 * but we also dont' deal with unkeyed changes. But still nice to get proper depsgraph
+		 * within tjhe render pipeline, somehow.
+		 */
+		BKE_animsys_evaluate_all_animation(re->main, NULL, re->scene, (float)cfra); // XXX, was BKE_scene_frame_get(re->scene)
 	}
 
 	recurs_depth++;
@@ -1697,8 +1702,13 @@ static void do_render_seq(Render *re)
 	tot_views = BKE_scene_multiview_num_views_get(&re->r);
 	ibuf_arr = MEM_mallocN(sizeof(ImBuf *) * tot_views, "Sequencer Views ImBufs");
 
+	/* TODO(sergey): Currently depsgraph is only used to check whether it is an active
+	 * edit window or not to deal with unkeyed changes. We don't have depsgraph here yet,
+	 * but we also dont' deal with unkeyed changes. But still nice to get proper depsgraph
+	 * within tjhe render pipeline, somehow.
+	 */
 	BKE_sequencer_new_render_data(
-	        re->main, re->scene,
+	        re->main, NULL, re->scene,
 	        re_x, re_y, 100, true,
 	        &context);
 
@@ -2198,7 +2208,7 @@ void RE_BlenderFrame(Render *re, Main *bmain, Scene *scene, ViewLayer *single_la
 			else {
 				char name[FILE_MAX];
 				BKE_image_path_from_imformat(
-				        name, scene->r.pic, bmain->name, scene->r.cfra,
+				        name, scene->r.pic, BKE_main_blendfile_path(bmain), scene->r.cfra,
 				        &scene->r.im_format, (scene->r.scemode & R_EXTENSION) != 0, false, NULL);
 
 				/* reports only used for Movie */
@@ -2457,7 +2467,7 @@ static int do_write_image_or_movie(Render *re, Main *bmain, Scene *scene, bMovie
 			BLI_strncpy(name, name_override, sizeof(name));
 		else
 			BKE_image_path_from_imformat(
-			        name, scene->r.pic, bmain->name, scene->r.cfra,
+			        name, scene->r.pic, BKE_main_blendfile_path(bmain), scene->r.cfra,
 			        &scene->r.im_format, (scene->r.scemode & R_EXTENSION) != 0, true, NULL);
 
 		/* write images as individual images or stereo */
@@ -2614,7 +2624,12 @@ void RE_BlenderAnim(Render *re, Main *bmain, Scene *scene, Object *camera_overri
 			{
 				float ctime = BKE_scene_frame_get(scene);
 				AnimData *adt = BKE_animdata_from_id(&scene->id);
-				BKE_animsys_evaluate_animdata(scene, &scene->id, adt, ctime, ADT_RECALC_ALL);
+				/* TODO(sergey): Currently depsgraph is only used to check whether it is an active
+				 * edit window or not to deal with unkeyed changes. We don't have depsgraph here yet,
+				 * but we also dont' deal with unkeyed changes. But still nice to get proper depsgraph
+				 * within tjhe render pipeline, somehow.
+				 */
+				BKE_animsys_evaluate_animdata(NULL, scene, &scene->id, adt, ctime, ADT_RECALC_ALL);
 			}
 
 			/* only border now, todo: camera lens. (ton) */
@@ -2632,7 +2647,7 @@ void RE_BlenderAnim(Render *re, Main *bmain, Scene *scene, Object *camera_overri
 			if (is_movie == false) {
 				if (scene->r.mode & (R_NO_OVERWRITE | R_TOUCH))
 					BKE_image_path_from_imformat(
-					        name, scene->r.pic, bmain->name, scene->r.cfra,
+					        name, scene->r.pic, BKE_main_blendfile_path(bmain), scene->r.cfra,
 					        &scene->r.im_format, (scene->r.scemode & R_EXTENSION) != 0, true, NULL);
 
 				if (scene->r.mode & R_NO_OVERWRITE) {

@@ -36,8 +36,14 @@ if NOT "%1" == "" (
 	) else if "%1" == "bpy" (
 		set TARGET=Bpy
 		set BUILD_CMAKE_ARGS=%BUILD_CMAKE_ARGS% -C"%BLENDER_DIR%\build_files\cmake\config\bpy_module.cmake"
+	) else if "%1" == "clang" (
+		set BUILD_CMAKE_ARGS=%BUILD_CMAKE_ARGS%
+		set WITH_CLANG=1
 	) else if "%1" == "release" (
+		set BUILD_CMAKE_ARGS=%BUILD_CMAKE_ARGS% -C"%BLENDER_DIR%\build_files\cmake\config\blender_release.cmake"
 		set TARGET=Release
+	) else if "%1" == "asan" (
+		set WITH_ASAN=1
 	) else if "%1" == "x86" (
 		set BUILD_ARCH=x86
 	) else if "%1" == "x64" (
@@ -47,6 +53,10 @@ if NOT "%1" == "" (
 	) else if "%1" == "2017pre" (
 		set BUILD_VS_YEAR=2017
 		set VSWHERE_ARGS=-prerelease
+		set BUILD_VS_YEAR=2017
+	) else if "%1" == "2017b" (
+		set BUILD_VS_YEAR=2017
+		set VSWHERE_ARGS=-products Microsoft.VisualStudio.Product.BuildTools
 	) else if "%1" == "2015" (
 		set BUILD_VS_YEAR=2015
 	) else if "%1" == "2013" (

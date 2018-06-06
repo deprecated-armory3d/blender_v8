@@ -4,7 +4,7 @@
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version. 
+ * of the License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +15,7 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
- * The Original Code is Copyright (C) 2007 Blender Foundation but based 
+ * The Original Code is Copyright (C) 2007 Blender Foundation but based
  * on ghostwinlay.c (C) 2001-2002 by NaN Holding BV
  * All rights reserved.
  *
@@ -85,6 +85,7 @@
 #include "GPU_framebuffer.h"
 #include "GPU_init_exit.h"
 #include "GPU_immediate.h"
+#include "GPU_texture.h"
 #include "BLF_api.h"
 
 #include "UI_resources.h"
@@ -287,6 +288,7 @@ static wmWindow *wm_window_new_test(bContext *C)
 /* part of wm_window.c api */
 wmWindow *wm_window_copy(bContext *C, wmWindow *win_src, const bool duplicate_layout)
 {
+	Main *bmain = CTX_data_main(C);
 	wmWindow *win_dst = wm_window_new(C);
 	WorkSpace *workspace = WM_window_get_active_workspace(win_src);
 	WorkSpaceLayout *layout_old = WM_window_get_active_layout(win_src);
@@ -300,7 +302,7 @@ wmWindow *wm_window_copy(bContext *C, wmWindow *win_src, const bool duplicate_la
 
 	win_dst->scene = scene;
 	WM_window_set_active_workspace(win_dst, workspace);
-	layout_new = duplicate_layout ? ED_workspace_layout_duplicate(workspace, layout_old, win_dst) : layout_old;
+	layout_new = duplicate_layout ? ED_workspace_layout_duplicate(bmain, workspace, layout_old, win_dst) : layout_old;
 	WM_window_set_active_layout(win_dst, workspace, layout_new);
 
 	*win_dst->stereo3d_format = *win_src->stereo3d_format;
@@ -373,6 +375,7 @@ static void wm_block_confirm_quit_save(bContext *C, void *arg_block, void *UNUSE
 /* Build the confirm dialog UI */
 static uiBlock *block_create_confirm_quit(struct bContext *C, struct ARegion *ar, void *UNUSED(arg1))
 {
+	Main *bmain = CTX_data_main(C);
 
 	uiStyle *style = UI_style_get();
 	uiBlock *block = UI_block_begin(C, ar, "confirm_quit_popup", UI_EMBOSS);
@@ -386,11 +389,11 @@ static uiBlock *block_create_confirm_quit(struct bContext *C, struct ARegion *ar
 	/* Text and some vertical space */
 	{
 		char *message;
-		if (G.main->name[0] == '\0') {
+		if (BKE_main_blendfile_path(bmain)[0] == '\0') {
 			message = BLI_strdup(IFACE_("This file has not been saved yet. Save before closing?"));
 		}
 		else {
-			const char *basename = BLI_path_basename(G.main->name);
+			const char *basename = BLI_path_basename(BKE_main_blendfile_path(bmain));
 			message = BLI_sprintfN(IFACE_("Save changes to \"%s\" before closing?"), basename);
 		}
 		uiItemL(layout, message, ICON_ERROR);
@@ -545,9 +548,10 @@ void wm_window_title(wmWindowManager *wm, wmWindow *win)
 	}
 	else if (win->ghostwin) {
 		/* this is set to 1 if you don't have startup.blend open */
-		if (G.save_over && G.main->name[0]) {
-			char str[sizeof(G.main->name) + 24];
-			BLI_snprintf(str, sizeof(str), "Blender%s [%s%s]", wm->file_saved ? "" : "*", G.main->name,
+		if (G.save_over && BKE_main_blendfile_path_from_global()[0]) {
+			char str[sizeof(((Main *)NULL)->name) + 24];
+			BLI_snprintf(str, sizeof(str), "Blender%s [%s%s]", wm->file_saved ? "" : "*",
+			             BKE_main_blendfile_path_from_global(),
 			             G.main->recovered ? " (Recovered)" : "");
 			GHOST_SetTitle(win->ghostwin, str);
 		}
@@ -692,7 +696,6 @@ static void wm_window_ghostwindow_add(wmWindowManager *wm, const char *title, wm
 		//GHOST_SetWindowState(ghostwin, GHOST_kWindowStateModified);
 		
 		/* standard state vars for window */
-		glEnable(GL_SCISSOR_TEST);
 		GPU_state_init();
 	}
 }
@@ -904,7 +907,7 @@ wmWindow *WM_window_open_temp(bContext *C, int x, int y, int sizex, int sizey, i
 	if (screen == NULL) {
 		/* add new screen layout */
 		WorkSpace *workspace = WM_window_get_active_workspace(win);
-		WorkSpaceLayout *layout = ED_workspace_layout_add(workspace, win, "temp");
+		WorkSpaceLayout *layout = ED_workspace_layout_add(bmain, workspace, win, "temp");
 
 		screen = BKE_workspace_layout_screen_get(layout);
 		WM_window_set_active_layout(win, workspace, layout);
@@ -1029,6 +1032,7 @@ static WorkSpaceLayout *wm_window_new_find_layout(wmOperator *op, WorkSpace *wor
 /* new window operator callback */
 int wm_window_new_exec(bContext *C, wmOperator *op)
 {
+	Main *bmain = CTX_data_main(C);
 	wmWindow *win_src = CTX_wm_window(C);
 	WorkSpace *workspace = WM_window_get_active_workspace(win_src);
 	WorkSpaceLayout *layout_new = wm_window_new_find_layout(op, workspace);
@@ -1038,7 +1042,7 @@ int wm_window_new_exec(bContext *C, wmOperator *op)
 	if ((win_dst = wm_window_new_test(C))) {
 		if (screen_new->winid) {
 			/* layout/screen is already used, duplicate it */
-			layout_new = ED_workspace_layout_duplicate(workspace, layout_new, win_dst);
+			layout_new = ED_workspace_layout_duplicate(bmain, workspace, layout_new, win_dst);
 			screen_new = BKE_workspace_layout_screen_get(layout_new);
 		}
 		/* New window with a different screen but same workspace */
@@ -2024,13 +2028,8 @@ void wm_window_raise(wmWindow *win)
 
 void wm_window_swap_buffers(wmWindow *win)
 {
-#ifdef WIN32
-	glDisable(GL_SCISSOR_TEST);
+	GPU_texture_delete_orphans(); /* XXX should be done elsewhere. */
 	GHOST_SwapWindowBuffers(win->ghostwin);
-	glEnable(GL_SCISSOR_TEST);
-#else
-	GHOST_SwapWindowBuffers(win->ghostwin);
-#endif
 }
 
 void wm_window_set_swap_interval (wmWindow *win, int interval)

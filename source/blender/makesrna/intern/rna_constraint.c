@@ -275,9 +275,9 @@ static char *rna_Constraint_path(PointerRNA *ptr)
 	}
 }
 
-static void rna_Constraint_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
+static void rna_Constraint_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr)
 {
-	ED_object_constraint_tag_update(ptr->id.data, ptr->data);
+	ED_object_constraint_tag_update(bmain, ptr->id.data, ptr->data);
 }
 
 static void rna_Constraint_dependency_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr)
@@ -2361,12 +2361,12 @@ void RNA_def_constraint(BlenderRNA *brna)
 	/* flags */
 	prop = RNA_def_property(srna, "mute", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", CONSTRAINT_OFF);
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_ui_text(prop, "Disable", "Enable/Disable Constraint");
 	
 	prop = RNA_def_property(srna, "show_expanded", PROP_BOOLEAN, PROP_NONE);
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", CONSTRAINT_EXPAND);
-	RNA_def_property_flag(prop, PROP_OVERRIDABLE_STATIC);
+	RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_STATIC);
 	RNA_def_property_ui_text(prop, "Expanded", "Constraint's panel is expanded in UI");
 	RNA_def_property_ui_icon(prop, ICON_TRIA_RIGHT, 1);
 

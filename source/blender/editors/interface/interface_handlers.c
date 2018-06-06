@@ -506,7 +506,7 @@ bool ui_but_is_toggle(const uiBut *but)
 	);
 }
 
-#ifdef USE_POPOVER_ONCE
+#ifdef USE_UI_POPOVER_ONCE
 bool ui_but_is_popover_once_compat(const uiBut *but)
 {
 	return (
@@ -1780,21 +1780,18 @@ static bool ui_but_drag_init(
 
 			/* TODO support more button pointer types */
 			if (but->rnaprop && RNA_property_subtype(but->rnaprop) == PROP_COLOR_GAMMA) {
-				RNA_property_float_get_array(&but->rnapoin, but->rnaprop, drag_info->color);
+				ui_but_v3_get(but, drag_info->color);
 				drag_info->gamma_corrected = true;
 				valid = true;
 			}
 			else if (but->rnaprop && RNA_property_subtype(but->rnaprop) == PROP_COLOR) {
-				RNA_property_float_get_array(&but->rnapoin, but->rnaprop, drag_info->color);
+				ui_but_v3_get(but, drag_info->color);
 				drag_info->gamma_corrected = false;
 				valid = true;
 			}
-			else if (but->pointype == UI_BUT_POIN_FLOAT) {
+			else if (ELEM(but->pointype, UI_BUT_POIN_FLOAT, UI_BUT_POIN_CHAR)) {
+				ui_but_v3_get(but, drag_info->color);
 				copy_v3_v3(drag_info->color, (float *)but->poin);
-				valid = true;
-			}
-			else if (but->pointype == UI_BUT_POIN_CHAR) {
-				rgb_uchar_to_float(drag_info->color, (unsigned char *)but->poin);
 				valid = true;
 			}
 
@@ -8365,7 +8362,7 @@ static int ui_handle_button_event(bContext *C, const wmEvent *event, uiBut *but)
 				data->cancel = true;
 				button_activate_state(C, but, BUTTON_STATE_EXIT);
 				break;
-#ifdef USE_POPOVER_ONCE
+#ifdef USE_UI_POPOVER_ONCE
 			case LEFTMOUSE:
 			{
 				if (event->val == KM_RELEASE) {
@@ -9530,7 +9527,7 @@ static int ui_handle_menu_event(
 		retval = ui_handle_menu_button(C, event, menu);
 	}
 
-#ifdef USE_POPOVER_ONCE
+#ifdef USE_UI_POPOVER_ONCE
 	if (block->flag & UI_BLOCK_POPOVER_ONCE) {
 		if ((event->type == LEFTMOUSE) && (event->val == KM_RELEASE)) {
 			UI_popover_once_clear(menu->popup_create_vars.arg);

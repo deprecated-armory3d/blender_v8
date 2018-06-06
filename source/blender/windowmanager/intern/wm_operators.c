@@ -4,7 +4,7 @@
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version. 
+ * of the License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -18,7 +18,7 @@
  * The Original Code is Copyright (C) 2007 Blender Foundation.
  * All rights reserved.
  *
- * 
+ *
  * Contributor(s): Blender Foundation
  *
  * ***** END GPL LICENSE BLOCK *****
@@ -1408,6 +1408,7 @@ void WM_operator_last_properties_ensure(wmOperatorType *ot, PointerRNA *ptr)
  */
 ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short idcode)
 {
+	Main *bmain = CTX_data_main(C);
 	ID *id = NULL;
 	/* check input variables */
 	if (RNA_struct_property_is_set(op->ptr, "filepath")) {
@@ -1435,10 +1436,8 @@ ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short i
 
 		if (is_relative_path ) {
 			if (exists == false) {
-				Main *bmain = CTX_data_main(C);
-
 				if (idcode == ID_IM) {
-					BLI_path_rel(((Image *)id)->name, bmain->name);
+					BLI_path_rel(((Image *)id)->name, BKE_main_blendfile_path(bmain));
 				}
 				else {
 					BLI_assert(0);
@@ -1449,7 +1448,7 @@ ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short i
 	else if (RNA_struct_property_is_set(op->ptr, "name")) {
 		char name[MAX_ID_NAME - 2];
 		RNA_string_get(op->ptr, "name", name);
-		id = BKE_libblock_find_name(idcode, name);
+		id = BKE_libblock_find_name(bmain, idcode, name);
 		if (!id) {
 			BKE_reportf(op->reports, RPT_ERROR, "%s '%s' not found",
 			            BKE_idcode_to_name(idcode), name);
@@ -2247,8 +2246,9 @@ static int wm_call_panel_exec(bContext *C, wmOperator *op)
 	RNA_string_get(op->ptr, "name", idname);
 	const int space_type = RNA_enum_get(op->ptr, "space_type");
 	const int region_type = RNA_enum_get(op->ptr, "region_type");
+	const bool keep_open = RNA_boolean_get(op->ptr, "keep_open");
 
-	return UI_popover_panel_invoke(C, space_type, region_type, idname, true, op->reports);
+	return UI_popover_panel_invoke(C, space_type, region_type, idname, keep_open, op->reports);
 }
 
 static void WM_OT_call_panel(wmOperatorType *ot)
@@ -2262,9 +2262,16 @@ static void WM_OT_call_panel(wmOperatorType *ot)
 
 	ot->flag = OPTYPE_INTERNAL;
 
-	RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the menu");
-	RNA_def_enum(ot->srna, "space_type", rna_enum_space_type_items, SPACE_EMPTY, "Space Type", "");
-	RNA_def_enum(ot->srna, "region_type", rna_enum_region_type_items, RGN_TYPE_WINDOW, "Region Type", "");
+	PropertyRNA *prop;
+
+	prop = RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the menu");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+	prop = RNA_def_enum(ot->srna, "space_type", rna_enum_space_type_items, SPACE_EMPTY, "Space Type", "");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+	prop = RNA_def_enum(ot->srna, "region_type", rna_enum_region_type_items, RGN_TYPE_WINDOW, "Region Type", "");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+	prop = RNA_def_boolean(ot->srna, "keep_open", true, "Keep Open", "");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
 /* ************ window / screen operator definitions ************** */
@@ -3982,9 +3989,7 @@ void wm_window_keymap(wmKeyConfig *keyconf)
 
 	/* menus that can be accessed anywhere in blender */
 
-#if 0  /* Now double-tap via toolbar. */
-	WM_keymap_verify_item(keymap, "WM_OT_search_menu", SPACEKEY, KM_PRESS, 0, 0);
-#endif
+	WM_keymap_verify_item(keymap, "WM_OT_search_menu", TABKEY, KM_PRESS, 0, 0);
 
 #ifdef WITH_INPUT_NDOF
 	WM_keymap_add_menu(keymap, "USERPREF_MT_ndof_settings", NDOF_BUTTON_MENU, KM_PRESS, 0, 0);

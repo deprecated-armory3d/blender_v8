@@ -113,7 +113,6 @@
 const char *RE_engine_id_BLENDER_CLAY = "BLENDER_CLAY";
 const char *RE_engine_id_BLENDER_EEVEE = "BLENDER_EEVEE";
 const char *RE_engine_id_BLENDER_WORKBENCH = "BLENDER_WORKBENCH";
-const char *RE_engine_id_ARMORY = "ARMORY";
 const char *RE_engine_id_CYCLES = "CYCLES";
 
 void free_avicodecdata(AviCodecData *acd)
@@ -943,14 +942,14 @@ void BKE_scene_set_background(Main *bmain, Scene *scene)
 /* called from creator_args.c */
 Scene *BKE_scene_set_name(Main *bmain, const char *name)
 {
-	Scene *sce = (Scene *)BKE_libblock_find_name_ex(bmain, ID_SCE, name);
+	Scene *sce = (Scene *)BKE_libblock_find_name(bmain, ID_SCE, name);
 	if (sce) {
 		BKE_scene_set_background(bmain, sce);
-		printf("Scene switch for render: '%s' in file: '%s'\n", name, bmain->name);
+		printf("Scene switch for render: '%s' in file: '%s'\n", name, BKE_main_blendfile_path(bmain));
 		return sce;
 	}
 
-	printf("Can't find scene: '%s' in file: '%s'\n", name, bmain->name);
+	printf("Can't find scene: '%s' in file: '%s'\n", name, BKE_main_blendfile_path(bmain));
 	return NULL;
 }
 
@@ -1030,7 +1029,7 @@ int BKE_scene_base_iter_next(
 						 * this enters eternal loop because of 
 						 * makeDispListMBall getting called inside of collection_duplilist */
 						if ((*base)->object->dup_group == NULL) {
-							iter->duplilist = object_duplilist_ex(depsgraph, (*scene), (*base)->object, false);
+							iter->duplilist = object_duplilist(depsgraph, (*scene), (*base)->object);
 							
 							iter->dupob = iter->duplilist->first;
 
@@ -1230,7 +1229,7 @@ bool BKE_scene_validate_setscene(Main *bmain, Scene *sce)
 }
 
 /* This function is needed to cope with fractional frames - including two Blender rendering features
- * mblur (motion blur that renders 'subframes' and blurs them together), and fields rendering. 
+ * mblur (motion blur that renders 'subframes' and blurs them together), and fields rendering.
  */
 float BKE_scene_frame_get(const Scene *scene)
 {
@@ -1269,10 +1268,10 @@ void BKE_scene_frame_set(struct Scene *scene, double cfra)
 #define POSE_ANIMATION_WORKAROUND
 
 #ifdef POSE_ANIMATION_WORKAROUND
-static void scene_armature_depsgraph_workaround(Main *bmain)
+static void scene_armature_depsgraph_workaround(Main *bmain, Depsgraph *depsgraph)
 {
 	Object *ob;
-	if (BLI_listbase_is_empty(&bmain->armature) || !DEG_id_type_tagged(bmain, ID_OB)) {
+	if (BLI_listbase_is_empty(&bmain->armature) || !DEG_id_type_updated(depsgraph, ID_OB)) {
 		return;
 	}
 	for (ob = bmain->object.first; ob; ob = ob->id.next) {
@@ -1294,7 +1293,7 @@ static bool check_rendered_viewport_visible(Main *bmain)
 		Scene *scene = window->scene;
 		RenderEngineType *type = RE_engines_find(scene->r.engine);
 
-		if (type->draw_engine || !type->render_to_view) {
+		if (type->draw_engine || !type->render) {
 			continue;
 		}
 
@@ -1354,8 +1353,6 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	Scene *scene = DEG_get_input_scene(depsgraph);
 	ViewLayer *view_layer = DEG_get_input_view_layer(depsgraph);
 
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: armory
-
 	/* TODO(sergey): Some functions here are changing global state,
 	 * for example, clearing update tags from bmain.
 	 */
@@ -1373,13 +1370,10 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	DEG_evaluate_on_refresh(depsgraph);
 	/* Update sound system animation (TODO, move to depsgraph). */
 	BKE_sound_update_scene(bmain, scene);
-
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: armory
-
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, false);
 	/* Clear recalc flags. */
-	DEG_ids_clear_recalc(bmain);
+	DEG_ids_clear_recalc(bmain, depsgraph);
 }
 
 /* applies changes right away, does all sets too */
@@ -1395,7 +1389,6 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	const float ctime = BKE_scene_frame_get(scene);
 	/* Keep this first. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_PRE);
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: armory
 	/* Update animated image textures for particles, modifiers, gpu, etc,
 	 * call this at the start so modifiers with textures don't lag 1 frame.
 	 */
@@ -1406,10 +1399,10 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	 *
 	 * TODO(sergey): Make this a depsgraph node?
 	 */
-	BKE_cachefile_update_frame(bmain, scene, ctime,
+	BKE_cachefile_update_frame(bmain, depsgraph, scene, ctime,
 	                           (((double)scene->r.frs_sec) / (double)scene->r.frs_sec_base));
 #ifdef POSE_ANIMATION_WORKAROUND
-	scene_armature_depsgraph_workaround(bmain);
+	scene_armature_depsgraph_workaround(bmain, depsgraph);
 #endif
 	/* Update all objects: drivers, matrices, displists, etc. flags set
 	 * by depgraph or manual, no layer check here, gets correct flushed.
@@ -1419,11 +1412,10 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	BKE_sound_update_scene(bmain, scene);
 	/* Notify editors and python about recalc. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_POST);
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: armory
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, true);
 	/* clear recalc flags */
-	DEG_ids_clear_recalc(bmain);
+	DEG_ids_clear_recalc(bmain, depsgraph);
 }
 
 /* return default view */

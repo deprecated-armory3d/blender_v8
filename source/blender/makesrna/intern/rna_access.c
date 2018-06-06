@@ -1005,6 +1005,11 @@ int RNA_property_flag(PropertyRNA *prop)
 	return rna_ensure_property(prop)->flag;
 }
 
+int RNA_property_override_flag(PropertyRNA *prop)
+{
+	return rna_ensure_property(prop)->flag_override;
+}
+
 /**
  * Get the tags set for \a prop as int bitfield.
  * \note Doesn't perform any validity check on the set bits. #RNA_def_property_tags does this
@@ -1976,11 +1981,11 @@ bool RNA_property_overridable_get(PointerRNA *ptr, PropertyRNA *prop)
 			}
 		}
 		/* If this is a RNA-defined property (real or 'virtual' IDProp), we want to use RNA prop flag. */
-		return !(prop->flag & PROP_NO_COMPARISON) && (prop->flag & PROP_OVERRIDABLE_STATIC);
+		return !(prop->flag_override & PROPOVERRIDE_NO_COMPARISON) && (prop->flag_override & PROPOVERRIDE_OVERRIDABLE_STATIC);
 	}
 	else {
 		/* If this is a real 'pure' IDProp (aka custom property), we want to use the IDProp flag. */
-		return !(prop->flag & PROP_NO_COMPARISON) && (((IDProperty *)prop)->flag & IDP_FLAG_OVERRIDABLE_STATIC);
+		return !(prop->flag_override & PROPOVERRIDE_NO_COMPARISON) && (((IDProperty *)prop)->flag & IDP_FLAG_OVERRIDABLE_STATIC);
 	}
 }
 
@@ -2016,7 +2021,7 @@ bool RNA_property_comparable(PointerRNA *UNUSED(ptr), PropertyRNA *prop)
 {
 	prop = rna_ensure_property(prop);
 
-	return !(prop->flag & PROP_NO_COMPARISON);
+	return !(prop->flag_override & PROPOVERRIDE_NO_COMPARISON);
 }
 
 /* this function is to check if its possible to create a valid path from the ID
@@ -2064,10 +2069,15 @@ static void rna_property_update(bContext *C, Main *bmain, Scene *scene, PointerR
 			else
 				prop->update(bmain, scene, ptr);
 		}
-#if 0
-		if (prop->noteflag)
+
+#if 1
+		/* TODO(campbell): Should eventually be replaced entirely by message bus (below)
+		 * for now keep since COW, bugs are hard to track when we have other missing updates. */
+		if (prop->noteflag) {
 			WM_main_add_notifier(prop->noteflag, ptr->id.data);
-#else
+		}
+#endif
+
 		/* if C is NULL, we're updating from animation.
 		 * avoid slow-down from f-curves by not publishing (for now). */
 		if (C != NULL) {
@@ -2081,9 +2091,9 @@ static void rna_property_update(bContext *C, Main *bmain, Scene *scene, PointerR
 				DEG_id_tag_update(ptr->id.data, DEG_TAG_COPY_ON_WRITE);
 			}
 		}
-#endif
+		/* End message bus. */
 	}
-	
+
 	if (!is_rna || (prop->flag & PROP_IDPROPERTY)) {
 		/* WARNING! This is so property drivers update the display!
 		 * not especially nice  */

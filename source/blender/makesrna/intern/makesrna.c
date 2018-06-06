@@ -3056,7 +3056,7 @@ static void rna_generate_property(FILE *f, StructRNA *srna, const char *nest, Pr
 	else fprintf(f, "NULL,\n");
 	fprintf(f, "\t%d, ", prop->magic);
 	rna_print_c_string(f, prop->identifier);
-	fprintf(f, ", %d, %d, %d, %d, ", prop->flag, prop->flag_parameter, prop->flag_internal, prop->tags);
+	fprintf(f, ", %d, %d, %d, %d, %d, ", prop->flag, prop->flag_override, prop->flag_parameter, prop->flag_internal, prop->tags);
 	rna_print_c_string(f, prop->name); fprintf(f, ",\n\t");
 	rna_print_c_string(f, prop->description); fprintf(f, ",\n\t");
 	fprintf(f, "%d, ", prop->icon);
@@ -3482,7 +3482,7 @@ static void rna_generate(BlenderRNA *brna, FILE *f, const char *filename, const 
 
 	/* we want the included C files to have warnings enabled but for the generated code
 	 * ignore unused-parameter warnings which are hard to prevent */
-#ifdef __GNUC__
+#if defined( __GNUC__) || defined(__clang__)
 	fprintf(f, "#pragma GCC diagnostic ignored \"-Wunused-parameter\"\n\n");
 #endif
 

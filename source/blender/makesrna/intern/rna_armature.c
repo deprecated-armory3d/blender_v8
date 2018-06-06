@@ -168,8 +168,10 @@ static void rna_Bone_select_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Po
 {
 	ID *id = ptr->id.data;
 	
-	/* special updates for cases where rigs try to hook into armature drawing stuff 
-	 * e.g. Mask Modifier - 'Armature' option
+	/* 1) special updates for cases where rigs try to hook into armature drawing stuff
+	 *    e.g. Mask Modifier - 'Armature' option
+	 * 2) tag armature for copy-on-write, so that selection status (set by addons)
+	 *    will update properly, like standard tools do already
 	 */
 	if (id) {
 		if (GS(id->name) == ID_AR) {
@@ -178,6 +180,8 @@ static void rna_Bone_select_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Po
 			if (arm->flag & ARM_HAS_VIZ_DEPS) {
 				DEG_id_tag_update(id, OB_RECALC_DATA);
 			}
+			
+			DEG_id_tag_update(id, DEG_TAG_COPY_ON_WRITE);
 		}
 		else if (GS(id->name) == ID_OB) {
 			Object *ob = (Object *)id;
@@ -186,6 +190,8 @@ static void rna_Bone_select_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Po
 			if (arm->flag & ARM_HAS_VIZ_DEPS) {
 				DEG_id_tag_update(id, OB_RECALC_DATA);
 			}
+			
+			DEG_id_tag_update(&arm->id, DEG_TAG_COPY_ON_WRITE);
 		}
 	}
 	
@@ -498,9 +504,9 @@ static int rna_Armature_is_editmode_get(PointerRNA *ptr)
 	return (arm->edbo != NULL);
 }
 
-static void rna_Armature_transform(struct bArmature *arm, float *mat)
+static void rna_Armature_transform(struct bArmature *arm, Main *bmain, float *mat)
 {
-	ED_armature_transform(arm, (float (*)[4])mat, true);
+	ED_armature_transform(bmain, arm, (float (*)[4])mat, true);
 }
 
 #else
@@ -1028,6 +1034,7 @@ static void rna_def_armature(BlenderRNA *brna)
 	RNA_def_struct_sdna(srna, "bArmature");
 
 	func = RNA_def_function(srna, "transform", "rna_Armature_transform");
+	RNA_def_function_flag(func, FUNC_USE_MAIN);
 	RNA_def_function_ui_description(func, "Transform armature bones by a matrix");
 	parm = RNA_def_float_matrix(func, "matrix", 4, 4, NULL, 0.0f, 0.0f, "", "Matrix", 0.0f, 0.0f);
 	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
