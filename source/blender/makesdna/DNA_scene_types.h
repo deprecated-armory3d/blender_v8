@@ -1707,6 +1707,7 @@ enum {
 extern const char *RE_engine_id_BLENDER_CLAY;
 extern const char *RE_engine_id_BLENDER_EEVEE;
 extern const char *RE_engine_id_BLENDER_WORKBENCH;
+extern const char *RE_engine_id_ARMORY;
 extern const char *RE_engine_id_CYCLES;
 
 /* **************** SCENE ********************* */

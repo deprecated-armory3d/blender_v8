@@ -537,7 +537,10 @@ static void wm_draw_window_offscreen(bContext *C, wmWindow *win, bool stereo)
 					wm_draw_region_unbind(ar, 0);
 				}
 
-				ar->do_draw = false;
+				// armory - draw viewport constantly when game is running, implement this properly
+				if (ar->do_draw == -1) ar->do_draw = true;
+				else ar->do_draw = false;
+				// ar->do_draw = false;
 				CTX_wm_region_set(C, NULL);
 			}
 		}
