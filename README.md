@@ -1,7 +1,7 @@
 # blender_v8
 
 ## Intro guide
-https://wiki.blender.org/index.php/Dev:Doc/Building_Blender
+https://wiki.blender.org/wiki/Building_Blender
 
 ## Windows
 - mkdir blender-git
