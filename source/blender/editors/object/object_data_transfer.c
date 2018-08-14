@@ -40,7 +40,6 @@
 
 #include "BKE_context.h"
 #include "BKE_data_transfer.h"
-#include "BKE_DerivedMesh.h"
 #include "BKE_mesh_mapping.h"
 #include "BKE_mesh_remap.h"
 #include "BKE_mesh_runtime.h"
@@ -137,20 +136,17 @@ static const EnumPropertyItem *dt_layers_select_src_itemf(
 		Scene *scene = CTX_data_scene(C);
 
 		if (ob_src) {
-			DerivedMesh *dm_src;
-			CustomData *ldata;
+			Mesh *me_eval;
 			int num_data, i;
 
-			/* XXX Is this OK? */
-			dm_src = mesh_get_derived_final(depsgraph, scene, ob_src, CD_MASK_BAREMESH | CD_MLOOPUV);
-			ldata = dm_src->getLoopDataLayout(dm_src);
-			num_data = CustomData_number_of_layers(ldata, CD_MLOOPUV);
+			me_eval = mesh_get_eval_final(depsgraph, scene, ob_src, CD_MASK_BAREMESH | CD_MLOOPUV);
+			num_data = CustomData_number_of_layers(&me_eval->ldata, CD_MLOOPUV);
 
 			RNA_enum_item_add_separator(&item, &totitem);
 
 			for (i = 0; i < num_data; i++) {
 				tmp_item.value = i;
-				tmp_item.identifier = tmp_item.name = CustomData_get_layer_name(ldata, CD_MLOOPUV, i);
+				tmp_item.identifier = tmp_item.name = CustomData_get_layer_name(&me_eval->ldata, CD_MLOOPUV, i);
 				RNA_enum_item_add(&item, &totitem, &tmp_item);
 			}
 		}
@@ -160,20 +156,17 @@ static const EnumPropertyItem *dt_layers_select_src_itemf(
 		Scene *scene = CTX_data_scene(C);
 
 		if (ob_src) {
-			DerivedMesh *dm_src;
-			CustomData *ldata;
+			Mesh *me_eval;
 			int num_data, i;
 
-			/* XXX Is this OK? */
-			dm_src = mesh_get_derived_final(depsgraph, scene, ob_src, CD_MASK_BAREMESH | CD_MLOOPCOL);
-			ldata = dm_src->getLoopDataLayout(dm_src);
-			num_data = CustomData_number_of_layers(ldata, CD_MLOOPCOL);
+			me_eval = mesh_get_eval_final(depsgraph, scene, ob_src, CD_MASK_BAREMESH | CD_MLOOPCOL);
+			num_data = CustomData_number_of_layers(&me_eval->ldata, CD_MLOOPCOL);
 
 			RNA_enum_item_add_separator(&item, &totitem);
 
 			for (i = 0; i < num_data; i++) {
 				tmp_item.value = i;
-				tmp_item.identifier = tmp_item.name = CustomData_get_layer_name(ldata, CD_MLOOPCOL, i);
+				tmp_item.identifier = tmp_item.name = CustomData_get_layer_name(&me_eval->ldata, CD_MLOOPCOL, i);
 				RNA_enum_item_add(&item, &totitem, &tmp_item);
 			}
 		}
@@ -449,7 +442,7 @@ static int data_transfer_exec(bContext *C, wmOperator *op)
 
 /* Used by both OBJECT_OT_data_transfer and OBJECT_OT_datalayout_transfer */
 /* Note this context poll is only really partial, it cannot check for all possible invalid cases. */
-static int data_transfer_poll(bContext *C)
+static bool data_transfer_poll(bContext *C)
 {
 	Object *ob = ED_object_active_context(C);
 	ID *data = (ob) ? ob->data : NULL;
@@ -457,8 +450,9 @@ static int data_transfer_poll(bContext *C)
 }
 
 /* Used by both OBJECT_OT_data_transfer and OBJECT_OT_datalayout_transfer */
-static bool data_transfer_draw_check_prop(PointerRNA *ptr, PropertyRNA *prop)
+static bool data_transfer_poll_property(const bContext *UNUSED(C), wmOperator *op, const PropertyRNA *prop)
 {
+	PointerRNA *ptr = op->ptr;
 	PropertyRNA *prop_other;
 
 	const char *prop_id = RNA_property_identifier(prop);
@@ -519,19 +513,6 @@ static bool data_transfer_draw_check_prop(PointerRNA *ptr, PropertyRNA *prop)
 	return true;
 }
 
-/* Used by both OBJECT_OT_data_transfer and OBJECT_OT_datalayout_transfer */
-static void data_transfer_ui(bContext *C, wmOperator *op)
-{
-	uiLayout *layout = op->layout;
-	wmWindowManager *wm = CTX_wm_manager(C);
-	PointerRNA ptr;
-
-	RNA_pointer_create(&wm->id, op->type->srna, op->properties, &ptr);
-
-	/* Main auto-draw call */
-	uiDefAutoButsRNA(layout, &ptr, data_transfer_draw_check_prop, UI_BUT_LABEL_ALIGN_NONE, false);
-}
-
 /* transfers weight from active to selected */
 void OBJECT_OT_data_transfer(wmOperatorType *ot)
 {
@@ -544,10 +525,10 @@ void OBJECT_OT_data_transfer(wmOperatorType *ot)
 
 	/* API callbacks.*/
 	ot->poll = data_transfer_poll;
+	ot->poll_property = data_transfer_poll_property;
 	ot->invoke = WM_menu_invoke;
 	ot->exec = data_transfer_exec;
 	ot->check = data_transfer_check;
-	ot->ui = data_transfer_ui;
 
 	/* Flags.*/
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -617,7 +598,7 @@ void OBJECT_OT_data_transfer(wmOperatorType *ot)
  *       or as a DataTransfer modifier tool.
  */
 
-static int datalayout_transfer_poll(bContext *C)
+static bool datalayout_transfer_poll(bContext *C)
 {
 	return (edit_modifier_poll_generic(C, &RNA_DataTransferModifier, (1 << OB_MESH)) || data_transfer_poll(C));
 }
@@ -707,10 +688,10 @@ void OBJECT_OT_datalayout_transfer(wmOperatorType *ot)
 	ot->idname = "OBJECT_OT_datalayout_transfer";
 
 	ot->poll = datalayout_transfer_poll;
+	ot->poll_property = data_transfer_poll_property;
 	ot->invoke = datalayout_transfer_invoke;
 	ot->exec = datalayout_transfer_exec;
 	ot->check = data_transfer_check;
-	ot->ui = data_transfer_ui;
 
 	/* flags */
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;

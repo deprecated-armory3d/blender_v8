@@ -47,7 +47,7 @@ static int node_shader_gpu_fresnel(GPUMaterial *mat, bNode *node, bNodeExecData 
 	else {
 		GPU_link(mat, "direction_transform_m4v3", in[1].link, GPU_builtin(GPU_VIEW_MATRIX), &in[1].link);
 	}
-	
+
 	return GPU_stack_link(mat, node, "node_fresnel", in, out, GPU_builtin(GPU_VIEW_POSITION));
 }
 
@@ -61,7 +61,6 @@ void register_node_type_sh_fresnel(void)
 	static bNodeType ntype;
 
 	sh_node_type_base(&ntype, SH_NODE_FRESNEL, "Fresnel", NODE_CLASS_INPUT, 0);
-	node_type_compatibility(&ntype, NODE_NEW_SHADING | NODE_OLD_SHADING);
 	node_type_socket_templates(&ntype, sh_node_fresnel_in, sh_node_fresnel_out);
 	node_type_init(&ntype, NULL);
 	node_type_storage(&ntype, "", NULL, NULL);

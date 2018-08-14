@@ -57,8 +57,9 @@
 #include "BKE_fcurve.h"
 #include "BKE_gpencil.h"
 #include "BKE_global.h"
-#include "BKE_library.h"
 #include "BKE_key.h"
+#include "BKE_library.h"
+#include "BKE_main.h"
 #include "BKE_nla.h"
 #include "BKE_context.h"
 #include "BKE_report.h"
@@ -92,7 +93,7 @@
  *  3) that the set of markers being shown are the scene markers, not the list we're merging
  *	4) that there are some selected markers
  */
-static int act_markers_make_local_poll(bContext *C)
+static bool act_markers_make_local_poll(bContext *C)
 {
 	SpaceAction *sact = CTX_wm_space_action(C);
 
@@ -718,7 +719,8 @@ static void insert_action_keys(bAnimContext *ac, short mode)
 		 *                       (TODO: add the full-blown PointerRNA relative parsing case here...)
 		 */
 		if (ale->id && !ale->owner) {
-			insert_keyframe(depsgraph, reports, ale->id, NULL, ((fcu->grp) ? (fcu->grp->name) : (NULL)), fcu->rna_path, fcu->array_index, cfra, ts->keyframe_type, flag);
+			insert_keyframe(ac->bmain, depsgraph, reports, ale->id, NULL, ((fcu->grp) ? (fcu->grp->name) : (NULL)),
+			                fcu->rna_path, fcu->array_index, cfra, ts->keyframe_type, flag);
 		}
 		else {
 			const float curval = evaluate_fcurve(fcu, cfra);
@@ -1489,7 +1491,7 @@ void ACTION_OT_keyframe_type(wmOperatorType *ot)
 
 /* ***************** Jump to Selected Frames Operator *********************** */
 
-static int actkeys_framejump_poll(bContext *C)
+static bool actkeys_framejump_poll(bContext *C)
 {
 	/* prevent changes during render */
 	if (G.is_rendering)

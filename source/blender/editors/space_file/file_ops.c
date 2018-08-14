@@ -458,7 +458,7 @@ static int file_border_select_exec(bContext *C, wmOperator *op)
 void FILE_OT_select_border(wmOperatorType *ot)
 {
 	/* identifiers */
-	ot->name = "Activate/Select File";
+	ot->name = "Border Select";
 	ot->description = "Activate/select the file(s) contained in the border";
 	ot->idname = "FILE_OT_select_border";
 
@@ -527,7 +527,7 @@ void FILE_OT_select(wmOperatorType *ot)
 	PropertyRNA *prop;
 
 	/* identifiers */
-	ot->name = "Activate/Select File";
+	ot->name = "Select";
 	ot->description = "Activate/select file";
 	ot->idname = "FILE_OT_select";
 
@@ -808,12 +808,12 @@ static int file_select_all_exec(bContext *C, wmOperator *UNUSED(op))
 	return OPERATOR_FINISHED;
 }
 
-void FILE_OT_select_all_toggle(wmOperatorType *ot)
+void FILE_OT_select_all(wmOperatorType *ot)
 {
 	/* identifiers */
 	ot->name = "(De)select All Files";
 	ot->description = "Select or deselect all files";
-	ot->idname = "FILE_OT_select_all_toggle";
+	ot->idname = "FILE_OT_select_all";
 
 	/* api callbacks */
 	ot->exec = file_select_all_exec;
@@ -1179,9 +1179,9 @@ int file_cancel_exec(bContext *C, wmOperator *UNUSED(unused))
 	return OPERATOR_FINISHED;
 }
 
-static int file_operator_poll(bContext *C)
+static bool file_operator_poll(bContext *C)
 {
-	int poll = ED_operator_file_active(C);
+	bool poll = ED_operator_file_active(C);
 	SpaceFile *sfile = CTX_wm_space_file(C);
 
 	if (!sfile || !sfile->op) poll = 0;
@@ -2202,7 +2202,7 @@ static int file_rename_exec(bContext *C, wmOperator *UNUSED(op))
 
 }
 
-static int file_rename_poll(bContext *C)
+static bool file_rename_poll(bContext *C)
 {
 	bool poll = ED_operator_file_active(C);
 	SpaceFile *sfile = CTX_wm_space_file(C);
@@ -2248,9 +2248,9 @@ void FILE_OT_rename(struct wmOperatorType *ot)
 
 }
 
-static int file_delete_poll(bContext *C)
+static bool file_delete_poll(bContext *C)
 {
-	int poll = ED_operator_file_active(C);
+	bool poll = ED_operator_file_active(C);
 	SpaceFile *sfile = CTX_wm_space_file(C);
 
 	if (sfile && sfile->params) {

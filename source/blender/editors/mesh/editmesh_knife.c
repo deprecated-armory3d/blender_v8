@@ -48,7 +48,7 @@
 
 #include "BLT_translation.h"
 
-#include "BKE_DerivedMesh.h"
+#include "BKE_bvhutils.h"
 #include "BKE_context.h"
 #include "BKE_editmesh.h"
 #include "BKE_editmesh_bvh.h"
@@ -58,6 +58,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "ED_screen.h"
 #include "ED_space_api.h"
@@ -301,7 +302,7 @@ static void knife_update_header(bContext *C, wmOperator *op, KnifeTool_OpData *k
 
 #undef WM_MODALKEY
 
-	ED_area_headerprint(CTX_wm_area(C), header);
+	ED_workspace_status_text(C, header);
 }
 
 static void knife_project_v2(const KnifeTool_OpData *kcd, const float co[3], float sco[2])
@@ -1006,13 +1007,13 @@ static void knifetool_draw_angle_snapping(const KnifeTool_OpData *kcd)
 		copy_v3_v3(v2, ray_hit_best[1]);
 	}
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 	immUniformThemeColor(TH_TRANSFORM);
-	glLineWidth(2.0);
+	GPU_line_width(2.0);
 
-	immBegin(GWN_PRIM_LINES, 2);
+	immBegin(GPU_PRIM_LINES, 2);
 	immVertex3fv(pos, v1);
 	immVertex3fv(pos, v2);
 	immEnd();
@@ -1036,30 +1037,30 @@ static void knife_init_colors(KnifeColors *colors)
 }
 
 /* modal loop selection drawing callback */
-static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
+static void knifetool_draw(const bContext *UNUSED(C), ARegion *UNUSED(ar), void *arg)
 {
-	View3D *v3d = CTX_wm_view3d(C);
 	const KnifeTool_OpData *kcd = arg;
-
-	if (v3d->zbuf) glDisable(GL_DEPTH_TEST);
+	GPU_depth_test(false);
 
 	glPolygonOffset(1.0f, 1.0f);
 
-	gpuPushMatrix();
-	gpuMultMatrix(kcd->ob->obmat);
+	GPU_matrix_push();
+	GPU_matrix_mul(kcd->ob->obmat);
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+	if (kcd->mode == MODE_DRAGGING && kcd->is_angle_snapping) {
+		knifetool_draw_angle_snapping(kcd);
+	}
+
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
 	if (kcd->mode == MODE_DRAGGING) {
-		if (kcd->is_angle_snapping)
-			knifetool_draw_angle_snapping(kcd);
-
 		immUniformColor3ubv(kcd->colors.line);
-		glLineWidth(2.0);
+		GPU_line_width(2.0);
 
-		immBegin(GWN_PRIM_LINES, 2);
+		immBegin(GPU_PRIM_LINES, 2);
 		immVertex3fv(pos, kcd->prev.cage);
 		immVertex3fv(pos, kcd->curr.cage);
 		immEnd();
@@ -1067,87 +1068,90 @@ static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 
 	if (kcd->prev.vert) {
 		immUniformColor3ubv(kcd->colors.point);
-		glPointSize(11);
+		GPU_point_size(11);
 
-		immBegin(GWN_PRIM_POINTS, 1);
+		immBegin(GPU_PRIM_POINTS, 1);
 		immVertex3fv(pos, kcd->prev.cage);
 		immEnd();
 	}
 
 	if (kcd->prev.bmface) {
 		immUniformColor3ubv(kcd->colors.curpoint);
-		glPointSize(9);
+		GPU_point_size(9);
 
-		immBegin(GWN_PRIM_POINTS, 1);
+		immBegin(GPU_PRIM_POINTS, 1);
 		immVertex3fv(pos, kcd->prev.cage);
 		immEnd();
 	}
 
 	if (kcd->curr.edge) {
 		immUniformColor3ubv(kcd->colors.edge);
-		glLineWidth(2.0);
+		GPU_line_width(2.0);
 
-		immBegin(GWN_PRIM_LINES, 2);
+		immBegin(GPU_PRIM_LINES, 2);
 		immVertex3fv(pos, kcd->curr.edge->v1->cageco);
 		immVertex3fv(pos, kcd->curr.edge->v2->cageco);
 		immEnd();
 	}
 	else if (kcd->curr.vert) {
 		immUniformColor3ubv(kcd->colors.point);
-		glPointSize(11);
+		GPU_point_size(11);
 
-		immBegin(GWN_PRIM_POINTS, 1);
+		immBegin(GPU_PRIM_POINTS, 1);
 		immVertex3fv(pos, kcd->curr.cage);
 		immEnd();
 	}
 
 	if (kcd->curr.bmface) {
 		immUniformColor3ubv(kcd->colors.curpoint);
-		glPointSize(9);
+		GPU_point_size(9);
 
-		immBegin(GWN_PRIM_POINTS, 1);
+		immBegin(GPU_PRIM_POINTS, 1);
 		immVertex3fv(pos, kcd->curr.cage);
 		immEnd();
 	}
 
 	if (kcd->totlinehit > 0) {
 		KnifeLineHit *lh;
-		int i;
+		int i, v, vs;
+		float fcol[4];
 
-		glEnable(GL_BLEND);
-		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		GPU_blend(true);
+		GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
+
+		GPUVertBuf *vert = GPU_vertbuf_create_with_format(format);
+		GPU_vertbuf_data_alloc(vert, kcd->totlinehit);
+
+		lh = kcd->linehits;
+		for (i = 0, v = 0, vs = kcd->totlinehit - 1; i < kcd->totlinehit; i++, lh++) {
+			if (lh->v) {
+				GPU_vertbuf_attr_set(vert, pos, v++, lh->cagehit);
+			}
+			else {
+				GPU_vertbuf_attr_set(vert, pos, vs--, lh->cagehit);
+			}
+		}
+
+		GPUBatch *batch = GPU_batch_create_ex(GPU_PRIM_POINTS, vert, NULL, GPU_BATCH_OWNS_VBO);
+		GPU_batch_program_set_builtin(batch, GPU_SHADER_3D_UNIFORM_COLOR);
 
 		/* draw any snapped verts first */
-		immUniformColor4ubv(kcd->colors.point_a);
-		glPointSize(11);
-
-		immBeginAtMost(GWN_PRIM_POINTS, kcd->totlinehit);
-
-		lh = kcd->linehits;
-		for (i = 0; i < kcd->totlinehit; i++, lh++) {
-			if (lh->v) {
-				immVertex3fv(pos, lh->cagehit);
-			}
-		}
-
-		immEnd();
+		rgba_uchar_to_float(fcol, kcd->colors.point_a);
+		GPU_batch_uniform_4fv(batch, "color", fcol);
+		GPU_matrix_bind(batch->interface);
+		GPU_point_size(11);
+		GPU_batch_draw_range_ex(batch, 0, v - 1, false);
 
 		/* now draw the rest */
-		immUniformColor4ubv(kcd->colors.curpoint_a);
-		glPointSize(7);
+		rgba_uchar_to_float(fcol, kcd->colors.curpoint_a);
+		GPU_batch_uniform_4fv(batch, "color", fcol);
+		GPU_point_size(7);
+		GPU_batch_draw_range_ex(batch, vs + 1, kcd->totlinehit - (vs + 1), false);
 
-		immBeginAtMost(GWN_PRIM_POINTS, kcd->totlinehit);
+		GPU_batch_program_use_end(batch);
+		GPU_batch_discard(batch);
 
-		lh = kcd->linehits;
-		for (i = 0; i < kcd->totlinehit; i++, lh++) {
-			if (!lh->v) {
-				immVertex3fv(pos, lh->cagehit);
-			}
-		}
-
-		immEnd();
-
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 	}
 
 	if (kcd->totkedge > 0) {
@@ -1155,9 +1159,9 @@ static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 		KnifeEdge *kfe;
 
 		immUniformColor3ubv(kcd->colors.line);
-		glLineWidth(1.0);
+		GPU_line_width(1.0);
 
-		immBeginAtMost(GWN_PRIM_LINES, BLI_mempool_len(kcd->kedges) * 2);
+		GPUBatch *batch = immBeginBatchAtMost(GPU_PRIM_LINES, BLI_mempool_len(kcd->kedges) * 2);
 
 		BLI_mempool_iternew(kcd->kedges, &iter);
 		for (kfe = BLI_mempool_iterstep(&iter); kfe; kfe = BLI_mempool_iterstep(&iter)) {
@@ -1169,6 +1173,9 @@ static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 		}
 
 		immEnd();
+
+		GPU_batch_draw(batch);
+		GPU_batch_discard(batch);
 	}
 
 	if (kcd->totkvert > 0) {
@@ -1176,9 +1183,9 @@ static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 		KnifeVert *kfv;
 
 		immUniformColor3ubv(kcd->colors.point);
-		glPointSize(5.0);
+		GPU_point_size(5.0);
 
-		immBeginAtMost(GWN_PRIM_POINTS, BLI_mempool_len(kcd->kverts));
+		GPUBatch *batch = immBeginBatchAtMost(GPU_PRIM_POINTS, BLI_mempool_len(kcd->kverts));
 
 		BLI_mempool_iternew(kcd->kverts, &iter);
 		for (kfv = BLI_mempool_iterstep(&iter); kfv; kfv = BLI_mempool_iterstep(&iter)) {
@@ -1189,13 +1196,17 @@ static void knifetool_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 		}
 
 		immEnd();
+
+		GPU_batch_draw(batch);
+		GPU_batch_discard(batch);
 	}
 
 	immUnbindProgram();
 
-	gpuPopMatrix();
+	GPU_matrix_pop();
 
-	if (v3d->zbuf) glEnable(GL_DEPTH_TEST);
+	/* Reset default */
+	GPU_depth_test(true);
 }
 
 /**
@@ -2787,7 +2798,7 @@ static int knifetool_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
 	if (!obedit || obedit->type != OB_MESH || BKE_editmesh_from_object(obedit) != kcd->em) {
 		knifetool_exit(C, op);
-		ED_area_headerprint(CTX_wm_area(C), NULL);
+		ED_workspace_status_text(C, NULL);
 		return OPERATOR_FINISHED;
 	}
 
@@ -2808,7 +2819,7 @@ static int knifetool_modal(bContext *C, wmOperator *op, const wmEvent *event)
 				ED_region_tag_redraw(kcd->ar);
 
 				knifetool_exit(C, op);
-				ED_area_headerprint(CTX_wm_area(C), NULL);
+				ED_workspace_status_text(C, NULL);
 
 				return OPERATOR_CANCELLED;
 			case KNF_MODAL_CONFIRM:
@@ -2817,7 +2828,7 @@ static int knifetool_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
 				knifetool_finish(op);
 				knifetool_exit(C, op);
-				ED_area_headerprint(CTX_wm_area(C), NULL);
+				ED_workspace_status_text(C, NULL);
 
 				return OPERATOR_FINISHED;
 			case KNF_MODAL_MIDPOINT_ON:

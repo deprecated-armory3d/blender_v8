@@ -304,6 +304,7 @@ void NODE_OT_add_reroute(wmOperatorType *ot)
 
 static int node_add_file_exec(bContext *C, wmOperator *op)
 {
+	Main *bmain = CTX_data_main(C);
 	SpaceNode *snode = CTX_wm_space_node(C);
 	bNode *node;
 	Image *ima;
@@ -343,7 +344,7 @@ static int node_add_file_exec(bContext *C, wmOperator *op)
 	 * to get proper image source.
 	 */
 	if (RNA_struct_property_is_set(op->ptr, "filepath")) {
-		BKE_image_signal(ima, NULL, IMA_SIGNAL_RELOAD);
+		BKE_image_signal(bmain, ima, NULL, IMA_SIGNAL_RELOAD);
 		WM_event_add_notifier(C, NC_IMAGE | NA_EDITED, ima);
 	}
 
@@ -391,7 +392,7 @@ void NODE_OT_add_file(wmOperatorType *ot)
 
 /* ****************** Add Mask Node Operator  ******************* */
 
-static int node_add_mask_poll(bContext *C)
+static bool node_add_mask_poll(bContext *C)
 {
 	SpaceNode *snode = CTX_wm_space_node(C);
 
@@ -532,4 +533,3 @@ void NODE_OT_new_node_tree(wmOperatorType *ot)
 	RNA_def_enum_funcs(prop, new_node_tree_type_itemf);
 	RNA_def_string(ot->srna, "name", "NodeTree", MAX_ID_NAME - 2, "Name", "");
 }
-

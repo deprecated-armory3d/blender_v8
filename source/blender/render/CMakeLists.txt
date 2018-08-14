@@ -24,7 +24,7 @@
 # ***** END GPL LICENSE BLOCK *****
 
 
-set(INC 
+set(INC
 	extern/include
 	intern/include
 	../blenkernel
@@ -37,6 +37,7 @@ set(INC
 	../nodes
 	../physics
 	../draw
+	../gpu
 	../../../intern/atomic
 	../../../intern/guardedalloc
 	../../../intern/mikktspace
@@ -44,7 +45,7 @@ set(INC
 )
 
 set(INC_SYS
-
+	${GLEW_INCLUDE_PATH}
 )
 
 set(SRC

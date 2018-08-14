@@ -41,6 +41,7 @@
 #include "BLI_math_vector.h"
 
 #include "BKE_context.h"
+#include "BKE_main.h"
 #include "BKE_screen.h"
 #include "BKE_unit.h"
 
@@ -334,7 +335,7 @@ static int depthdropper_exec(bContext *C, wmOperator *op)
 	}
 }
 
-static int depthdropper_poll(bContext *C)
+static bool depthdropper_poll(bContext *C)
 {
 	PointerRNA ptr;
 	PropertyRNA *prop;

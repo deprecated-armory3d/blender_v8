@@ -75,7 +75,7 @@ def worldspace_bounds_from_object_data(scene, obj):
     me = obj.to_mesh(scene=scene, apply_modifiers=True, settings='PREVIEW')
     verts = me.vertices
 
-    val = matrix_world * (verts[-1].co if verts else Vector((0.0, 0.0, 0.0)))
+    val = matrix_world @ (verts[-1].co if verts else Vector((0.0, 0.0, 0.0)))
 
     left, right, front, back, down, up = (
         val[0],
@@ -88,7 +88,7 @@ def worldspace_bounds_from_object_data(scene, obj):
 
     # Test against all other verts
     for v in verts:
-        vco = matrix_world * v.co
+        vco = matrix_world @ v.co
 
         # X Range
         val = vco[0]
@@ -146,7 +146,7 @@ def align_objects(context,
 
     for obj in context.selected_objects:
         matrix_world = obj.matrix_world.copy()
-        bb_world = [matrix_world * Vector(v) for v in obj.bound_box]
+        bb_world = [matrix_world @ Vector(v) for v in obj.bound_box]
         objects.append((obj, bb_world))
 
     if not objects:
@@ -216,7 +216,7 @@ def align_objects(context,
 
     for obj, bb_world in objects:
         matrix_world = obj.matrix_world.copy()
-        bb_world = [matrix_world * Vector(v[:]) for v in obj.bound_box]
+        bb_world = [matrix_world @ Vector(v[:]) for v in obj.bound_box]
 
         if bb_quality and obj.type == 'MESH':
             GBB = worldspace_bounds_from_object_data(scene, obj)
@@ -363,41 +363,46 @@ class AlignObjects(Operator):
     bl_label = "Align Objects"
     bl_options = {'REGISTER', 'UNDO'}
 
-    bb_quality = BoolProperty(
-            name="High Quality",
-            description=("Enables high quality calculation of the "
-                         "bounding box for perfect results on complex "
-                         "shape meshes with rotation/scale (Slow)"),
-            default=True,
-            )
-    align_mode = EnumProperty(
-            name="Align Mode:",
-            description="Side of object to use for alignment",
-            items=(('OPT_1', "Negative Sides", ""),
-                   ('OPT_2', "Centers", ""),
-                   ('OPT_3', "Positive Sides", ""),
-                   ),
-            default='OPT_2',
-            )
-    relative_to = EnumProperty(
-            name="Relative To:",
-            description="Reference location to align to",
-            items=(('OPT_1', "Scene Origin", "Use the Scene Origin as the position for the selected objects to align to"),
-                   ('OPT_2', "3D Cursor", "Use the 3D cursor as the position for the selected objects to align to"),
-                   ('OPT_3', "Selection", "Use the selected objects as the position for the selected objects to align to"),
-                   ('OPT_4', "Active", "Use the active object as the position for the selected objects to align to"),
-                   ),
-            default='OPT_4',
-            )
-    align_axis = EnumProperty(
-            name="Align",
-            description="Align to axis",
-            items=(('X', "X", ""),
-                   ('Y', "Y", ""),
-                   ('Z', "Z", ""),
-                   ),
-            options={'ENUM_FLAG'},
-            )
+    bb_quality: BoolProperty(
+        name="High Quality",
+        description=(
+            "Enables high quality calculation of the "
+            "bounding box for perfect results on complex "
+            "shape meshes with rotation/scale (Slow)"
+        ),
+        default=True,
+    )
+    align_mode: EnumProperty(
+        name="Align Mode:",
+        description="Side of object to use for alignment",
+        items=(
+            ('OPT_1', "Negative Sides", ""),
+            ('OPT_2', "Centers", ""),
+            ('OPT_3', "Positive Sides", ""),
+        ),
+        default='OPT_2',
+    )
+    relative_to: EnumProperty(
+        name="Relative To:",
+        description="Reference location to align to",
+        items=(
+            ('OPT_1', "Scene Origin", "Use the Scene Origin as the position for the selected objects to align to"),
+            ('OPT_2', "3D Cursor", "Use the 3D cursor as the position for the selected objects to align to"),
+            ('OPT_3', "Selection", "Use the selected objects as the position for the selected objects to align to"),
+            ('OPT_4', "Active", "Use the active object as the position for the selected objects to align to"),
+        ),
+        default='OPT_4',
+    )
+    align_axis: EnumProperty(
+        name="Align",
+        description="Align to axis",
+        items=(
+            ('X', "X", ""),
+            ('Y', "Y", ""),
+            ('Z', "Z", ""),
+        ),
+        options={'ENUM_FLAG'},
+    )
 
     @classmethod
     def poll(cls, context):

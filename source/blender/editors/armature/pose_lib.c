@@ -48,6 +48,7 @@
 #include "BKE_armature.h"
 #include "BKE_global.h"
 #include "BKE_idprop.h"
+#include "BKE_main.h"
 #include "BKE_library.h"
 #include "BKE_object.h"
 
@@ -173,7 +174,7 @@ static Object *get_poselib_object(bContext *C)
 }
 
 /* Poll callback for operators that require existing PoseLib data (with poses) to work */
-static int has_poselib_pose_data_poll(bContext *C)
+static bool has_poselib_pose_data_poll(bContext *C)
 {
 	Object *ob = get_poselib_object(C);
 	return (ob && ob->poselib);
@@ -182,7 +183,7 @@ static int has_poselib_pose_data_poll(bContext *C)
 /* Poll callback for operators that require existing PoseLib data (with poses)
  * as they need to do some editing work on those poses (i.e. not on lib-linked actions)
  */
-static int has_poselib_pose_data_for_editing_poll(bContext *C)
+static bool has_poselib_pose_data_for_editing_poll(bContext *C)
 {
 	Object *ob = get_poselib_object(C);
 	return (ob && ob->poselib && !ID_IS_LINKED(ob->poselib));
@@ -191,7 +192,7 @@ static int has_poselib_pose_data_for_editing_poll(bContext *C)
 /* ----------------------------------- */
 
 /* Initialize a new poselib (whether it is needed or not) */
-static bAction *poselib_init_new(Object *ob)
+static bAction *poselib_init_new(Main *bmain, Object *ob)
 {
 	/* sanity checks - only for armatures */
 	if (ELEM(NULL, ob, ob->pose))
@@ -201,19 +202,19 @@ static bAction *poselib_init_new(Object *ob)
 	if (ob->poselib)
 		id_us_min(&ob->poselib->id);
 
-	ob->poselib = BKE_action_add(G.main, "PoseLib");
+	ob->poselib = BKE_action_add(bmain, "PoseLib");
 	ob->poselib->idroot = ID_OB;
 
 	return ob->poselib;
 }
 
 /* Initialize a new poselib (checks if that needs to happen) */
-static bAction *poselib_validate(Object *ob)
+static bAction *poselib_validate(Main *bmain, Object *ob)
 {
 	if (ELEM(NULL, ob, ob->pose))
 		return NULL;
 	else if (ob->poselib == NULL)
-		return poselib_init_new(ob);
+		return poselib_init_new(bmain, ob);
 	else
 		return ob->poselib;
 }
@@ -223,6 +224,7 @@ static bAction *poselib_validate(Object *ob)
 
 static int poselib_new_exec(bContext *C, wmOperator *UNUSED(op))
 {
+	Main *bmain = CTX_data_main(C);
 	Object *ob = get_poselib_object(C);
 
 	/* sanity checks */
@@ -230,7 +232,7 @@ static int poselib_new_exec(bContext *C, wmOperator *UNUSED(op))
 		return OPERATOR_CANCELLED;
 
 	/* new method here deals with the rest... */
-	poselib_init_new(ob);
+	poselib_init_new(bmain, ob);
 
 	/* notifier here might evolve? */
 	WM_event_add_notifier(C, NC_OBJECT | ND_POSE, NULL);
@@ -377,7 +379,7 @@ void POSELIB_OT_action_sanitize(wmOperatorType *ot)
 /* ------------------------------------------ */
 
 /* Poll callback for adding poses to a PoseLib */
-static int poselib_add_poll(bContext *C)
+static bool poselib_add_poll(bContext *C)
 {
 	/* There are 2 cases we need to be careful with:
 	 *  1) When this operator is invoked from a hotkey, there may be no PoseLib yet
@@ -458,8 +460,9 @@ static int poselib_add_menu_invoke(bContext *C, wmOperator *op, const wmEvent *U
 
 static int poselib_add_exec(bContext *C, wmOperator *op)
 {
+	Main *bmain = CTX_data_main(C);
 	Object *ob = get_poselib_object(C);
-	bAction *act = poselib_validate(ob);
+	bAction *act = poselib_validate(bmain, ob);
 	bPose *pose = (ob) ? ob->pose : NULL;
 	TimeMarker *marker;
 	KeyingSet *ks;
@@ -1112,10 +1115,8 @@ static void poselib_preview_apply(bContext *C, wmOperator *op)
 	/* do header print - if interactively previewing */
 	if (pld->state == PL_PREVIEW_RUNNING) {
 		if (pld->flag & PL_PREVIEW_SHOWORIGINAL) {
-			BLI_strncpy(pld->headerstr,
-			            IFACE_("PoseLib Previewing Pose: [Showing Original Pose] | Use Tab to start previewing poses again"),
-			            sizeof(pld->headerstr));
-			ED_area_headerprint(pld->sa, pld->headerstr);
+			ED_area_status_text(pld->sa, IFACE_("PoseLib Previewing Pose: [Showing Original Pose]"));
+			ED_workspace_status_text(C, IFACE_("Use Tab to start previewing poses again"));
 		}
 		else if (pld->searchstr[0]) {
 			char tempstr[65];
@@ -1139,17 +1140,17 @@ static void poselib_preview_apply(bContext *C, wmOperator *op)
 
 			BLI_snprintf(pld->headerstr, sizeof(pld->headerstr),
 			             IFACE_("PoseLib Previewing Pose: Filter - [%s] | "
-			                    "Current Pose - \"%s\"  | "
-			                    "Use ScrollWheel or PageUp/Down to change"),
+			                    "Current Pose - \"%s\""),
 			             tempstr, markern);
-			ED_area_headerprint(pld->sa, pld->headerstr);
+			ED_area_status_text(pld->sa, pld->headerstr);
+			ED_workspace_status_text(C, IFACE_("Use ScrollWheel or PageUp/Down to change pose"));
 		}
 		else {
 			BLI_snprintf(pld->headerstr, sizeof(pld->headerstr),
-			             IFACE_("PoseLib Previewing Pose: \"%s\"  | "
-			                    "Use ScrollWheel or PageUp/Down to change"),
+			             IFACE_("PoseLib Previewing Pose: \"%s\""),
 			             pld->marker->name);
-			ED_area_headerprint(pld->sa, pld->headerstr);
+			ED_area_status_text(pld->sa, pld->headerstr);
+			ED_workspace_status_text(C, NULL);
 		}
 	}
 
@@ -1599,7 +1600,8 @@ static void poselib_preview_cleanup(bContext *C, wmOperator *op)
 	TimeMarker *marker = pld->marker;
 
 	/* redraw the header so that it doesn't show any of our stuff anymore */
-	ED_area_headerprint(pld->sa, NULL);
+	ED_area_status_text(pld->sa, NULL);
+	ED_workspace_status_text(C, NULL);
 
 	/* this signal does one recalc on pose, then unlocks, so ESC or edit will work */
 	pose->flag |= POSE_DO_UNLOCK;

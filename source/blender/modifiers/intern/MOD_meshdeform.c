@@ -52,6 +52,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "DEG_depsgraph.h"
+#include "DEG_depsgraph_query.h"
 
 #include "MOD_util.h"
 
@@ -80,12 +81,12 @@ static void freeData(ModifierData *md)
 	if (mmd->bindcos) MEM_freeN(mmd->bindcos);  /* deprecated */
 }
 
-static void copyData(const ModifierData *md, ModifierData *target)
+static void copyData(const ModifierData *md, ModifierData *target, const int flag)
 {
 	const MeshDeformModifierData *mmd = (const MeshDeformModifierData *) md;
 	MeshDeformModifierData *tmmd = (MeshDeformModifierData *) target;
 
-	modifier_copyData_generic(md, target);
+	modifier_copyData_generic(md, target, flag);
 
 	if (mmd->bindinfluences) tmmd->bindinfluences = MEM_dupallocN(mmd->bindinfluences);
 	if (mmd->bindoffsets) tmmd->bindoffsets = MEM_dupallocN(mmd->bindoffsets);
@@ -98,7 +99,7 @@ static void copyData(const ModifierData *md, ModifierData *target)
 }
 
 static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
-{	
+{
 	MeshDeformModifierData *mmd = (MeshDeformModifierData *)md;
 	CustomDataMask dataMask = 0;
 
@@ -108,7 +109,7 @@ static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
 	return dataMask;
 }
 
-static bool isDisabled(ModifierData *md, int UNUSED(useRenderParams))
+static bool isDisabled(const struct Scene *UNUSED(scene), ModifierData *md, bool UNUSED(useRenderParams))
 {
 	MeshDeformModifierData *mmd = (MeshDeformModifierData *) md;
 
@@ -294,7 +295,7 @@ static void meshdeformModifier_do(
 	if (!mmd->object || (!mmd->bindcagecos && !mmd->bindfunc))
 		return;
 
-	/* Get cage derivedmesh.
+	/* Get cage mesh.
 	 *
 	 * Only do this is the target object is in edit mode by itself, meaning
 	 * we don't allow linked edit meshes here.
@@ -305,7 +306,7 @@ static void meshdeformModifier_do(
 	 * We'll support this case once granular dependency graph is landed.
 	 */
 	cagemesh = BKE_modifier_get_evaluated_mesh_from_evaluated_object(mmd->object, &free_cagemesh);
-	
+
 	if (cagemesh == NULL) {
 		modifier_setError(md, "Cannot get mesh from cage object");
 		return;
@@ -324,8 +325,9 @@ static void meshdeformModifier_do(
 
 		/* progress bar redraw can make this recursive .. */
 		if (!recursive) {
+			Scene *scene = DEG_get_evaluated_scene(ctx->depsgraph);
 			recursive = 1;
-			mmd->bindfunc(md->scene, mmd, cagemesh, (float *)vertexCos, numVerts, cagemat);
+			mmd->bindfunc(scene, mmd, cagemesh, (float *)vertexCos, numVerts, cagemat);
 			recursive = 0;
 		}
 	}
@@ -372,7 +374,7 @@ static void meshdeformModifier_do(
 			copy_v3_v3(dco[a], co);
 	}
 
-	modifier_get_vgroup_mesh(ob, mesh, mmd->defgrp_name, &dvert, &defgrp_index);
+	MOD_get_vgroup(ob, mesh, mmd->defgrp_name, &dvert, &defgrp_index);
 
 	/* Initialize data to be pass to the for body function. */
 	data.mmd = mmd;
@@ -392,7 +394,7 @@ static void meshdeformModifier_do(
 	                        meshdeform_vert_task,
 	                        &settings);
 
-	/* release cage derivedmesh */
+	/* release cage mesh */
 	MEM_freeN(dco);
 	MEM_freeN(cagecos);
 	if (cagemesh != NULL && free_cagemesh) {
@@ -406,9 +408,9 @@ static void deformVerts(
         float (*vertexCos)[3],
         int numVerts)
 {
-	Mesh *mesh_src = get_mesh(ctx->object, NULL, mesh, NULL, false, false);
+	Mesh *mesh_src = MOD_get_mesh_eval(ctx->object, NULL, mesh, NULL, false, false);
 
-	modifier_vgroup_cache(md, vertexCos); /* if next modifier needs original vertices */
+	MOD_previous_vcos_store(md, vertexCos); /* if next modifier needs original vertices */
 
 	meshdeformModifier_do(md, ctx, mesh_src, vertexCos, numVerts);
 
@@ -424,7 +426,7 @@ static void deformVertsEM(
         float (*vertexCos)[3],
         int numVerts)
 {
-	Mesh *mesh_src = get_mesh(ctx->object, NULL, mesh, NULL, false, false);
+	Mesh *mesh_src = MOD_get_mesh_eval(ctx->object, NULL, mesh, NULL, false, false);
 
 	meshdeformModifier_do(md, ctx, mesh_src, vertexCos, numVerts);
 
@@ -444,7 +446,7 @@ void modifier_mdef_compact_influences(ModifierData *md)
 	weights = mmd->bindweights;
 	if (!weights)
 		return;
-	
+
 	totvert = mmd->totvert;
 	totcagevert = mmd->totcagevert;
 
@@ -490,7 +492,7 @@ void modifier_mdef_compact_influences(ModifierData *md)
 	}
 
 	mmd->bindoffsets[b] = totinfluence;
-	
+
 	/* free */
 	MEM_freeN(mmd->bindweights);
 	mmd->bindweights = NULL;

@@ -36,6 +36,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_gpencil_types.h"
+#include "DNA_object_types.h"
 #include "DNA_listBase.h"
 #include "DNA_windowmanager_types.h"
 
@@ -50,6 +51,8 @@
 
 #include "WM_api.h"
 #include "WM_types.h"
+
+#include "DEG_depsgraph.h"
 
 #include "gpencil_intern.h"
 
@@ -111,6 +114,9 @@ int ED_undo_gpencil_step(bContext *C, int step, const char *name)
 				}
 			}
 		}
+		/* drawing batch cache is dirty now */
+		DEG_id_tag_update(&new_gpd->id, OB_RECALC_OB | OB_RECALC_DATA);
+		new_gpd->flag |= GP_DATA_CACHE_IS_DIRTY;
 	}
 
 	WM_event_add_notifier(C, NC_GPENCIL | NA_EDITED, NULL);
@@ -179,7 +185,7 @@ void gpencil_undo_push(bGPdata *gpd)
 
 	/* create new undo node */
 	undo_node = MEM_callocN(sizeof(bGPundonode), "gpencil undo node");
-	undo_node->gpd = BKE_gpencil_data_duplicate(G.main, gpd, true);
+	undo_node->gpd = BKE_gpencil_data_duplicate(NULL, gpd, true);
 
 	cur_node = undo_node;
 

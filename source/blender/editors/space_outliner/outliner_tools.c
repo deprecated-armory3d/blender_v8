@@ -63,6 +63,7 @@
 #include "BKE_main.h"
 #include "BKE_report.h"
 #include "BKE_scene.h"
+#include "BKE_screen.h"
 #include "BKE_sequencer.h"
 
 #include "DEG_depsgraph.h"
@@ -229,18 +230,22 @@ static void unlink_collection_cb(
 		if (GS(tsep->id->name) == ID_OB) {
 			Object *ob = (Object *)tsep->id;
 			ob->dup_group = NULL;
+			DEG_id_tag_update(&ob->id, OB_RECALC_OB);
 			DEG_relations_tag_update(bmain);
 		}
 		else if (GS(tsep->id->name) == ID_GR) {
 			Collection *parent = (Collection *)tsep->id;
 			id_fake_user_set(&collection->id);
 			BKE_collection_child_remove(bmain, parent, collection);
+			DEG_id_tag_update(&parent->id, DEG_TAG_COPY_ON_WRITE);
 			DEG_relations_tag_update(bmain);
 		}
 		else if (GS(tsep->id->name) == ID_SCE) {
-			Collection *parent = BKE_collection_master((Scene *)tsep->id);
+			Scene *scene = (Scene *)tsep->id;
+			Collection *parent = BKE_collection_master(scene);
 			id_fake_user_set(&collection->id);
 			BKE_collection_child_remove(bmain, parent, collection);
+			DEG_id_tag_update(&scene->id, DEG_TAG_COPY_ON_WRITE);
 			DEG_relations_tag_update(bmain);
 		}
 	}
@@ -257,11 +262,14 @@ static void unlink_object_cb(
 		if (GS(tsep->id->name) == ID_GR) {
 			Collection *parent = (Collection *)tsep->id;
 			BKE_collection_object_remove(bmain, parent, ob, true);
+			DEG_id_tag_update(&parent->id, DEG_TAG_COPY_ON_WRITE);
 			DEG_relations_tag_update(bmain);
 		}
 		else if (GS(tsep->id->name) == ID_SCE) {
-			Collection *parent = BKE_collection_master((Scene *)tsep->id);
+			Scene *scene = (Scene *)tsep->id;
+			Collection *parent = BKE_collection_master(scene);
 			BKE_collection_object_remove(bmain, parent, ob, true);
+			DEG_id_tag_update(&scene->id, DEG_TAG_COPY_ON_WRITE);
 			DEG_relations_tag_update(bmain);
 		}
 	}
@@ -394,7 +402,7 @@ static void object_select_cb(
 	Object *ob = (Object *)tselem->id;
 	Base *base = BKE_view_layer_base_find(view_layer, ob);
 
-	if (base && ((base->flag & BASE_VISIBLED) != 0)) {
+	if (base && ((base->flag & BASE_VISIBLE) != 0)) {
 		base->flag |= BASE_SELECTED;
 	}
 }
@@ -572,7 +580,7 @@ void outliner_do_object_operation_ex(
 				// when objects selected in other scenes... dunno if that should be allowed
 				Scene *scene_owner = (Scene *)outliner_search_back(soops, te, ID_SCE);
 				if (scene_owner && scene_act != scene_owner) {
-					WM_window_change_active_scene(CTX_data_main(C), C, CTX_wm_window(C), scene_owner);
+					WM_window_set_active_scene(CTX_data_main(C), C, CTX_wm_window(C), scene_owner);
 				}
 				/* important to use 'scene_owner' not scene_act else deleting objects can crash.
 				 * only use 'scene_act' when 'scene_owner' is NULL, which can happen when the
@@ -893,6 +901,7 @@ static void object_delete_hierarchy_cb(
 #endif
 	}
 
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
 }
 
@@ -910,6 +919,8 @@ enum {
 	OL_OP_TOGSEL,
 	OL_OP_TOGREN,
 	OL_OP_RENAME,
+	OL_OP_OBJECT_MODE_ENTER,
+	OL_OP_OBJECT_MODE_EXIT,
 };
 
 static const EnumPropertyItem prop_object_op_types[] = {
@@ -921,6 +932,8 @@ static const EnumPropertyItem prop_object_op_types[] = {
 	{OL_OP_REMAP, "REMAP",   0, "Remap Users",
 	 "Make all users of selected data-blocks to use instead a new chosen one"},
 	{OL_OP_RENAME, "RENAME", 0, "Rename", ""},
+	{OL_OP_OBJECT_MODE_ENTER, "OBJECT_MODE_ENTER", 0, "Enter Mode", ""},
+	{OL_OP_OBJECT_MODE_EXIT, "OBJECT_MODE_EXIT", 0, "Exit Mode", ""},
 	{0, NULL, 0, NULL, NULL}
 };
 
@@ -943,24 +956,27 @@ static int outliner_object_operation_exec(bContext *C, wmOperator *op)
 		Scene *sce = scene;  // to be able to delete, scenes are set...
 		outliner_do_object_operation(C, op->reports, scene, soops, &soops->tree, object_select_cb);
 		if (scene != sce) {
-			WM_window_change_active_scene(bmain, C, win, sce);
+			WM_window_set_active_scene(bmain, C, win, sce);
 		}
 
 		str = "Select Objects";
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 	}
 	else if (event == OL_OP_SELECT_HIERARCHY) {
 		Scene *sce = scene;  // to be able to delete, scenes are set...
 		outliner_do_object_operation_ex(C, op->reports, scene, soops, &soops->tree, object_select_hierarchy_cb, false);
 		if (scene != sce) {
-			WM_window_change_active_scene(bmain, C, win, sce);
+			WM_window_set_active_scene(bmain, C, win, sce);
 		}
 		str = "Select Object Hierarchy";
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 	}
 	else if (event == OL_OP_DESELECT) {
 		outliner_do_object_operation(C, op->reports, scene, soops, &soops->tree, object_deselect_cb);
 		str = "Deselect Objects";
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 	}
 	else if (event == OL_OP_DELETE) {
@@ -975,6 +991,7 @@ static int outliner_object_operation_exec(bContext *C, wmOperator *op)
 
 		DEG_relations_tag_update(bmain);
 		str = "Delete Objects";
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
 	}
 	else if (event == OL_OP_DELETE_HIERARCHY) {
@@ -985,6 +1002,7 @@ static int outliner_object_operation_exec(bContext *C, wmOperator *op)
 
 		DEG_relations_tag_update(bmain);
 		str = "Delete Object Hierarchy";
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
 	}
 	else if (event == OL_OP_REMAP) {
@@ -998,6 +1016,14 @@ static int outliner_object_operation_exec(bContext *C, wmOperator *op)
 	else if (event == OL_OP_RENAME) {
 		outliner_do_object_operation(C, op->reports, scene, soops, &soops->tree, item_rename_cb);
 		str = "Rename Object";
+	}
+	else if (event == OL_OP_OBJECT_MODE_ENTER) {
+		outliner_do_object_operation(C, op->reports, scene, soops, &soops->tree, item_object_mode_enter_cb);
+		str = "Enter Current Mode";
+	}
+	else if (event == OL_OP_OBJECT_MODE_EXIT) {
+		outliner_do_object_operation(C, op->reports, scene, soops, &soops->tree, item_object_mode_exit_cb);
+		str = "Exit Current Mode";
 	}
 	else {
 		BLI_assert(0);
@@ -1568,8 +1594,8 @@ void OUTLINER_OT_animdata_operation(wmOperatorType *ot)
 /* **************************************** */
 
 static const EnumPropertyItem prop_constraint_op_types[] = {
-	{OL_CONSTRAINTOP_ENABLE, "ENABLE", ICON_RESTRICT_VIEW_OFF, "Enable", ""},
-	{OL_CONSTRAINTOP_DISABLE, "DISABLE", ICON_RESTRICT_VIEW_ON, "Disable", ""},
+	{OL_CONSTRAINTOP_ENABLE, "ENABLE", ICON_HIDE_OFF, "Enable", ""},
+	{OL_CONSTRAINTOP_DISABLE, "DISABLE", ICON_HIDE_ON, "Disable", ""},
 	{OL_CONSTRAINTOP_DELETE, "DELETE", ICON_X, "Delete", ""},
 	{0, NULL, 0, NULL, NULL}
 };
@@ -1758,6 +1784,26 @@ void OUTLINER_OT_data_operation(wmOperatorType *ot)
 
 /* ******************** */
 
+static int outliner_operator_menu(bContext *C, const char *opname)
+{
+	wmOperatorType *ot = WM_operatortype_find(opname, false);
+	uiPopupMenu *pup = UI_popup_menu_begin(C, RNA_struct_ui_name(ot->srna), ICON_NONE);
+	uiLayout *layout = UI_popup_menu_layout(pup);
+
+	/* set this so the default execution context is the same as submenus */
+	uiLayoutSetOperatorContext(layout, WM_OP_INVOKE_REGION_WIN);
+	uiItemsEnumO(layout, ot->idname, RNA_property_identifier(ot->prop));
+
+	MenuType *mt = WM_menutype_find("OUTLINER_MT_context", false);
+	if (mt) {
+		uiItemS(layout);
+		UI_menutype_draw(C, mt, layout);
+	}
+
+	UI_popup_menu_end(C, pup);
+
+	return OPERATOR_INTERFACE;
+}
 
 static int do_outliner_operation_event(bContext *C, ARegion *ar, SpaceOops *soops,
                                        TreeElement *te, const float mval[2])
@@ -1771,8 +1817,8 @@ static int do_outliner_operation_event(bContext *C, ARegion *ar, SpaceOops *soop
 		/* select object that's clicked on and popup context menu */
 		if (!(tselem->flag & TSE_SELECTED)) {
 
-			if (outliner_has_one_flag(&soops->tree, TSE_SELECTED, 1))
-				outliner_set_flag(&soops->tree, TSE_SELECTED, 0);
+			if (outliner_flag_is_any_test(&soops->tree, TSE_SELECTED, 1))
+				outliner_flag_set(&soops->tree, TSE_SELECTED, 0);
 
 			tselem->flag |= TSE_SELECTED;
 
@@ -1786,28 +1832,32 @@ static int do_outliner_operation_event(bContext *C, ARegion *ar, SpaceOops *soop
 		if (scenelevel) {
 			if (objectlevel || datalevel || idlevel) {
 				BKE_report(reports, RPT_WARNING, "Mixed selection");
+				return OPERATOR_CANCELLED;
 			}
 			else {
-				WM_operator_name_call(C, "OUTLINER_OT_scene_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+				return outliner_operator_menu(C, "OUTLINER_OT_scene_operation");
 			}
 		}
 		else if (objectlevel) {
 			WM_menu_name_call(C, "OUTLINER_MT_object", WM_OP_INVOKE_REGION_WIN);
+			return OPERATOR_FINISHED;
 		}
 		else if (idlevel) {
 			if (idlevel == -1 || datalevel) {
 				BKE_report(reports, RPT_WARNING, "Mixed selection");
+				return OPERATOR_CANCELLED;
 			}
 			else {
 				switch (idlevel) {
 					case ID_GR:
 						WM_menu_name_call(C, "OUTLINER_MT_collection", WM_OP_INVOKE_REGION_WIN);
+						return OPERATOR_FINISHED;
 						break;
 					case ID_LI:
-						WM_operator_name_call(C, "OUTLINER_OT_lib_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+						return outliner_operator_menu(C, "OUTLINER_OT_lib_operation");
 						break;
 					default:
-						WM_operator_name_call(C, "OUTLINER_OT_id_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+						return outliner_operator_menu(C, "OUTLINER_OT_id_operation");
 						break;
 				}
 			}
@@ -1815,41 +1865,49 @@ static int do_outliner_operation_event(bContext *C, ARegion *ar, SpaceOops *soop
 		else if (datalevel) {
 			if (datalevel == -1) {
 				BKE_report(reports, RPT_WARNING, "Mixed selection");
+				return OPERATOR_CANCELLED;
 			}
 			else {
-				if (datalevel == TSE_ANIM_DATA)
-					WM_operator_name_call(C, "OUTLINER_OT_animdata_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+				if (datalevel == TSE_ANIM_DATA) {
+					return outliner_operator_menu(C, "OUTLINER_OT_animdata_operation");
+				}
 				else if (datalevel == TSE_DRIVER_BASE) {
 					/* do nothing... no special ops needed yet */
+					return OPERATOR_CANCELLED;
 				}
 				else if (datalevel == TSE_LAYER_COLLECTION) {
 					WM_menu_name_call(C, "OUTLINER_MT_collection", WM_OP_INVOKE_REGION_WIN);
+					return OPERATOR_FINISHED;
 				}
 				else if (ELEM(datalevel, TSE_SCENE_COLLECTION_BASE, TSE_VIEW_COLLECTION_BASE)) {
 					WM_menu_name_call(C, "OUTLINER_MT_collection_new", WM_OP_INVOKE_REGION_WIN);
+					return OPERATOR_FINISHED;
 				}
 				else if (datalevel == TSE_ID_BASE) {
 					/* do nothing... there are no ops needed here yet */
 				}
 				else if (datalevel == TSE_CONSTRAINT) {
-					WM_operator_name_call(C, "OUTLINER_OT_constraint_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+					return outliner_operator_menu(C, "OUTLINER_OT_constraint_operation");
 				}
 				else if (datalevel == TSE_MODIFIER) {
-					WM_operator_name_call(C, "OUTLINER_OT_modifier_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+					return outliner_operator_menu(C, "OUTLINER_OT_modifier_operation");
 				}
 				else {
-					WM_operator_name_call(C, "OUTLINER_OT_data_operation", WM_OP_INVOKE_REGION_WIN, NULL);
+					return outliner_operator_menu(C, "OUTLINER_OT_data_operation");
 				}
 			}
 		}
 
-		return 1;
+		return 0;
 	}
 
 	for (te = te->subtree.first; te; te = te->next) {
-		if (do_outliner_operation_event(C, ar, soops, te, mval))
-			return 1;
+		int retval = do_outliner_operation_event(C, ar, soops, te, mval);
+		if (retval) {
+			return retval;
+		}
 	}
+
 	return 0;
 }
 
@@ -1861,7 +1919,6 @@ static int outliner_operation(bContext *C, wmOperator *UNUSED(op), const wmEvent
 	uiBut *but = UI_context_active_but_get(C);
 	TreeElement *te;
 	float fmval[2];
-	bool found = false;
 
 	if (but) {
 		UI_but_tooltip_timer_remove(C, but);
@@ -1870,26 +1927,26 @@ static int outliner_operation(bContext *C, wmOperator *UNUSED(op), const wmEvent
 	UI_view2d_region_to_view(&ar->v2d, event->mval[0], event->mval[1], &fmval[0], &fmval[1]);
 
 	for (te = soops->tree.first; te; te = te->next) {
-		if (do_outliner_operation_event(C, ar, soops, te, fmval)) {
-			found = true;
-			break;
+		int retval = do_outliner_operation_event(C, ar, soops, te, fmval);
+		if (retval) {
+			return retval;
 		}
 	}
 
-	if (!found) {
-		/* Menus for clicking in empty space. */
-		if (soops->outlinevis == SO_VIEW_LAYER) {
-			WM_menu_name_call(C, "OUTLINER_MT_collection_new", WM_OP_INVOKE_REGION_WIN);
-		}
+	/* Menus for clicking in empty space. */
+	if (soops->outlinevis == SO_VIEW_LAYER) {
+		WM_menu_name_call(C, "OUTLINER_MT_collection_new", WM_OP_INVOKE_REGION_WIN);
+		return OPERATOR_FINISHED;
 	}
 
+	WM_menu_name_call(C, "OUTLINER_MT_context", WM_OP_INVOKE_REGION_WIN);
 	return OPERATOR_FINISHED;
 }
 
 /* Menu only! Calls other operators */
 void OUTLINER_OT_operation(wmOperatorType *ot)
 {
-	ot->name = "Execute Operation";
+	ot->name = "Context Menu";
 	ot->idname = "OUTLINER_OT_operation";
 	ot->description = "Context menu for item operations";
 

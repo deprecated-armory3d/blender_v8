@@ -557,7 +557,7 @@ void SEQUENCER_OT_select(wmOperatorType *ot)
 	};
 
 	/* identifiers */
-	ot->name = "Activate/Select";
+	ot->name = "Select";
 	ot->idname = "SEQUENCER_OT_select";
 	ot->description = "Select a strip (last selected becomes the \"active strip\")";
 
@@ -829,7 +829,7 @@ void SEQUENCER_OT_select_handles(wmOperatorType *ot)
 	/* identifiers */
 	ot->name = "Select Handles";
 	ot->idname = "SEQUENCER_OT_select_handles";
-	ot->description = "Select manipulator handles on the sides of the selected strip";
+	ot->description = "Select gizmo handles on the sides of the selected strip";
 
 	/* api callbacks */
 	ot->exec = sequencer_select_handles_exec;
@@ -1282,4 +1282,3 @@ void SEQUENCER_OT_select_grouped(wmOperatorType *ot)
 	RNA_def_boolean(ot->srna, "use_active_channel", false, "Same Channel",
 	                "Only consider strips on the same channel as the active one");
 }
-

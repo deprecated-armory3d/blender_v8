@@ -291,23 +291,24 @@ static void ui_imageuser_slot_menu(bContext *UNUSED(C), uiLayout *layout, void *
 {
 	uiBlock *block = uiLayoutGetBlock(layout);
 	Image *image = image_p;
-	int slot;
+	int slot_id;
 
 	uiDefBut(block, UI_BTYPE_LABEL, 0, IFACE_("Slot"),
 	         0, 0, UI_UNIT_X * 5, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0, "");
 	uiItemS(layout);
 
-	slot = IMA_MAX_RENDER_SLOT;
-	while (slot--) {
+	slot_id = BLI_listbase_count(&image->renderslots) - 1;
+	for (RenderSlot *slot = image->renderslots.last; slot; slot = slot->prev) {
 		char str[64];
-		if (image->render_slots[slot].name[0] != '\0') {
-			BLI_strncpy(str, image->render_slots[slot].name, sizeof(str));
+		if (slot->name[0] != '\0') {
+			BLI_strncpy(str, slot->name, sizeof(str));
 		}
 		else {
-			BLI_snprintf(str, sizeof(str), IFACE_("Slot %d"), slot + 1);
+			BLI_snprintf(str, sizeof(str), IFACE_("Slot %d"), slot_id + 1);
 		}
 		uiDefButS(block, UI_BTYPE_BUT_MENU, B_NOP, str, 0, 0,
-		          UI_UNIT_X * 5, UI_UNIT_X, &image->render_slot, (float) slot, 0.0, 0, -1, "");
+		          UI_UNIT_X * 5, UI_UNIT_X, &image->render_slot, (float) slot_id, 0.0, 0, -1, "");
+		slot_id--;
 	}
 }
 
@@ -708,8 +709,9 @@ static void uiblock_layer_pass_buttons(
 	/* menu buts */
 	if (render_slot) {
 		char str[64];
-		if (image->render_slots[*render_slot].name[0] != '\0') {
-			BLI_strncpy(str, image->render_slots[*render_slot].name, sizeof(str));
+		RenderSlot *slot = BKE_image_get_renderslot(image, *render_slot);
+		if (slot && slot->name[0] != '\0') {
+			BLI_strncpy(str, slot->name, sizeof(str));
 		}
 		else {
 			BLI_snprintf(str, sizeof(str), IFACE_("Slot %d"), *render_slot + 1);
@@ -825,7 +827,7 @@ static void rna_update_cb(bContext *C, void *arg_cb, void *UNUSED(arg))
 	RNA_property_update(C, &cb->ptr, cb->prop);
 }
 
-void uiTemplateImage(uiLayout *layout, bContext *C, PointerRNA *ptr, const char *propname, PointerRNA *userptr, int compact, int multiview)
+void uiTemplateImage(uiLayout *layout, bContext *C, PointerRNA *ptr, const char *propname, PointerRNA *userptr, bool compact, bool multiview)
 {
 	PropertyRNA *prop;
 	PointerRNA imaptr;
@@ -874,7 +876,7 @@ void uiTemplateImage(uiLayout *layout, bContext *C, PointerRNA *ptr, const char 
 	if (!compact) {
 		uiTemplateID(
 		        layout, C, ptr, propname,
-		        ima ? NULL : "IMAGE_OT_new", "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL);
+		        ima ? NULL : "IMAGE_OT_new", "IMAGE_OT_open", NULL, UI_TEMPLATE_ID_FILTER_ALL, false);
 	}
 
 	if (ima) {
@@ -998,25 +1000,6 @@ void uiTemplateImage(uiLayout *layout, bContext *C, PointerRNA *ptr, const char 
 						col = uiLayoutColumn(layout, false);
 						uiItemR(col, &imaptr, "use_deinterlace", 0, IFACE_("Deinterlace"), ICON_NONE);
 					}
-
-					split = uiLayoutSplit(layout, 0.0f, false);
-
-					col = uiLayoutColumn(split, false);
-					/* XXX Why only display fields_per_frame only for video image types?
-					 *     And why allow fields for non-video image types at all??? */
-					if (BKE_image_is_animated(ima)) {
-						uiLayout *subsplit = uiLayoutSplit(col, 0.0f, false);
-						uiLayout *subcol = uiLayoutColumn(subsplit, false);
-						uiItemR(subcol, &imaptr, "use_fields", 0, NULL, ICON_NONE);
-						subcol = uiLayoutColumn(subsplit, false);
-						uiLayoutSetActive(subcol, RNA_boolean_get(&imaptr, "use_fields"));
-						uiItemR(subcol, userptr, "fields_per_frame", 0, IFACE_("Fields"), ICON_NONE);
-					}
-					else
-						uiItemR(col, &imaptr, "use_fields", 0, NULL, ICON_NONE);
-					row = uiLayoutRow(col, false);
-					uiLayoutSetActive(row, RNA_boolean_get(&imaptr, "use_fields"));
-					uiItemR(row, &imaptr, "field_order", UI_ITEM_R_EXPAND, NULL, ICON_NONE);
 				}
 			}
 
@@ -1061,7 +1044,7 @@ void uiTemplateImage(uiLayout *layout, bContext *C, PointerRNA *ptr, const char 
 	MEM_freeN(cb);
 }
 
-void uiTemplateImageSettings(uiLayout *layout, PointerRNA *imfptr, int color_management)
+void uiTemplateImageSettings(uiLayout *layout, PointerRNA *imfptr, bool color_management)
 {
 	ImageFormatData *imf = imfptr->data;
 	ID *id = imfptr->id.data;
@@ -1313,7 +1296,7 @@ static int image_properties_toggle_exec(bContext *C, wmOperator *UNUSED(op))
 
 void IMAGE_OT_properties(wmOperatorType *ot)
 {
-	ot->name = "Properties";
+	ot->name = "Toggle Sidebar";
 	ot->idname = "IMAGE_OT_properties";
 	ot->description = "Toggle the properties region visibility";
 
@@ -1337,7 +1320,7 @@ static int image_scopes_toggle_exec(bContext *C, wmOperator *UNUSED(op))
 
 void IMAGE_OT_toolshelf(wmOperatorType *ot)
 {
-	ot->name = "Tool Shelf";
+	ot->name = "Toggle Toolbar";
 	ot->idname = "IMAGE_OT_toolshelf";
 	ot->description = "Toggles tool shelf display";
 
@@ -1347,4 +1330,3 @@ void IMAGE_OT_toolshelf(wmOperatorType *ot)
 	/* flags */
 	ot->flag = 0;
 }
-

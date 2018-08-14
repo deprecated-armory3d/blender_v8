@@ -158,7 +158,7 @@ static bool sculpt_undo_restore_coords(bContext *C, DerivedMesh *dm, SculptUndoN
 			if (kb) {
 				ob->shapenr = BLI_findindex(&key->block, kb) + 1;
 
-				BKE_sculpt_update_mesh_elements(depsgraph, scene, sd, ob, 0, false);
+				BKE_sculpt_update_mesh_elements(depsgraph, scene, sd, ob, false, false);
 				WM_event_add_notifier(C, NC_OBJECT | ND_DATA, ob);
 			}
 			else {
@@ -198,7 +198,7 @@ static bool sculpt_undo_restore_coords(bContext *C, DerivedMesh *dm, SculptUndoN
 
 			/* pbvh uses it's own mvert array, so coords should be */
 			/* propagated to pbvh here */
-			BKE_pbvh_apply_vertCos(ss->pbvh, vertCos);
+			BKE_pbvh_apply_vertCos(ss->pbvh, vertCos, unode->totvert);
 
 			MEM_freeN(vertCos);
 		}
@@ -493,7 +493,9 @@ static void sculpt_undo_restore_list(bContext *C, ListBase *lb)
 		}
 	}
 
-	BKE_sculpt_update_mesh_elements(depsgraph, scene, sd, ob, 0, need_mask);
+	DEG_id_tag_update(&ob->id, DEG_TAG_SHADING_UPDATE);
+
+	BKE_sculpt_update_mesh_elements(depsgraph, scene, sd, ob, false, need_mask);
 
 	/* call _after_ sculpt_update_mesh_elements() which may update 'ob->derivedFinal' */
 	dm = mesh_get_derived_final(depsgraph, scene, ob, 0);
@@ -559,7 +561,7 @@ static void sculpt_undo_restore_list(bContext *C, ListBase *lb)
 		else {
 			BKE_pbvh_search_callback(ss->pbvh, NULL, NULL, update_cb, &rebuild);
 		}
-		BKE_pbvh_update(ss->pbvh, PBVH_UpdateBB | PBVH_UpdateOriginalBB | PBVH_UpdateRedraw, NULL);
+		BKE_pbvh_update(ss->pbvh, PBVH_UpdateBB | PBVH_UpdateOriginalBB | PBVH_UpdateRedraw | PBVH_UpdateNormals, NULL);
 
 		if (BKE_sculpt_multires_active(scene, ob)) {
 			if (rebuild)
@@ -929,9 +931,10 @@ SculptUndoNode *sculpt_undo_push_node(
 
 	unode = sculpt_undo_alloc_node(ob, node, type);
 
-	BLI_thread_unlock(LOCK_CUSTOM1);
-
-	/* copy threaded, hopefully this is the performance critical part */
+	/* NOTE: If this ever becomes a bottleneck, make a lock inside of the node.
+	 * so we release global lock sooner, but keep data locked for until it is
+	 * fully initialized.
+	 */
 
 	if (unode->grids) {
 		int totgrid, *grids;
@@ -967,6 +970,8 @@ SculptUndoNode *sculpt_undo_push_node(
 	/* store active shape key */
 	if (ss->kb) BLI_strncpy(unode->shapeName, ss->kb->name, sizeof(ss->kb->name));
 	else unode->shapeName[0] = '\0';
+
+	BLI_thread_unlock(LOCK_CUSTOM1);
 
 	return unode;
 }

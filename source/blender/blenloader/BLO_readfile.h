@@ -143,8 +143,6 @@ void BLO_library_link_copypaste(struct Main *mainl, BlendHandle *bh);
 
 void *BLO_library_read_struct(struct FileData *fd, struct BHead *bh, const char *blockname);
 
-BlendFileData *blo_read_blendafterruntime(int file, const char *name, int actualsize, struct ReportList *reports);
-
 /* internal function but we need to expose it */
 void blo_lib_link_restore(
         struct Main *newmain, struct wmWindowManager *curwm,
@@ -163,8 +161,11 @@ struct BlendThumbnail *BLO_thumbnail_from_file(const char *filepath);
 
 struct Main *BLO_main_from_memfile(struct MemFile *memfile, struct Main *bmain, struct Scene **r_scene);
 
+/* datafiles (generated theme) */
+extern const struct bTheme U_theme_default;
+
 #ifdef __cplusplus
-} 
+}
 #endif
 
 #endif  /* __BLO_READFILE_H__ */

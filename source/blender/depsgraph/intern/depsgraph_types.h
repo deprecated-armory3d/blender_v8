@@ -134,6 +134,10 @@ typedef enum eDepsNode_Type {
 	 * execution.
 	 */
 	DEG_NODE_TYPE_COPY_ON_WRITE,
+	/* Used by all operations which are updating object when something is
+	 * changed in view layer.
+	 */
+	DEG_NODE_TYPE_OBJECT_FROM_LAYER,
 
 	/* **** Evaluation-Related Outer Types (with Subdata) **** */
 
@@ -207,6 +211,7 @@ typedef enum eDepsOperation_Code {
 
 	/* Object data. ------------------------------------- */
 	DEG_OPCODE_LIGHT_PROBE_EVAL,
+	DEG_OPCODE_SPEAKER_EVAL,
 
 	/* Pose. -------------------------------------------- */
 	/* Init pose, clear flags, etc. */
@@ -272,7 +277,17 @@ typedef enum eDepsOperation_Code {
 
 	DEG_NUM_OPCODES,
 } eDepsOperation_Code;
-
 const char *operationCodeAsString(eDepsOperation_Code opcode);
+
+typedef enum eDepsNode_CollectionOwner {
+	/* Unknown owner of collection, collection is pulled directly, maybe
+	 * via driver.
+	 */
+	DEG_COLLECTION_OWNER_UNKNOWN,
+	/* Collection belongs to a scene. */
+	DEG_COLLECTION_OWNER_SCENE,
+	/* Collection is used by object, as a dupli-system. */
+	DEG_COLLECTION_OWNER_OBJECT,
+} eDepsNode_CollectionOwner;
 
 }  // namespace DEG

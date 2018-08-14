@@ -401,7 +401,8 @@ static void attr_create_vertex_color(Scene *scene,
 				int n = p->loop_total();
 				for(int i = 0; i < n; i++) {
 					float3 color = get_float3(l->data[p->loop_start() + i].color());
-					*(cdata++) = color_float_to_byte(color_srgb_to_scene_linear_v3(color));
+					/* Encode vertex color using the sRGB curve. */
+					*(cdata++) = color_float_to_byte(color_srgb_to_linear_v3(color));
 				}
 			}
 		}
@@ -424,12 +425,13 @@ static void attr_create_vertex_color(Scene *scene,
 				int tri_a[3], tri_b[3];
 				face_split_tri_indices(face_flags[i], tri_a, tri_b);
 
+				/* Encode vertex color using the sRGB curve. */
 				uchar4 colors[4];
-				colors[0] = color_float_to_byte(color_srgb_to_scene_linear_v3(get_float3(c->color1())));
-				colors[1] = color_float_to_byte(color_srgb_to_scene_linear_v3(get_float3(c->color2())));
-				colors[2] = color_float_to_byte(color_srgb_to_scene_linear_v3(get_float3(c->color3())));
+				colors[0] = color_float_to_byte(color_srgb_to_linear_v3(get_float3(c->color1())));
+				colors[1] = color_float_to_byte(color_srgb_to_linear_v3(get_float3(c->color2())));
+				colors[2] = color_float_to_byte(color_srgb_to_linear_v3(get_float3(c->color3())));
 				if(nverts[i] == 4) {
-					colors[3] = color_float_to_byte(color_srgb_to_scene_linear_v3(get_float3(c->color4())));
+					colors[3] = color_float_to_byte(color_srgb_to_linear_v3(get_float3(c->color4())));
 				}
 
 				cdata[0] = colors[tri_a[0]];
@@ -987,7 +989,7 @@ static void create_subd_mesh(Scene *scene,
                              int max_subdivisions)
 {
 	BL::SubsurfModifier subsurf_mod(b_ob.modifiers[b_ob.modifiers.length()-1]);
-	bool subdivide_uvs = subsurf_mod.use_subsurf_uv();
+	bool subdivide_uvs = subsurf_mod.uv_smooth() != BL::SubsurfModifier::uv_smooth_NONE;
 
 	create_mesh(scene, mesh, b_mesh, used_shaders, true, subdivide_uvs);
 
@@ -1075,38 +1077,21 @@ Mesh *BlenderSync::sync_mesh(BL::Depsgraph& b_depsgraph,
                              bool object_updated,
                              bool hide_tris)
 {
-	/* When viewport display is not needed during render we can force some
-	 * caches to be releases from blender side in order to reduce peak memory
-	 * footprint during synchronization process.
-	 */
-	const bool is_interface_locked = b_engine.render() &&
-	                                 b_engine.render().use_lock_interface();
-	const bool can_free_caches = BlenderSession::headless || is_interface_locked;
-
 	/* test if we can instance or if the object is modified */
 	BL::ID b_ob_data = b_ob.data();
 	BL::ID key = (BKE_object_is_modified(b_ob))? b_ob_instance: b_ob_data;
-	BL::Material material_override = view_layer.material_override;
 
 	/* find shader indices */
 	vector<Shader*> used_shaders;
 
 	BL::Object::material_slots_iterator slot;
 	for(b_ob.material_slots.begin(slot); slot != b_ob.material_slots.end(); ++slot) {
-		if(material_override) {
-			find_shader(material_override, used_shaders, scene->default_surface);
-		}
-		else {
-			BL::ID b_material(slot->material());
-			find_shader(b_material, used_shaders, scene->default_surface);
-		}
+		BL::ID b_material(slot->material());
+		find_shader(b_material, used_shaders, scene->default_surface);
 	}
 
 	if(used_shaders.size() == 0) {
-		if(material_override)
-			find_shader(material_override, used_shaders, scene->default_surface);
-		else
-			used_shaders.push_back(scene->default_surface);
+		used_shaders.push_back(scene->default_surface);
 	}
 
 	/* test if we need to sync */
@@ -1206,10 +1191,6 @@ Mesh *BlenderSync::sync_mesh(BL::Depsgraph& b_depsgraph,
 
 			if(view_layer.use_hair && mesh->subdivision_type == Mesh::SUBDIVISION_NONE)
 				sync_curves(mesh, b_mesh, b_ob, false);
-
-			if(can_free_caches) {
-				b_ob.cache_release();
-			}
 
 			/* free derived mesh */
 			b_data.meshes.remove(b_mesh, false, true, false);

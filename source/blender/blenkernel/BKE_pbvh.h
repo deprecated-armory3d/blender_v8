@@ -30,7 +30,7 @@
 #include "BLI_ghash.h"
 #include "BLI_utildefines.h"
 
-struct Gwn_Batch;
+struct GPUBatch;
 struct CCGElem;
 struct CCGKey;
 struct CCGDerivedMesh;
@@ -131,7 +131,7 @@ bool BKE_pbvh_node_find_nearest_to_ray(
 
 void BKE_pbvh_draw_cb(
         PBVH *bvh, float (*planes)[4], float (*fnors)[3], bool fast,
-        void (*draw_fn)(void *user_data, struct Gwn_Batch *batch), void *user_data);
+        void (*draw_fn)(void *user_data, struct GPUBatch *batch), void *user_data);
 
 /* PBVH Access */
 typedef enum {
@@ -240,7 +240,7 @@ void BKE_pbvh_node_layer_disp_free(PBVHNode *node);
 
 /* vertex deformer */
 float (*BKE_pbvh_get_vertCos(struct PBVH *pbvh))[3];
-void BKE_pbvh_apply_vertCos(struct PBVH *pbvh, float (*vertCos)[3]);
+void BKE_pbvh_apply_vertCos(struct PBVH *pbvh, float (*vertCos)[3], const int totvert);
 bool BKE_pbvh_isDeformed(struct PBVH *pbvh);
 
 /* Vertex Iterator */

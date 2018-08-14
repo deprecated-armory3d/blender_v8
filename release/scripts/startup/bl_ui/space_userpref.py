@@ -22,28 +22,10 @@ from bpy.types import (
     Header,
     Menu,
     Panel,
+    Operator,
 )
 from bpy.app.translations import pgettext_iface as iface_
 from bpy.app.translations import contexts as i18n_contexts
-
-
-def opengl_lamp_buttons(column, lamp):
-    split = column.row()
-
-    split.prop(lamp, "use", text="", icon='OUTLINER_OB_LAMP' if lamp.use else 'LAMP_DATA')
-
-    col = split.column()
-    col.active = lamp.use
-    row = col.row()
-    row.label(text="Diffuse:")
-    row.prop(lamp, "diffuse_color", text="")
-    row = col.row()
-    row.label(text="Specular:")
-    row.prop(lamp, "specular_color", text="")
-
-    col = split.column()
-    col.active = lamp.use
-    col.prop(lamp, "direction", text="")
 
 
 class USERPREF_HT_header(Header):
@@ -71,6 +53,10 @@ class USERPREF_HT_header(Header):
             layout.operator("wm.addon_install", icon='FILESEL')
             layout.operator("wm.addon_refresh", icon='FILE_REFRESH')
             layout.menu("USERPREF_MT_addons_online_resources")
+        elif userpref.active_section == 'LIGHTS':
+            layout.operator('wm.studiolight_install', text="Install MatCap").orientation = 'MATCAP'
+            layout.operator('wm.studiolight_install', text="Install World HDRI").orientation = 'WORLD'
+            layout.operator('wm.studiolight_install', text="Install Camera HDRI").orientation = 'CAMERA'
         elif userpref.active_section == 'THEMES':
             layout.operator("ui.reset_default_theme")
             layout.operator("wm.theme_install")
@@ -225,7 +211,6 @@ class USERPREF_PT_interface(Panel):
         col.prop(view, "ui_scale", text="Scale")
         col.prop(view, "ui_line_width", text="Line Width")
         col.prop(view, "show_tooltips")
-        col.prop(view, "show_tooltips_python")
         col.prop(view, "show_object_info", text="Object Info")
         col.prop(view, "show_large_cursors")
         col.prop(view, "show_view_name", text="View Name")
@@ -233,25 +218,43 @@ class USERPREF_PT_interface(Panel):
         col.prop(view, "object_origin_size")
 
         col.separator()
-        col.separator()
-        col.separator()
 
-        col.prop(view, "show_mini_axis", text="Display Mini Axis")
-        sub = col.column()
-        sub.active = view.show_mini_axis
+        # col.prop(view, "show_gizmo_navigate")
+
+        sub = col.column(align=True)
+
+        sub.label("3D Viewport Axis:")
+        sub.row().prop(view, "mini_axis_type", expand=True)
+
+        sub = col.column(align=True)
+        sub.active = view.mini_axis_type == 'MINIMAL'
         sub.prop(view, "mini_axis_size", text="Size")
         sub.prop(view, "mini_axis_brightness", text="Brightness")
 
         col.separator()
 
-        col.label("Warnings")
-        col.prop(view, "use_quit_dialog")
+        # Toolbox doesn't exist yet
+        # col.label(text="Toolbox:")
+        #col.prop(view, "show_column_layout")
+        #col.label(text="Open Toolbox Delay:")
+        #col.prop(view, "open_left_mouse_delay", text="Hold LMB")
+        #col.prop(view, "open_right_mouse_delay", text="Hold RMB")
+        col.prop(view, "show_gizmo", text="Gizmos")
+        sub = col.column()
+        sub.active = view.show_gizmo
+        sub.prop(view, "gizmo_size", text="Size")
+
+        col.separator()
+
+        col.label("Development:")
+        col.prop(view, "show_tooltips_python")
+        col.prop(view, "show_developer_ui")
 
         row.separator()
         row.separator()
 
         col = row.column()
-        col.label(text="View Manipulation:")
+        col.label(text="View Gizmos:")
         col.prop(view, "use_mouse_depth_cursor")
         col.prop(view, "use_cursor_lock_adjust")
         col.prop(view, "use_mouse_depth_navigate")
@@ -281,24 +284,6 @@ class USERPREF_PT_interface(Panel):
         row.separator()
 
         col = row.column()
-        # Toolbox doesn't exist yet
-        # col.label(text="Toolbox:")
-        #col.prop(view, "show_column_layout")
-        #col.label(text="Open Toolbox Delay:")
-        #col.prop(view, "open_left_mouse_delay", text="Hold LMB")
-        #col.prop(view, "open_right_mouse_delay", text="Hold RMB")
-        col.prop(view, "show_manipulator")
-        # Currently not working
-        # col.prop(view, "show_manipulator_shaded")
-        sub = col.column()
-        sub.active = view.show_manipulator
-        sub.prop(view, "manipulator_size", text="Size")
-
-        col.prop(view, "show_manipulator_navigate")
-
-        col.separator()
-        col.separator()
-        col.separator()
 
         col.label(text="Menus:")
         col.prop(view, "use_mouse_over_open")
@@ -319,6 +304,10 @@ class USERPREF_PT_interface(Panel):
         col.separator()
 
         col.prop(view, "show_splash")
+
+        col.label("Warnings:")
+        col.prop(view, "use_quit_dialog")
+
         col.separator()
 
         col.label(text="App Template:")
@@ -372,13 +361,15 @@ class USERPREF_PT_edit(Panel):
         row.separator()
 
         col = row.column()
-        col.label(text="Grease Pencil:")
+        col.label(text="Annotations:")
+        sub = col.row()
+        sub.prop(edit, "grease_pencil_default_color", text="Default Color")
         col.prop(edit, "grease_pencil_eraser_radius", text="Eraser Radius")
+        col.separator()
+        col.label(text="Grease Pencil/Annotations:")
         col.separator()
         col.prop(edit, "grease_pencil_manhattan_distance", text="Manhattan Distance")
         col.prop(edit, "grease_pencil_euclidean_distance", text="Euclidean Distance")
-        col.separator()
-        col.prop(edit, "grease_pencil_default_color", text="Default Color")
         col.separator()
         col.prop(edit, "use_grease_pencil_simplify_stroke", text="Simplify Stroke")
         col.separator()
@@ -426,6 +417,7 @@ class USERPREF_PT_edit(Panel):
 
         col.label(text="Transform:")
         col.prop(edit, "use_drag_immediately")
+        col.prop(edit, "use_numeric_input_advanced")
 
         row.separator()
         row.separator()
@@ -444,7 +436,7 @@ class USERPREF_PT_edit(Panel):
         col.prop(edit, "use_duplicate_text", text="Text")
         col.prop(edit, "use_duplicate_metaball", text="Metaball")
         col.prop(edit, "use_duplicate_armature", text="Armature")
-        col.prop(edit, "use_duplicate_lamp", text="Lamp")
+        col.prop(edit, "use_duplicate_light", text="Light")
         col.prop(edit, "use_duplicate_material", text="Material")
         col.prop(edit, "use_duplicate_texture", text="Texture")
         #col.prop(edit, "use_duplicate_fcurve", text="F-Curve")
@@ -495,12 +487,6 @@ class USERPREF_PT_system(Panel):
 
         col.separator()
 
-        col.label(text="Screencast:")
-        col.prop(system, "screencast_fps")
-        col.prop(system, "screencast_wait_time")
-
-        col.separator()
-
         if bpy.app.build_options.cycles:
             addon = userpref.addons.get("cycles")
             if addon is not None:
@@ -522,13 +508,13 @@ class USERPREF_PT_system(Panel):
         col.prop(system, "use_16bit_textures")
 
         col.separator()
-        col.label(text="Selection")
+        col.label(text="Selection:")
         col.prop(system, "select_method", text="")
         col.prop(system, "use_select_pick_depth")
 
         col.separator()
 
-        col.label(text="Anisotropic Filtering")
+        col.label(text="Anisotropic Filtering:")
         col.prop(system, "anisotropic_filter", text="")
 
         col.separator()
@@ -540,47 +526,37 @@ class USERPREF_PT_system(Panel):
         col.prop(system, "use_region_overlap")
 
         col.separator()
+        col.prop(system, "gpu_viewport_quality")
 
+        col.separator()
+        col.label(text="Grease Pencil Options:")
+        col.prop(system, "gpencil_multi_sample", text="")
+
+        col.separator()
         col.label(text="Text Draw Options:")
         col.prop(system, "use_text_antialiasing")
-
-        col.separator()
-
-        col.label(text="Textures:")
-        col.prop(system, "gl_texture_limit", text="Limit Size")
-        col.prop(system, "texture_time_out", text="Time Out")
-        col.prop(system, "texture_collection_rate", text="Collection Rate")
-
-        col.separator()
-
-        col.label(text="Images Draw Method:")
-        col.prop(system, "image_draw_method", text="")
-
-        col.separator()
-
-        col.label(text="Sequencer/Clip Editor:")
-        # currently disabled in the code
-        # col.prop(system, "prefetch_frames")
-        col.prop(system, "memory_cache_limit")
+        if system.use_text_antialiasing:
+            col.prop(system, "use_text_hinting")
 
         # 3. Column
         column = split.column()
 
-        column.label(text="Solid OpenGL Lights:")
+        column.label(text="Textures:")
+        column.prop(system, "gl_texture_limit", text="Limit Size")
+        column.prop(system, "texture_time_out", text="Time Out")
+        column.prop(system, "texture_collection_rate", text="Collection Rate")
 
-        split = column.split(percentage=0.1)
-        split.label()
-        split.label(text="Colors:")
-        split.label(text="Direction:")
+        column.separator()
 
-        lamp = system.solid_lights[0]
-        opengl_lamp_buttons(column, lamp)
+        column.label(text="Images Draw Method:")
+        column.prop(system, "image_draw_method", text="")
 
-        lamp = system.solid_lights[1]
-        opengl_lamp_buttons(column, lamp)
+        column.separator()
 
-        lamp = system.solid_lights[2]
-        opengl_lamp_buttons(column, lamp)
+        column.label(text="Sequencer/Clip Editor:")
+        # currently disabled in the code
+        # column.prop(system, "prefetch_frames")
+        column.prop(system, "memory_cache_limit")
 
         column.separator()
 
@@ -910,7 +886,7 @@ class USERPREF_PT_theme(Panel):
             col.separator()
             col.separator()
 
-            col.label("Axis & Manipulator Colors:")
+            col.label("Axis & Gizmo Colors:")
 
             row = col.row()
 
@@ -928,10 +904,10 @@ class USERPREF_PT_theme(Panel):
             padding = subsplit.split(percentage=0.15)
             colsub = padding.column()
             colsub = padding.column()
-            colsub.row().prop(ui, "manipulator_primary")
-            colsub.row().prop(ui, "manipulator_secondary")
-            colsub.row().prop(ui, "manipulator_a")
-            colsub.row().prop(ui, "manipulator_b")
+            colsub.row().prop(ui, "gizmo_primary")
+            colsub.row().prop(ui, "gizmo_secondary")
+            colsub.row().prop(ui, "gizmo_a")
+            colsub.row().prop(ui, "gizmo_b")
 
             col.separator()
             col.separator()
@@ -939,7 +915,7 @@ class USERPREF_PT_theme(Panel):
             col = split.column()
 
             for i, ui in enumerate(theme.bone_color_sets, 1):
-                col.label(text=iface_("Color Set %d:") % i, translate=False)
+                col.label(iface_(f"Color Set {i:d}"), translate=False)
 
                 row = col.row()
 
@@ -1431,12 +1407,13 @@ class USERPREF_PT_addons(Panel):
                 continue
 
             # check if addon should be visible with current filters
-            if ((filter == "All") or
-                        (filter == info["category"]) or
-                        (filter == "Enabled" and is_enabled) or
+            if (
+                    (filter == "All") or
+                    (filter == info["category"]) or
+                    (filter == "Enabled" and is_enabled) or
                     (filter == "Disabled" and not is_enabled) or
                     (filter == "User" and (mod.__file__.startswith((scripts_addons_folder, userpref_addons_folder))))
-                    ):
+            ):
                 if search and search not in info["name"].lower():
                     if info["author"]:
                         if search not in info["author"].lower():
@@ -1465,7 +1442,14 @@ class USERPREF_PT_addons(Panel):
                 sub = row.row()
                 sub.active = is_enabled
                 sub.label(text="%s: %s" % (info["category"], info["name"]))
-                if info["warning"]:
+
+                # WARNING: 2.8x exception, may be removed
+                # use disabled state for old add-ons, chances are they are broken.
+                if info.get("blender", (0,)) < (2, 80):
+                    sub.label(text="upgrade to 2.8x required")
+                    sub.label(icon='ERROR')
+                # Remove code above after 2.8x migration is complete.
+                elif info["warning"]:
                     sub.label(icon='ERROR')
 
                 # icon showing support level.
@@ -1570,6 +1554,97 @@ class USERPREF_PT_addons(Panel):
                 row.label(text=module_name, translate=False)
 
 
+class StudioLightPanelMixin():
+    bl_space_type = 'USER_PREFERENCES'
+    bl_region_type = 'WINDOW'
+
+    @classmethod
+    def poll(cls, context):
+        userpref = context.user_preferences
+        return (userpref.active_section == 'LIGHTS')
+
+    def _get_lights(self, userpref):
+        return [light for light in userpref.studio_lights if light.is_user_defined and light.orientation == self.sl_orientation]
+
+    def draw(self, context):
+        layout = self.layout
+        userpref = context.user_preferences
+        lights = self._get_lights(userpref)
+        if lights:
+            flow = layout.column_flow(4)
+            for studio_light in lights:
+                self.draw_studio_light(flow, studio_light)
+        else:
+            layout.label("No custom {} configured".format(self.bl_label))
+
+    def draw_studio_light(self, layout, studio_light):
+        box = layout.box()
+        row = box.row()
+
+        row.template_icon(layout.icon(studio_light), scale=6.0)
+        op = row.operator('wm.studiolight_uninstall', text="", icon='ZOOMOUT')
+        op.index = studio_light.index
+
+        box.label(text=studio_light.name)
+
+
+class USERPREF_PT_studiolight_matcaps(Panel, StudioLightPanelMixin):
+    bl_label = "MatCaps"
+    sl_orientation = 'MATCAP'
+
+
+class USERPREF_PT_studiolight_world(Panel, StudioLightPanelMixin):
+    bl_label = "World HDRI"
+    sl_orientation = 'WORLD'
+
+
+class USERPREF_PT_studiolight_camera(Panel, StudioLightPanelMixin):
+    bl_label = "Camera HDRI"
+    sl_orientation = 'CAMERA'
+
+
+class USERPREF_PT_studiolight_specular(Panel, StudioLightPanelMixin):
+    bl_label = "Specular Lights"
+    sl_orientation = 'CAMERA'
+
+    @classmethod
+    def poll(cls, context):
+        userpref = context.user_preferences
+        return (userpref.active_section == 'LIGHTS')
+
+    def opengl_light_buttons(self, column, light):
+        split = column.split()
+
+        col = split.column()
+        col.prop(light, "use", text="Use", icon='OUTLINER_OB_LIGHT' if light.use else 'LIGHT_DATA')
+
+        sub = col.column()
+        sub.active = light.use
+        sub.prop(light, "specular_color")
+
+        col = split.column()
+        col.active = light.use
+        col.prop(light, "direction", text="")
+
+    def draw(self, context):
+        layout = self.layout
+        column = layout.split()
+
+        userpref = context.user_preferences
+        system = userpref.system
+
+        light = system.solid_lights[0]
+        colsplit = column.split(percentage=0.85)
+        self.opengl_light_buttons(colsplit, light)
+
+        light = system.solid_lights[1]
+        colsplit = column.split(percentage=0.85)
+        self.opengl_light_buttons(colsplit, light)
+
+        light = system.solid_lights[2]
+        self.opengl_light_buttons(column, light)
+
+
 classes = (
     USERPREF_HT_header,
     USERPREF_PT_tabs,
@@ -1590,6 +1665,10 @@ classes = (
     USERPREF_PT_input,
     USERPREF_MT_addons_online_resources,
     USERPREF_PT_addons,
+    USERPREF_PT_studiolight_matcaps,
+    USERPREF_PT_studiolight_world,
+    USERPREF_PT_studiolight_camera,
+    USERPREF_PT_studiolight_specular,
 )
 
 if __name__ == "__main__":  # only for live edit.

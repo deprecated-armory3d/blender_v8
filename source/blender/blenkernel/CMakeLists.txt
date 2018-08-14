@@ -38,6 +38,8 @@ set(INC
 	../makesrna
 	../bmesh
 	../modifiers
+	../gpencil_modifiers
+	../shader_fx
 	../nodes
 	../physics
 	../render/extern/include
@@ -51,6 +53,7 @@ set(INC
 	../../../intern/atomic
 	../../../intern/clog
 	../../../intern/libmv
+	../../../intern/opensubdiv
 	../../../extern/curve_fit_nd
 )
 
@@ -77,6 +80,7 @@ set(SRC
 	intern/blender.c
 	intern/blender_copybuffer.c
 	intern/blender_undo.c
+	intern/blender_user_menu.c
 	intern/blendfile.c
 	intern/bmfont.c
 	intern/boids.c
@@ -114,6 +118,7 @@ set(SRC
 	intern/font.c
 	intern/freestyle.c
 	intern/gpencil.c
+	intern/gpencil_modifier.c
 	intern/icons.c
 	intern/icons_rasterize.c
 	intern/idcode.c
@@ -140,6 +145,7 @@ set(SRC
 	intern/mesh.c
 	intern/mesh_convert.c
 	intern/mesh_evaluate.c
+	intern/mesh_iterators.c
 	intern/mesh_mapping.c
 	intern/mesh_merge.c
 	intern/mesh_remap.c
@@ -147,7 +153,6 @@ set(SRC
 	intern/mesh_tangent.c
 	intern/mesh_validate.c
 	intern/modifier.c
-	intern/modifiers_bmesh.c
 	intern/movieclip.c
 	intern/multires.c
 	intern/nla.c
@@ -179,12 +184,19 @@ set(SRC
 	intern/seqeffects.c
 	intern/seqmodifier.c
 	intern/sequencer.c
+	intern/shader_fx.c
 	intern/shrinkwrap.c
 	intern/smoke.c
 	intern/softbody.c
 	intern/sound.c
 	intern/speaker.c
 	intern/studiolight.c
+	intern/subdiv.c
+	intern/subdiv_converter.c
+	intern/subdiv_converter_mesh.c
+	intern/subdiv_eval.c
+	intern/subdiv_mesh.c
+	intern/subdiv_stats.c
 	intern/subsurf_ccg.c
 	intern/suggestions.c
 	intern/text.c
@@ -252,6 +264,7 @@ set(SRC
 	BKE_freestyle.h
 	BKE_global.h
 	BKE_gpencil.h
+	BKE_gpencil_modifier.h
 	BKE_icons.h
 	BKE_idcode.h
 	BKE_idprop.h
@@ -272,8 +285,10 @@ set(SRC
 	BKE_mball.h
 	BKE_mball_tessellate.h
 	BKE_mesh.h
+	BKE_mesh_iterators.h
 	BKE_mesh_mapping.h
 	BKE_mesh_remap.h
+	BKE_mesh_runtime.h
 	BKE_mesh_tangent.h
 	BKE_modifier.h
 	BKE_movieclip.h
@@ -297,12 +312,14 @@ set(SRC
 	BKE_scene.h
 	BKE_screen.h
 	BKE_sequencer.h
+	BKE_shader_fx.h
 	BKE_shrinkwrap.h
 	BKE_smoke.h
 	BKE_softbody.h
 	BKE_sound.h
 	BKE_speaker.h
 	BKE_studiolight.h
+	BKE_subdiv.h
 	BKE_subsurf.h
 	BKE_suggestions.h
 	BKE_text.h
@@ -320,8 +337,9 @@ set(SRC
 	intern/CCGSubSurf.h
 	intern/CCGSubSurf_inline.h
 	intern/CCGSubSurf_intern.h
-	intern/pbvh_intern.h
 	intern/data_transfer_intern.h
+	intern/pbvh_intern.h
+	intern/subdiv_converter.h
 )
 
 if(WITH_BINRELOC)
@@ -417,7 +435,7 @@ if(WITH_CODEC_FFMPEG)
 	)
 	add_definitions(-DWITH_FFMPEG)
 
-	remove_strict_flags_file(
+	remove_strict_c_flags_file(
 		intern/writeffmpeg.c
 	)
 endif()
@@ -513,7 +531,6 @@ endif()
 if(WITH_OPENSUBDIV)
 	add_definitions(-DWITH_OPENSUBDIV)
 	list(APPEND INC_SYS
-		../../../intern/opensubdiv
 		${OPENSUBDIV_INCLUDE_DIRS}
 	)
 endif()

@@ -32,7 +32,7 @@ void main()
 {
 	ivec2 texel = ivec2(gl_FragCoord.xy);
 
-#ifdef GL_ARB_texture_gather
+#ifdef GPU_ARB_texture_gather
 	vec2 texel_size = 1.0 / vec2(textureSize(outlineId, 0).xy);
 	vec2 uv = ceil(gl_FragCoord.xy) * texel_size;
 
@@ -49,6 +49,12 @@ void main()
 	id.y = texelFetchOffset(outlineId, texel, 0, ivec2( 0, -1)).r;
 	id.z = texelFetchOffset(outlineId, texel, 0, ivec2( 0,  1)).r;
 	id.w = texelFetchOffset(outlineId, texel, 0, ivec2( 1,  0)).r;
+#endif
+
+#ifdef WIRE
+	/* We want only 2px outlines. */
+	/* TODO optimize, don't sample if we don't need to. */
+	id.xy = uvec2(ref_id);
 #endif
 
 	bool outline = any(notEqual(id, uvec4(ref_id)));

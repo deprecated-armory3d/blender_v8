@@ -1028,7 +1028,7 @@ static void basisNurb(float t, short order, int pnts, float *knots, float *basis
 	/* this is for float inaccuracy */
 	if (t < knots[0])
 		t = knots[0];
-	else if (t > knots[opp2]) 
+	else if (t > knots[opp2])
 		t = knots[opp2];
 
 	/* this part is order '1' */
@@ -1752,11 +1752,11 @@ void BKE_curve_bevel_make(
 				BKE_displist_make_curveTypes_forRender(depsgraph, scene, cu->bevobj, &bevdisp, NULL, false, use_render_resolution);
 				dl = bevdisp.first;
 			}
-			else if (cu->bevobj->curve_cache) {
-				dl = cu->bevobj->curve_cache->disp.first;
+			else if (cu->bevobj->runtime.curve_cache) {
+				dl = cu->bevobj->runtime.curve_cache->disp.first;
 			}
 			else {
-				BLI_assert(cu->bevobj->curve_cache != NULL);
+				BLI_assert(cu->bevobj->runtime.curve_cache != NULL);
 				dl = NULL;
 			}
 
@@ -2138,7 +2138,7 @@ static void alfa_bezpart(BezTriple *prevbezt, BezTriple *bezt, Nurb *nu, float *
 				if (tilt_array == NULL || nu->tilt_interp != nu->radius_interp) {
 					key_curve_position_weights(fac, t, nu->radius_interp);
 				}
-				*radius_array = 
+				*radius_array =
 				        t[0] * pprev->radius + t[1] * prevbezt->radius +
 				        t[2] * bezt->radius + t[3] * next->radius;
 			}
@@ -2148,7 +2148,7 @@ static void alfa_bezpart(BezTriple *prevbezt, BezTriple *bezt, Nurb *nu, float *
 
 		if (weight_array) {
 			/* basic interpolation for now, could copy tilt interp too  */
-			*weight_array = 
+			*weight_array =
 			        prevbezt->weight +
 			        (bezt->weight - prevbezt->weight) * (3.0f * fac * fac - 2.0f * fac * fac * fac);
 
@@ -2669,24 +2669,24 @@ void BKE_curve_bevelList_make(Object *ob, ListBase *nurbs, bool for_render)
 		ELEM(cu->bevfac2_mapping, CU_BEVFAC_MAP_SEGMENT, CU_BEVFAC_MAP_SPLINE);
 
 
-	bev = &ob->curve_cache->bev;
+	bev = &ob->runtime.curve_cache->bev;
 
 	/* do we need to calculate the radius for each point? */
 	/* do_radius = (cu->bevobj || cu->taperobj || (cu->flag & CU_FRONT) || (cu->flag & CU_BACK)) ? 0 : 1; */
 
 	/* STEP 1: MAKE POLYS  */
 
-	BKE_curve_bevelList_free(&ob->curve_cache->bev);
+	BKE_curve_bevelList_free(&ob->runtime.curve_cache->bev);
 	nu = nurbs->first;
 	if (cu->editnurb && ob->type != OB_FONT) {
 		is_editmode = 1;
 	}
 
 	for (; nu; nu = nu->next) {
-		
+
 		if (nu->hide && is_editmode)
 			continue;
-		
+
 		/* check if we will calculate tilt data */
 		do_tilt = CU_DO_TILT(cu, nu);
 		do_radius = CU_DO_RADIUS(cu, nu); /* normal display uses the radius, better just to calculate them */
@@ -4962,7 +4962,7 @@ bool BKE_curve_minmax(Curve *cu, bool use_radius, float min[3], float max[3])
 	 */
 	if (is_font) {
 		nurb_lb = &temp_nurb_lb;
-		BKE_vfont_to_curve_ex(G.main, NULL, cu, FO_EDIT, nurb_lb,
+		BKE_vfont_to_curve_ex(NULL, cu, FO_EDIT, nurb_lb,
 		                      NULL, NULL, NULL, NULL);
 		use_radius = false;
 	}
@@ -5160,7 +5160,7 @@ void BKE_curve_material_index_clear(Curve *cu)
 	}
 }
 
-int BKE_curve_material_index_validate(Curve *cu)
+bool BKE_curve_material_index_validate(Curve *cu)
 {
 	const int curvetype = BKE_curve_type_get(cu);
 	bool is_valid = true;

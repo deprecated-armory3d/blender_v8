@@ -58,7 +58,7 @@ struct WorkSpace;
 
 struct ViewLayer *BKE_view_layer_default_view(const struct Scene *scene);
 struct ViewLayer *BKE_view_layer_default_render(const struct Scene *scene);
-struct ViewLayer *BKE_view_layer_from_workspace_get(const struct Scene *scene, const struct WorkSpace *workspace);
+struct ViewLayer *BKE_view_layer_find(const struct Scene *scene, const char *layer_name);
 struct ViewLayer *BKE_view_layer_add(struct Scene *scene, const char *name);
 
 /* DEPRECATED */
@@ -104,8 +104,15 @@ bool BKE_view_layer_has_collection(
 bool BKE_scene_has_object(
         struct Scene *scene, struct Object *ob);
 
+/* selection and hiding */
+
 bool BKE_layer_collection_objects_select(
         struct ViewLayer *view_layer, struct LayerCollection *lc, bool deselect);
+bool BKE_layer_collection_has_selected_objects(
+        struct ViewLayer *view_layer, struct LayerCollection *lc);
+
+void BKE_base_set_visible(struct Scene *scene, struct ViewLayer *view_layer, struct Base *base, bool extend);
+void BKE_layer_collection_set_visible(struct Scene *scene, struct ViewLayer *view_layer, struct LayerCollection *lc, bool extend);
 
 /* override */
 

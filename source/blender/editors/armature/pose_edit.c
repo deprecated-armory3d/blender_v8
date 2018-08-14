@@ -46,6 +46,7 @@
 #include "BKE_armature.h"
 #include "BKE_context.h"
 #include "BKE_deform.h"
+#include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_report.h"
 #include "BKE_layer.h"
@@ -68,6 +69,15 @@
 #include "UI_interface.h"
 
 #include "armature_intern.h"
+
+
+#define DEBUG_TIME
+
+#include "PIL_time.h"
+#ifdef DEBUG_TIME
+#  include "PIL_time_utildefines.h"
+#endif
+
 
 /* matches logic with ED_operator_posemode_context() */
 Object *ED_pose_object_from_context(bContext *C)
@@ -255,9 +265,17 @@ static int pose_calculate_paths_exec(bContext *C, wmOperator *op)
 	}
 	CTX_DATA_END;
 
+#ifdef DEBUG_TIME
+	TIMEIT_START(recalc_pose_paths);
+#endif
+
 	/* calculate the bones that now have motionpaths... */
 	/* TODO: only make for the selected bones? */
 	ED_pose_recalculate_paths(C, scene, ob);
+
+#ifdef DEBUG_TIME
+	TIMEIT_END(recalc_pose_paths);
+#endif
 
 	/* notifiers for updates */
 	WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
@@ -286,14 +304,15 @@ void POSE_OT_paths_calculate(wmOperatorType *ot)
 	RNA_def_int(ot->srna, "end_frame", 250, MINAFRAME, MAXFRAME, "End",
 	            "Last frame to calculate bone paths on", MINFRAME, MAXFRAME / 2.0);
 
-	RNA_def_enum(ot->srna, "bake_location", rna_enum_motionpath_bake_location_items, 0,
+	RNA_def_enum(ot->srna, "bake_location", rna_enum_motionpath_bake_location_items,
+	             MOTIONPATH_BAKE_HEADS,
 	             "Bake Location",
 	             "Which point on the bones is used when calculating paths");
 }
 
 /* --------- */
 
-static int pose_update_paths_poll(bContext *C)
+static bool pose_update_paths_poll(bContext *C)
 {
 	if (ED_operator_posemode_exclusive(C)) {
 		Object *ob = CTX_data_active_object(C);
@@ -363,6 +382,9 @@ static void ED_pose_clear_paths(Object *ob, bool only_selected)
 	/* if nothing was skipped, there should be no paths left! */
 	if (skipped == false)
 		ob->pose->avs.path_bakeflag &= ~MOTIONPATH_BAKE_HAS_PATHS;
+
+	/* tag armature object for copy on write - so removed paths don't still show */
+	DEG_id_tag_update(&ob->id, DEG_TAG_COPY_ON_WRITE);
 }
 
 /* operator callback - wrapper for the backend function  */
@@ -622,6 +644,7 @@ static void pose_copy_menu(Scene *scene)
 
 static int pose_flip_names_exec(bContext *C, wmOperator *op)
 {
+	Main *bmain = CTX_data_main(C);
 	ViewLayer *view_layer = CTX_data_view_layer(C);
 	const bool do_strip_numbers = RNA_boolean_get(op->ptr, "do_strip_numbers");
 
@@ -636,7 +659,7 @@ static int pose_flip_names_exec(bContext *C, wmOperator *op)
 		}
 		FOREACH_PCHAN_SELECTED_IN_OBJECT_END;
 
-		ED_armature_bones_flip_names(arm, &bones_names, do_strip_numbers);
+		ED_armature_bones_flip_names(bmain, arm, &bones_names, do_strip_numbers);
 
 		BLI_freelistN(&bones_names);
 
@@ -674,6 +697,7 @@ void POSE_OT_flip_names(wmOperatorType *ot)
 
 static int pose_autoside_names_exec(bContext *C, wmOperator *op)
 {
+	Main *bmain = CTX_data_main(C);
 	Object *ob = BKE_object_pose_armature_get(CTX_data_active_object(C));
 	bArmature *arm;
 	char newname[MAXBONENAME];
@@ -689,7 +713,7 @@ static int pose_autoside_names_exec(bContext *C, wmOperator *op)
 	{
 		BLI_strncpy(newname, pchan->name, sizeof(newname));
 		if (bone_autoside_name(newname, 1, axis, pchan->bone->head[axis], pchan->bone->tail[axis]))
-			ED_armature_bone_rename(arm, pchan->name, newname);
+			ED_armature_bone_rename(bmain, arm, pchan->name, newname);
 	}
 	CTX_DATA_END;
 
@@ -770,7 +794,7 @@ void POSE_OT_rotation_mode_set(wmOperatorType *ot)
 
 /* ********************************************** */
 
-static int armature_layers_poll(bContext *C)
+static bool armature_layers_poll(bContext *C)
 {
 	/* Armature layers operators can be used in posemode OR editmode for armatures */
 	return ED_operator_posemode(C) || ED_operator_editarmature(C);
@@ -803,7 +827,7 @@ static int pose_armature_layers_showall_exec(bContext *C, wmOperator *op)
 	bArmature *arm = armature_layers_get_data(&ob);
 	PointerRNA ptr;
 	int maxLayers = (RNA_boolean_get(op->ptr, "all")) ? 32 : 16;
-	int layers[32] = {0}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32] = {false}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 	int i;
 
 	/* sanity checking */
@@ -855,7 +879,7 @@ static int armature_layers_invoke(bContext *C, wmOperator *op, const wmEvent *ev
 	Object *ob = CTX_data_active_object(C);
 	bArmature *arm = armature_layers_get_data(&ob);
 	PointerRNA ptr;
-	int layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	/* sanity checking */
 	if (arm == NULL)
@@ -876,7 +900,7 @@ static int armature_layers_exec(bContext *C, wmOperator *op)
 	Object *ob = CTX_data_active_object(C);
 	bArmature *arm = armature_layers_get_data(&ob);
 	PointerRNA ptr;
-	int layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	if (arm == NULL) {
 		return OPERATOR_CANCELLED;
@@ -920,7 +944,7 @@ void ARMATURE_OT_armature_layers(wmOperatorType *ot)
 /* Present a popup to get the layers that should be used */
 static int pose_bone_layers_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	int layers[32] = {0}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32] = {0}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	/* get layers that are active already */
 	CTX_DATA_BEGIN (C, bPoseChannel *, pchan, selected_pose_bones)
@@ -946,7 +970,7 @@ static int pose_bone_layers_exec(bContext *C, wmOperator *op)
 {
 	Object *ob = BKE_object_pose_armature_get(CTX_data_active_object(C));
 	PointerRNA ptr;
-	int layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	if (ob == NULL || ob->data == NULL) {
 		return OPERATOR_CANCELLED;
@@ -995,7 +1019,7 @@ void POSE_OT_bone_layers(wmOperatorType *ot)
 /* Present a popup to get the layers that should be used */
 static int armature_bone_layers_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-	int layers[32] = {0}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32] = {0}; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	/* get layers that are active already */
 	CTX_DATA_BEGIN (C, EditBone *, ebone, selected_editable_bones)
@@ -1023,7 +1047,7 @@ static int armature_bone_layers_exec(bContext *C, wmOperator *op)
 {
 	Object *ob = CTX_data_edit_object(C);
 	PointerRNA ptr;
-	int layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
+	bool layers[32]; /* hardcoded for now - we can only have 32 armature layers, so this should be fine... */
 
 	/* get the values set in the operator properties */
 	RNA_boolean_get_array(op->ptr, "layers", layers);
@@ -1245,35 +1269,3 @@ void POSE_OT_quaternions_flip(wmOperatorType *ot)
 	/* flags */
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
-
-/* -------------------------------------------------------------------- */
-/** \name Toggle Bone selection Overlay Operator
- * \{ */
-
-static int toggle_bone_selection_exec(bContext *C, wmOperator *UNUSED(op))
-{
-	View3D *v3d = CTX_wm_view3d(C);
-	v3d->overlay.flag ^= V3D_OVERLAY_BONE_SELECTION;
-	ED_view3d_shade_update(CTX_data_main(C), v3d, CTX_wm_area(C));
-	WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, v3d);
-	return OPERATOR_FINISHED;
-}
-
-static int pose_select_linked_poll(bContext *C)
-{
-	return (ED_operator_view3d_active(C) && ED_operator_posemode(C));
-}
-
-void POSE_OT_toggle_bone_selection_overlay(wmOperatorType *ot)
-{
-	/* identifiers */
-	ot->name = "Toggle Bone Selection Overlay";
-	ot->description = "Toggle bone selection overlay of the viewport";
-	ot->idname = "POSE_OT_toggle_bone_selection_overlay";
-
-	/* api callbacks */
-	ot->exec = toggle_bone_selection_exec;
-	ot->poll = pose_select_linked_poll;
-}
-
-/** \} */

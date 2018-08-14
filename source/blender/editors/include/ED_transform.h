@@ -89,6 +89,7 @@ enum TfmMode {
 	TFM_VERT_SLIDE,
 	TFM_SEQ_SLIDE,
 	TFM_BONE_ENVELOPE_DIST,
+	TFM_NORMAL_ROTATION,
 };
 
 /* TRANSFORM CONTEXTS */
@@ -113,8 +114,8 @@ bool calculateTransformCenter(struct bContext *C, int centerMode, float cent3d[3
 struct TransInfo;
 struct Scene;
 struct Object;
-struct wmManipulatorGroup;
-struct wmManipulatorGroupType;
+struct wmGizmoGroup;
+struct wmGizmoGroupType;
 struct wmOperator;
 
 /* UNUSED */
@@ -154,18 +155,19 @@ int BIF_countTransformOrientation(const struct bContext *C);
 #define P_CENTER        (1 << 12)
 #define P_GPENCIL_EDIT  (1 << 13)
 #define P_CURSOR_EDIT   (1 << 14)
+#define P_CLNOR_INVALIDATE (1 << 15)
 
 void Transform_Properties(struct wmOperatorType *ot, int flags);
 
-/* transform manipulators */
+/* transform gizmos */
 
-void TRANSFORM_WGT_manipulator(struct wmManipulatorGroupType *wgt);
-void VIEW3D_WGT_xform_cage(struct wmManipulatorGroupType *wgt);
+void TRANSFORM_GGT_gizmo(struct wmGizmoGroupType *gzgt);
+void VIEW3D_GGT_xform_cage(struct wmGizmoGroupType *gzgt);
 
-bool ED_widgetgroup_manipulator2d_poll(const struct bContext *C, struct wmManipulatorGroupType *wgt);
-void ED_widgetgroup_manipulator2d_setup(const struct bContext *C, struct wmManipulatorGroup *mgroup);
-void ED_widgetgroup_manipulator2d_refresh(const struct bContext *C, struct wmManipulatorGroup *mgroup);
-void ED_widgetgroup_manipulator2d_draw_prepare(const struct bContext *C, struct wmManipulatorGroup *mgroup);
+bool ED_widgetgroup_gizmo2d_poll(const struct bContext *C, struct wmGizmoGroupType *gzgt);
+void ED_widgetgroup_gizmo2d_setup(const struct bContext *C, struct wmGizmoGroup *gzgroup);
+void ED_widgetgroup_gizmo2d_refresh(const struct bContext *C, struct wmGizmoGroup *gzgroup);
+void ED_widgetgroup_gizmo2d_draw_prepare(const struct bContext *C, struct wmGizmoGroup *gzgroup);
 
 
 /* Snapping */
@@ -211,7 +213,7 @@ struct TransformCalcParams {
 	/* Use 'Scene.orientation_type' when zero, otherwise subtract one and use. */
 	ushort orientation_type;
 };
-int ED_transform_calc_manipulator_stats(
+int ED_transform_calc_gizmo_stats(
         const struct bContext *C,
         const struct TransformCalcParams *params,
         struct TransformBounds *tbounds);

@@ -100,6 +100,7 @@ Depsgraph::Depsgraph(Scene *scene,
 	entry_tags = BLI_gset_ptr_new("Depsgraph entry_tags");
 	debug_flags = G.debug;
 	memset(id_type_updated, 0, sizeof(id_type_updated));
+	memset(physics_relations, 0, sizeof(physics_relations));
 }
 
 Depsgraph::~Depsgraph()
@@ -139,9 +140,9 @@ static bool pointer_to_component_node_criteria(
 		bPoseChannel *pchan = (bPoseChannel *)ptr->data;
 		if (prop != NULL && RNA_property_is_idprop(prop)) {
 			*type = DEG_NODE_TYPE_PARAMETERS;
-			*subdata = "";
-			*operation_code = DEG_OPCODE_PARAMETERS_EVAL;
-			*operation_name = pchan->name;
+			*operation_code = DEG_OPCODE_ID_PROPERTY;
+			*operation_name = RNA_property_identifier((PropertyRNA *)prop);
+			*operation_name_tag = -1;
 		}
 		else {
 			/* Bone - generally, we just want the bone component. */
@@ -327,33 +328,41 @@ IDDepsNode *Depsgraph::add_id_node(ID *id, ID *id_cow_hint)
 	return id_node;
 }
 
+void Depsgraph::clear_id_nodes_conditional(const std::function <bool (ID_Type id_type)>& filter)
+{
+	foreach (IDDepsNode *id_node, id_nodes) {
+		if (id_node->id_cow == NULL) {
+			/* This means builder "stole" ownership of the copy-on-written
+			 * datablock for her own dirty needs.
+			 */
+			continue;
+		}
+		if (!deg_copy_on_write_is_expanded(id_node->id_cow)) {
+			continue;
+		}
+		const ID_Type id_type = GS(id_node->id_cow->name);
+		if (filter(id_type)) {
+			id_node->destroy();
+		}
+	}
+}
+
 void Depsgraph::clear_id_nodes()
 {
 	/* Free memory used by ID nodes. */
-	{
-		/* Stupid workaround to ensure we free IDs in a proper order. */
-		foreach (IDDepsNode *id_node, id_nodes) {
-			if (id_node->id_cow == NULL) {
-				/* This means builder "stole" ownership of the copy-on-written
-				 * datablock for her own dirty needs.
-				 */
-				continue;
-			}
-			if (!deg_copy_on_write_is_expanded(id_node->id_cow)) {
-				continue;
-			}
-			const ID_Type id_type = GS(id_node->id_cow->name);
-			if (id_type != ID_PA) {
-				id_node->destroy();
-			}
-		}
-	}
+
+	/* Stupid workaround to ensure we free IDs in a proper order. */
+	clear_id_nodes_conditional([](ID_Type id_type) { return id_type == ID_SCE; });
+	clear_id_nodes_conditional([](ID_Type id_type) { return id_type != ID_PA; });
+
 	foreach (IDDepsNode *id_node, id_nodes) {
 		OBJECT_GUARDED_DELETE(id_node, IDDepsNode);
 	}
 	/* Clear containers. */
 	BLI_ghash_clear(id_hash, NULL, NULL);
 	id_nodes.clear();
+	/* Clear physics relation caches. */
+	deg_clear_physics_relations(this);
 }
 
 /* Add new relationship between two nodes. */
@@ -371,20 +380,6 @@ DepsRelation *Depsgraph::add_new_relation(OperationDepsNode *from,
 	}
 	/* Create new relation, and add it to the graph. */
 	rel = OBJECT_GUARDED_NEW(DepsRelation, from, to, description);
-	/* TODO(sergey): Find a better place for this. */
-#ifdef WITH_OPENSUBDIV
-	ComponentDepsNode *comp_node = from->owner;
-	if (comp_node->type == DEG_NODE_TYPE_GEOMETRY) {
-		IDDepsNode *id_to = to->owner->owner;
-		IDDepsNode *id_from = from->owner->owner;
-		if (id_to != id_from && (id_to->id_orig->recalc & ID_RECALC_ALL)) {
-			if ((id_from->eval_flags & DAG_EVAL_NEED_CPU) == 0) {
-				id_from->tag_update(this);
-				id_from->eval_flags |= DAG_EVAL_NEED_CPU;
-			}
-		}
-	}
-#endif
 	return rel;
 }
 

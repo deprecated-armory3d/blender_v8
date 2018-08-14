@@ -54,6 +54,13 @@ uniform int hairThicknessRes = 1;
 	#define CLOSURE_SUBSURFACE
 #endif /* SURFACE_PRINCIPLED */
 
+#if !defined(SURFACE_CLEARCOAT) && !defined(CLOSURE_NAME)
+	#define SURFACE_CLEARCOAT
+	#define CLOSURE_NAME eevee_closure_clearcoat
+	#define CLOSURE_GLOSSY
+	#define CLOSURE_CLEARCOAT
+#endif /* SURFACE_CLEARCOAT */
+
 #if !defined(SURFACE_DIFFUSE) && !defined(CLOSURE_NAME)
 	#define SURFACE_DIFFUSE
 	#define CLOSURE_NAME eevee_closure_diffuse
@@ -66,6 +73,14 @@ uniform int hairThicknessRes = 1;
 	#define CLOSURE_DIFFUSE
 	#define CLOSURE_SUBSURFACE
 #endif /* SURFACE_SUBSURFACE */
+
+#if !defined(SURFACE_SKIN) && !defined(CLOSURE_NAME)
+	#define SURFACE_SKIN
+	#define CLOSURE_NAME eevee_closure_skin
+	#define CLOSURE_DIFFUSE
+	#define CLOSURE_SUBSURFACE
+	#define CLOSURE_GLOSSY
+#endif /* SURFACE_SKIN */
 
 #if !defined(SURFACE_GLOSSY) && !defined(CLOSURE_NAME)
 	#define SURFACE_GLOSSY
@@ -182,6 +197,17 @@ void CLOSURE_NAME(
 	/* -------------------- SCENE LAMPS LIGHTING ---------------------- */
 	/* ---------------------------------------------------------------- */
 
+#ifdef CLOSURE_GLOSSY
+	vec2 lut_uv = lut_coords(dot(N, V), roughness);
+	vec4 ltc_mat = texture(utilTex, vec3(lut_uv, 0.0)).rgba;
+#endif
+
+#ifdef CLOSURE_CLEARCOAT
+	vec2 lut_uv_clear = lut_coords(dot(C_N, V), C_roughness);
+	vec4 ltc_mat_clear = texture(utilTex, vec3(lut_uv_clear, 0.0)).rgba;
+	vec3 out_spec_clear = vec3(0.0);
+#endif
+
 	for (int i = 0; i < MAX_LIGHT && i < laNumLight; ++i) {
 		LightData ld = lights_data[i];
 
@@ -200,14 +226,24 @@ void CLOSURE_NAME(
 	#endif
 
 	#ifdef CLOSURE_GLOSSY
-		out_spec += l_color_vis * light_specular(ld, N, V, l_vector, roughnessSquared, f0) * ld.l_spec;
+		out_spec += l_color_vis * light_specular(ld, ltc_mat, N, V, l_vector) * ld.l_spec;
 	#endif
 
 	#ifdef CLOSURE_CLEARCOAT
-		out_spec += l_color_vis * light_specular(ld, C_N, V, l_vector, C_roughnessSquared, f0) * C_intensity * ld.l_spec;
+		out_spec_clear += l_color_vis * light_specular(ld, ltc_mat_clear, C_N, V, l_vector) * ld.l_spec;
 	#endif
 	}
 
+#ifdef CLOSURE_GLOSSY
+	vec3 brdf_lut_lamps = texture(utilTex, vec3(lut_uv, 1.0)).rgb;
+	out_spec *= F_area(f0, brdf_lut_lamps.xy) * brdf_lut_lamps.z;
+#endif
+
+#ifdef CLOSURE_CLEARCOAT
+	vec3 brdf_lut_lamps_clear = texture(utilTex, vec3(lut_uv_clear, 1.0)).rgb;
+	out_spec_clear *= F_area(vec3(0.04), brdf_lut_lamps_clear.xy) * brdf_lut_lamps_clear.z;
+	out_spec += out_spec_clear * C_intensity;
+#endif
 
 	/* ---------------------------------------------------------------- */
 	/* ---------------- SPECULAR ENVIRONMENT LIGHTING ----------------- */
@@ -235,7 +271,7 @@ void CLOSURE_NAME(
 		PlanarData pd = planars_data[i];
 
 		/* Fade on geometric normal. */
-		float fade = probe_attenuation_planar(pd, worldPosition, worldNormal, roughness);
+		float fade = probe_attenuation_planar(pd, worldPosition, (gl_FrontFacing) ? worldNormal : -worldNormal, roughness);
 
 		if (fade > 0.0) {
 			if (!(ssrToggle && ssr_id == outputSsrId)) {
@@ -353,7 +389,7 @@ void CLOSURE_NAME(
 		accumulate_light(trans, 1.0, refr_accum);
 	}
 	#endif
-#endif /* Specular probes */ 
+#endif /* Specular probes */
 
 
 	/* ---------------------------- */
@@ -383,7 +419,7 @@ void CLOSURE_NAME(
 		spec_occlu = 1.0;
 	}
 
-	out_spec += spec_accum.rgb * ssr_spec * spec_occlu * float(specToggle);
+	out_spec += spec_accum.rgb * ssr_spec * spec_occlu;
 #endif
 
 #ifdef CLOSURE_REFRACTION
@@ -396,9 +432,14 @@ void CLOSURE_NAME(
 	NV = dot(C_N, V);
 	vec2 C_uv = lut_coords(NV, C_roughness);
 	vec2 C_brdf_lut = texture(utilTex, vec3(C_uv, 1.0)).rg;
-	vec3 C_fresnel = F_ibl(vec3(0.04), brdf_lut) * specular_occlusion(NV, final_ao, C_roughness);
+	vec3 C_fresnel = F_ibl(vec3(0.04), C_brdf_lut) * specular_occlusion(NV, final_ao, C_roughness);
 
-	out_spec += C_spec_accum.rgb * C_fresnel * float(specToggle) * C_intensity;
+	out_spec += C_spec_accum.rgb * C_fresnel * C_intensity;
+#endif
+
+#ifdef CLOSURE_GLOSSY
+	/* Global toggle for lightprobe baking. */
+	out_spec *= float(specToggle);
 #endif
 
 	/* ---------------------------------------------------------------- */

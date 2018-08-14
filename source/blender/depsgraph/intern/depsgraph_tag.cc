@@ -100,6 +100,7 @@ void depsgraph_geometry_tag_to_component(const ID *id,
 				case OB_FONT:
 				case OB_LATTICE:
 				case OB_MBALL:
+				case OB_GPENCIL:
 					*component_type = DEG_NODE_TYPE_GEOMETRY;
 					break;
 				case OB_ARMATURE:
@@ -112,9 +113,15 @@ void depsgraph_geometry_tag_to_component(const ID *id,
 		case ID_ME:
 			*component_type = DEG_NODE_TYPE_GEOMETRY;
 			break;
-		case ID_PA:
+		case ID_PA: /* Particles */
 			return;
 		case ID_LP:
+			*component_type = DEG_NODE_TYPE_PARAMETERS;
+			break;
+		case ID_GD:
+			*component_type = DEG_NODE_TYPE_GEOMETRY;
+			break;
+		case ID_PAL: /* Palettes */
 			*component_type = DEG_NODE_TYPE_PARAMETERS;
 			break;
 		default:
@@ -142,7 +149,7 @@ void depsgraph_select_tag_to_component_opcode(
 		*operation_code = DEG_OPCODE_VIEW_LAYER_EVAL;
 	}
 	else if (id_type == ID_OB) {
-		*component_type = DEG_NODE_TYPE_LAYER_COLLECTIONS;
+		*component_type = DEG_NODE_TYPE_OBJECT_FROM_LAYER;
 		*operation_code = DEG_OPCODE_OBJECT_BASE_FLAGS;
 	}
 	else {
@@ -162,7 +169,7 @@ void depsgraph_base_flags_tag_to_component_opcode(
 		*operation_code = DEG_OPCODE_VIEW_LAYER_EVAL;
 	}
 	else if (id_type == ID_OB) {
-		*component_type = DEG_NODE_TYPE_LAYER_COLLECTIONS;
+		*component_type = DEG_NODE_TYPE_OBJECT_FROM_LAYER;
 		*operation_code = DEG_OPCODE_OBJECT_BASE_FLAGS;
 	}
 }
@@ -284,7 +291,7 @@ void depsgraph_tag_component(Depsgraph *graph,
 		}
 	}
 	/* If component depends on copy-on-write, tag it as well. */
-	if (component_node->depends_on_cow()) {
+	if (component_node->need_tag_cow_before_update()) {
 		ComponentDepsNode *cow_comp =
 		        id_node->find_component(DEG_NODE_TYPE_COPY_ON_WRITE);
 		cow_comp->tag_update(graph);
@@ -299,6 +306,7 @@ void depsgraph_tag_component(Depsgraph *graph,
  * explicitly, but not all areas are aware of this yet.
  */
 void deg_graph_id_tag_legacy_compat(Main *bmain,
+                                    Depsgraph *depsgraph,
                                     ID *id,
                                     eDepsgraph_Tag tag)
 {
@@ -309,7 +317,7 @@ void deg_graph_id_tag_legacy_compat(Main *bmain,
 				Object *object = (Object *)id;
 				ID *data_id = (ID *)object->data;
 				if (data_id != NULL) {
-					DEG_id_tag_update_ex(bmain, data_id, 0);
+					deg_graph_id_tag_update(bmain, depsgraph, data_id, 0);
 				}
 				break;
 			}
@@ -322,7 +330,7 @@ void deg_graph_id_tag_legacy_compat(Main *bmain,
 				Mesh *mesh = (Mesh *)id;
 				ID *key_id = &mesh->key->id;
 				if (key_id != NULL) {
-					DEG_id_tag_update_ex(bmain, key_id, 0);
+					deg_graph_id_tag_update(bmain, depsgraph, key_id, 0);
 				}
 				break;
 			}
@@ -331,7 +339,7 @@ void deg_graph_id_tag_legacy_compat(Main *bmain,
 				Lattice *lattice = (Lattice *)id;
 				ID *key_id = &lattice->key->id;
 				if (key_id != NULL) {
-					DEG_id_tag_update_ex(bmain, key_id, 0);
+					deg_graph_id_tag_update(bmain, depsgraph, key_id, 0);
 				}
 				break;
 			}
@@ -340,7 +348,7 @@ void deg_graph_id_tag_legacy_compat(Main *bmain,
 				Curve *curve = (Curve *)id;
 				ID *key_id = &curve->key->id;
 				if (key_id != NULL) {
-					DEG_id_tag_update_ex(bmain, key_id, 0);
+					deg_graph_id_tag_update(bmain, depsgraph, key_id, 0);
 				}
 				break;
 			}
@@ -396,7 +404,7 @@ static void deg_graph_id_tag_update_single_flag(Main *bmain,
 	/* TODO(sergey): Get rid of this once all areas are using proper data ID
 	 * for tagging.
 	 */
-	deg_graph_id_tag_legacy_compat(bmain, id, tag);
+	deg_graph_id_tag_legacy_compat(bmain, graph, id, tag);
 
 }
 
@@ -449,22 +457,12 @@ void deg_graph_node_tag_zero(Main *bmain, Depsgraph *graph, IDDepsNode *id_node)
 	GHASH_FOREACH_BEGIN(ComponentDepsNode *, comp_node, id_node->components)
 	{
 		if (comp_node->type == DEG_NODE_TYPE_ANIMATION) {
-			AnimData *adt = BKE_animdata_from_id(id);
-			/* NOTE: Animation data might be null if relations are tagged
-			 * for update.
-			 */
-			if (adt == NULL || (adt->recalc & ADT_RECALC_ANIM) == 0) {
-				/* If there is no animation, or animation is not tagged for
-				 * update yet, we don't force animation channel to be evaluated.
-				 */
-				continue;
-			}
-			id->recalc |= ID_RECALC_ANIMATION;
+			continue;
 		}
 		comp_node->tag_update(graph);
 	}
 	GHASH_FOREACH_END();
-	deg_graph_id_tag_legacy_compat(bmain, id, (eDepsgraph_Tag)0);
+	deg_graph_id_tag_legacy_compat(bmain, graph, id, (eDepsgraph_Tag)0);
 }
 
 void deg_graph_id_tag_update(Main *bmain, Depsgraph *graph, ID *id, int flag)

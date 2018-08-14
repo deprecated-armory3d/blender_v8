@@ -45,9 +45,10 @@
 #include "DNA_view3d_types.h"
 #include "DNA_workspace_types.h"
 
+#include "BLI_math_vector.h"
 #include "BLI_listbase.h"
-#include "BLI_utildefines.h"
 #include "BLI_rect.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_icons.h"
 #include "BKE_idprop.h"
@@ -65,7 +66,7 @@ static void spacetype_free(SpaceType *st)
 	ARegionType *art;
 	PanelType *pt;
 	HeaderType *ht;
-	
+
 	for (art = st->regiontypes.first; art; art = art->next) {
 		BLI_freelistN(&art->drawcalls);
 
@@ -86,27 +87,25 @@ static void spacetype_free(SpaceType *st)
 		BLI_freelistN(&art->paneltypes);
 		BLI_freelistN(&art->headertypes);
 	}
-	
-	BLI_freelistN(&st->regiontypes);
-	BLI_freelistN(&st->toolshelf);
 
+	BLI_freelistN(&st->regiontypes);
 }
 
 void BKE_spacetypes_free(void)
 {
 	SpaceType *st;
-	
+
 	for (st = spacetypes.first; st; st = st->next) {
 		spacetype_free(st);
 	}
-	
+
 	BLI_freelistN(&spacetypes);
 }
 
 SpaceType *BKE_spacetype_from_id(int spaceid)
 {
 	SpaceType *st;
-	
+
 	for (st = spacetypes.first; st; st = st->next) {
 		if (st->spaceid == spaceid)
 			return st;
@@ -114,16 +113,28 @@ SpaceType *BKE_spacetype_from_id(int spaceid)
 	return NULL;
 }
 
-ARegionType *BKE_regiontype_from_id(SpaceType *st, int regionid)
+ARegionType *BKE_regiontype_from_id_or_first(SpaceType *st, int regionid)
 {
 	ARegionType *art;
-	
+
 	for (art = st->regiontypes.first; art; art = art->next)
 		if (art->regionid == regionid)
 			return art;
-	
+
 	printf("Error, region type %d missing in - name:\"%s\", id:%d\n", regionid, st->name, st->spaceid);
 	return st->regiontypes.first;
+}
+
+ARegionType *BKE_regiontype_from_id(SpaceType *st, int regionid)
+{
+	ARegionType *art;
+
+	for (art = st->regiontypes.first; art; art = art->next) {
+		if (art->regionid == regionid) {
+			return art;
+		}
+	}
+	return NULL;
 }
 
 
@@ -135,7 +146,7 @@ const ListBase *BKE_spacetypes_list(void)
 void BKE_spacetype_register(SpaceType *st)
 {
 	SpaceType *stype;
-	
+
 	/* sanity check */
 	stype = BKE_spacetype_from_id(st->spaceid);
 	if (stype) {
@@ -143,7 +154,7 @@ void BKE_spacetype_register(SpaceType *st)
 		spacetype_free(stype);
 		MEM_freeN(stype);
 	}
-	
+
 	BLI_addtail(&spacetypes, st);
 }
 
@@ -158,20 +169,20 @@ void BKE_spacedata_freelist(ListBase *lb)
 {
 	SpaceLink *sl;
 	ARegion *ar;
-	
+
 	for (sl = lb->first; sl; sl = sl->next) {
 		SpaceType *st = BKE_spacetype_from_id(sl->spacetype);
-		
+
 		/* free regions for pushed spaces */
 		for (ar = sl->regionbase.first; ar; ar = ar->next)
 			BKE_area_region_free(st, ar);
 
 		BLI_freelistN(&sl->regionbase);
-		
-		if (st && st->free) 
+
+		if (st && st->free)
 			st->free(sl);
 	}
-	
+
 	BLI_freelistN(lb);
 }
 
@@ -204,7 +215,7 @@ static void panel_list_copy(ListBase *newlb, const ListBase *lb)
 ARegion *BKE_area_region_copy(SpaceType *st, ARegion *ar)
 {
 	ARegion *newar = MEM_dupallocN(ar);
-	
+
 	newar->prev = newar->next = NULL;
 	BLI_listbase_clear(&newar->handlers);
 	BLI_listbase_clear(&newar->uiblocks);
@@ -212,29 +223,34 @@ ARegion *BKE_area_region_copy(SpaceType *st, ARegion *ar)
 	BLI_listbase_clear(&newar->panels_category_active);
 	BLI_listbase_clear(&newar->ui_lists);
 	newar->visible = 0;
-	newar->manipulator_map = NULL;
+	newar->gizmo_map = NULL;
 	newar->regiontimer = NULL;
 	newar->headerstr = NULL;
 	newar->draw_buffer = NULL;
-	
+
 	/* use optional regiondata callback */
 	if (ar->regiondata) {
 		ARegionType *art = BKE_regiontype_from_id(st, ar->regiontype);
 
-		if (art && art->duplicate)
+		if (art && art->duplicate) {
 			newar->regiondata = art->duplicate(ar->regiondata);
-		else
+		}
+		else if (ar->flag & RGN_FLAG_TEMP_REGIONDATA) {
+			newar->regiondata = NULL;
+		}
+		else {
 			newar->regiondata = MEM_dupallocN(ar->regiondata);
+		}
 	}
 
 	if (ar->v2d.tab_offset)
 		newar->v2d.tab_offset = MEM_dupallocN(ar->v2d.tab_offset);
-	
+
 	panel_list_copy(&newar->panels, &ar->panels);
 
 	BLI_listbase_clear(&newar->ui_previews);
 	BLI_duplicatelist(&newar->ui_previews, &ar->ui_previews);
-	
+
 	return newar;
 }
 
@@ -243,10 +259,10 @@ ARegion *BKE_area_region_copy(SpaceType *st, ARegion *ar)
 static void region_copylist(SpaceType *st, ListBase *lb1, ListBase *lb2)
 {
 	ARegion *ar;
-	
+
 	/* to be sure */
 	BLI_listbase_clear(lb1);
-	
+
 	for (ar = lb2->first; ar; ar = ar->next) {
 		ARegion *arnew = BKE_area_region_copy(st, ar);
 		BLI_addtail(lb1, arnew);
@@ -258,17 +274,17 @@ static void region_copylist(SpaceType *st, ListBase *lb1, ListBase *lb2)
 void BKE_spacedata_copylist(ListBase *lb1, ListBase *lb2)
 {
 	SpaceLink *sl;
-	
+
 	BLI_listbase_clear(lb1);  /* to be sure */
-	
+
 	for (sl = lb2->first; sl; sl = sl->next) {
 		SpaceType *st = BKE_spacetype_from_id(sl->spacetype);
-		
+
 		if (st && st->duplicate) {
 			SpaceLink *slnew = st->duplicate(sl);
-			
+
 			BLI_addtail(lb1, slnew);
-			
+
 			region_copylist(st, &slnew->regionbase, &sl->regionbase);
 		}
 	}
@@ -280,14 +296,14 @@ void BKE_spacedata_copylist(ListBase *lb1, ListBase *lb2)
 void BKE_spacedata_draw_locks(int set)
 {
 	SpaceType *st;
-	
+
 	for (st = spacetypes.first; st; st = st->next) {
 		ARegionType *art;
-	
+
 		for (art = st->regiontypes.first; art; art = art->next) {
-			if (set) 
+			if (set)
 				art->do_lock = art->lock;
-			else 
+			else
 				art->do_lock = false;
 		}
 	}
@@ -309,18 +325,18 @@ void BKE_spacedata_id_unref(struct ScrArea *sa, struct SpaceLink *sl, struct ID 
 }
 
 /**
- * Avoid bad-level calls to #WM_manipulatormap_tag_refresh.
+ * Avoid bad-level calls to #WM_gizmomap_tag_refresh.
  */
-static void (*region_refresh_tag_manipulatormap_callback)(struct wmManipulatorMap *) = NULL;
+static void (*region_refresh_tag_gizmomap_callback)(struct wmGizmoMap *) = NULL;
 
-void BKE_region_callback_refresh_tag_manipulatormap_set(void (*callback)(struct wmManipulatorMap *))
+void BKE_region_callback_refresh_tag_gizmomap_set(void (*callback)(struct wmGizmoMap *))
 {
-	region_refresh_tag_manipulatormap_callback = callback;
+	region_refresh_tag_gizmomap_callback = callback;
 }
 
-void BKE_screen_manipulator_tag_refresh(struct bScreen *sc)
+void BKE_screen_gizmo_tag_refresh(struct bScreen *sc)
 {
-	if (region_refresh_tag_manipulatormap_callback == NULL) {
+	if (region_refresh_tag_gizmomap_callback == NULL) {
 		return;
 	}
 
@@ -328,21 +344,21 @@ void BKE_screen_manipulator_tag_refresh(struct bScreen *sc)
 	ARegion *ar;
 	for (sa = sc->areabase.first; sa; sa = sa->next) {
 		for (ar = sa->regionbase.first; ar; ar = ar->next) {
-			if (ar->manipulator_map != NULL) {
-				region_refresh_tag_manipulatormap_callback(ar->manipulator_map);
+			if (ar->gizmo_map != NULL) {
+				region_refresh_tag_gizmomap_callback(ar->gizmo_map);
 			}
 		}
 	}
 }
 
 /**
- * Avoid bad-level calls to #WM_manipulatormap_delete.
+ * Avoid bad-level calls to #WM_gizmomap_delete.
  */
-static void (*region_free_manipulatormap_callback)(struct wmManipulatorMap *) = NULL;
+static void (*region_free_gizmomap_callback)(struct wmGizmoMap *) = NULL;
 
-void BKE_region_callback_free_manipulatormap_set(void (*callback)(struct wmManipulatorMap *))
+void BKE_region_callback_free_gizmomap_set(void (*callback)(struct wmGizmoMap *))
 {
-	region_free_manipulatormap_callback = callback;
+	region_free_gizmomap_callback = callback;
 }
 
 static void panel_list_free(ListBase *lb)
@@ -365,16 +381,16 @@ void BKE_area_region_free(SpaceType *st, ARegion *ar)
 
 	if (st) {
 		ARegionType *art = BKE_regiontype_from_id(st, ar->regiontype);
-		
+
 		if (art && art->free)
 			art->free(ar);
-		
+
 		if (ar->regiondata)
 			printf("regiondata free error\n");
 	}
 	else if (ar->type && ar->type->free)
 		ar->type->free(ar);
-	
+
 	if (ar->v2d.tab_offset) {
 		MEM_freeN(ar->v2d.tab_offset);
 		ar->v2d.tab_offset = NULL;
@@ -399,8 +415,8 @@ void BKE_area_region_free(SpaceType *st, ARegion *ar)
 		}
 	}
 
-	if (ar->manipulator_map != NULL) {
-		region_free_manipulatormap_callback(ar->manipulator_map);
+	if (ar->gizmo_map != NULL) {
+		region_free_gizmomap_callback(ar->gizmo_map);
 	}
 
 	BLI_freelistN(&ar->ui_lists);
@@ -414,15 +430,15 @@ void BKE_screen_area_free(ScrArea *sa)
 {
 	SpaceType *st = BKE_spacetype_from_id(sa->spacetype);
 	ARegion *ar;
-	
+
 	for (ar = sa->regionbase.first; ar; ar = ar->next)
 		BKE_area_region_free(st, ar);
 
 	MEM_SAFE_FREE(sa->global);
 	BLI_freelistN(&sa->regionbase);
-	
+
 	BKE_spacedata_freelist(&sa->spacedata);
-	
+
 	BLI_freelistN(&sa->actionzones);
 }
 
@@ -444,7 +460,7 @@ void BKE_screen_free(bScreen *sc)
 	ARegion *ar;
 
 	/* No animdata here. */
-	
+
 	for (ar = sc->regionbase.first; ar; ar = ar->next)
 		BKE_area_region_free(NULL, ar);
 
@@ -652,7 +668,7 @@ ARegion *BKE_area_find_region_type(ScrArea *sa, int type)
 {
 	if (sa) {
 		ARegion *ar;
-		
+
 		for (ar = sa->regionbase.first; ar; ar = ar->next) {
 			if (ar->regiontype == type)
 				return ar;
@@ -733,19 +749,21 @@ ScrArea *BKE_screen_find_big_area(bScreen *sc, const int spacetype, const short 
 	return big;
 }
 
-ScrArea *BKE_screen_find_area_xy(bScreen *sc, const int spacetype, int x, int y)
+ScrArea *BKE_screen_area_map_find_area_xy(const ScrAreaMap *areamap, const int spacetype, int x, int y)
 {
-	ScrArea *sa, *sa_found = NULL;
-
-	for (sa = sc->areabase.first; sa; sa = sa->next) {
+	for (ScrArea *sa = areamap->areabase.first; sa; sa = sa->next) {
 		if (BLI_rcti_isect_pt(&sa->totrct, x, y)) {
 			if ((spacetype == SPACE_TYPE_ANY) || (sa->spacetype == spacetype)) {
-				sa_found = sa;
+				return sa;
 			}
 			break;
 		}
 	}
-	return sa_found;
+	return NULL;
+}
+ScrArea *BKE_screen_find_area_xy(bScreen *sc, const int spacetype, int x, int y)
+{
+	return BKE_screen_area_map_find_area_xy(AREAMAP_FROM_SCREEN(sc), spacetype, x, y);
 }
 
 
@@ -836,6 +854,22 @@ void BKE_screen_view3d_scene_sync(bScreen *sc, Scene *scene)
 			}
 		}
 	}
+}
+
+void BKE_screen_view3d_shading_init(View3DShading *shading)
+{
+	memset(shading, 0, sizeof(*shading));
+
+	shading->type = OB_SOLID;
+	shading->prev_type = OB_SOLID;
+	shading->flag = V3D_SHADING_SPECULAR_HIGHLIGHT;
+	shading->light = V3D_LIGHTING_STUDIO;
+	shading->shadow_intensity = 0.5f;
+	shading->xray_alpha = 0.5f;
+	shading->cavity_valley_factor = 1.0f;
+	shading->cavity_ridge_factor = 1.0f;
+	copy_v3_fl(shading->single_color, 0.8f);
+	copy_v3_fl(shading->background_color, 0.05f);
 }
 
 /* magic zoom calculation, no idea what

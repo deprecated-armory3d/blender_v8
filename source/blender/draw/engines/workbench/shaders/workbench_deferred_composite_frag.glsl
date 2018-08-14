@@ -1,5 +1,7 @@
 out vec4 fragColor;
 
+uniform mat4 ProjectionMatrix;
+
 uniform usampler2D objectId;
 uniform sampler2D colorBuffer;
 uniform sampler2D specularBuffer;
@@ -8,6 +10,7 @@ uniform sampler2D normalBuffer;
 uniform sampler2D cavityBuffer;
 
 uniform vec2 invertedViewportSize;
+uniform vec4 viewvecs[3];
 uniform float shadowMultiplier;
 uniform float lightMultiplier;
 uniform float shadowShift = 0.1;
@@ -29,7 +32,7 @@ void main()
 
 #ifndef V3D_SHADING_OBJECT_OUTLINE
 	if (object_id == NO_OBJECT_ID) {
-		fragColor = vec4(background_color(world_data, uv_viewport.y), 0.0);
+		fragColor = vec4(background_color(world_data, uv_viewport.y), world_data.background_alpha);
 		return;
 	}
 #else /* !V3D_SHADING_OBJECT_OUTLINE */
@@ -38,10 +41,10 @@ void main()
 	if (object_id == NO_OBJECT_ID) {
 		vec3 background = background_color(world_data, uv_viewport.y);
 		if (object_outline == 0.0) {
-			fragColor = vec4(background, 0.0);
+			fragColor = vec4(background, world_data.background_alpha);
 		}
 		else {
-			fragColor = vec4(mix(world_data.object_outline_color.rgb, background, object_outline), 1.0-object_outline);
+			fragColor = vec4(mix(world_data.object_outline_color.rgb, background, object_outline), clamp(world_data.background_alpha, 1.0, object_outline));
 		}
 		return;
 	}
@@ -61,13 +64,15 @@ void main()
 #  endif /* WORKBENCH_ENCODE_NORMALS */
 #endif
 
+	vec3 I_vs = view_vector_from_screen_uv(uv_viewport, viewvecs, ProjectionMatrix);
+
 #ifdef STUDIOLIGHT_ORIENTATION_VIEWNORMAL
-	diffuse_color = texture(matcapImage, normal_viewport.xy / 2.0 + 0.5);
+	bool flipped = world_data.matcap_orientation != 0;
+	vec2 matcap_uv = matcap_uv_compute(I_vs, normal_viewport, flipped);
+	diffuse_color = textureLod(matcapImage, matcap_uv, 0.0);
 #endif
 
 #ifdef V3D_SHADING_SPECULAR_HIGHLIGHT
-	/* XXX Should calculate the correct VS Incoming direction */
-	vec3 I_vs = vec3(0.0, 0.0, 1.0);
 	vec4 specular_data = texelFetch(specularBuffer, texel, 0);
 	vec3 specular_color = get_world_specular_lights(world_data, specular_data, normal_viewport, I_vs);
 #else
@@ -101,12 +106,10 @@ void main()
 #endif
 
 #ifdef V3D_SHADING_SHADOW
-	float light_factor = -dot(normal_viewport, world_data.light_direction_vs.xyz);
+	float light_factor = -dot(normal_viewport, world_data.shadow_direction_vs.xyz);
 	/* The step function might be ok for meshes but it's
 	 * clearly not the case for hairs. Do smoothstep in this case. */
-	float shadow_mix = (diffuse_color.a == 1.0 || diffuse_color.a == 0.0)
-	                        ? step(-shadowShift, -light_factor)
-	                        : smoothstep(1.0, shadowShift, light_factor);
+	float shadow_mix = smoothstep(1.0, shadowShift, light_factor);
 	float light_multiplier = mix(lightMultiplier, shadowMultiplier, shadow_mix);
 
 #else /* V3D_SHADING_SHADOW */

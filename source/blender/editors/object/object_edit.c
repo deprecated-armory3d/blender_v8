@@ -100,6 +100,7 @@
 #include "ED_screen.h"
 #include "ED_undo.h"
 #include "ED_image.h"
+#include "ED_gpencil.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -146,6 +147,238 @@ Object *ED_object_active_context(bContext *C)
 	return ob;
 }
 
+/* ********************** object hiding *************************** */
+
+static bool object_hide_poll(bContext *C)
+{
+	if (CTX_wm_space_outliner(C) != NULL) {
+		return ED_outliner_collections_editor_poll(C);
+	}
+	else {
+		return ED_operator_view3d_active(C);
+	}
+}
+
+static int object_hide_view_clear_exec(bContext *C, wmOperator *op)
+{
+	Scene *scene = CTX_data_scene(C);
+	ViewLayer *view_layer = CTX_data_view_layer(C);
+	const bool select = RNA_boolean_get(op->ptr, "select");
+	bool changed = false;
+
+	for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+		if (base->flag & BASE_HIDDEN) {
+			base->flag &= ~BASE_HIDDEN;
+			changed = true;
+
+			if (select) {
+				ED_object_base_select(base, BA_SELECT);
+			}
+		}
+	}
+
+	if (!changed) {
+		return OPERATOR_CANCELLED;
+	}
+
+	BKE_layer_collection_sync(scene, view_layer);
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+
+	return OPERATOR_FINISHED;
+}
+
+void OBJECT_OT_hide_view_clear(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Show Hidden Objects";
+	ot->description = "Reveal temporarily hidden objects";
+	ot->idname = "OBJECT_OT_hide_view_clear";
+
+	/* api callbacks */
+	ot->exec = object_hide_view_clear_exec;
+	ot->poll = object_hide_poll;
+
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+	PropertyRNA *prop = RNA_def_boolean(ot->srna, "select", false, "Select", "");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE | PROP_HIDDEN);
+}
+
+static int object_hide_view_set_exec(bContext *C, wmOperator *op)
+{
+	Scene *scene = CTX_data_scene(C);
+	ViewLayer *view_layer = CTX_data_view_layer(C);
+	const bool unselected = RNA_boolean_get(op->ptr, "unselected");
+
+	/* Do nothing if no objects was selected. */
+	bool have_selected = false;
+	for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+		if (base->flag & BASE_VISIBLE) {
+			if (base->flag & BASE_SELECTED) {
+				have_selected = true;
+				break;
+			}
+		}
+	}
+
+	if (!have_selected) {
+		return OPERATOR_CANCELLED;
+	}
+
+	/* Hide selected or unselected objects. */
+	for (Base *base = view_layer->object_bases.first; base; base = base->next) {
+		if (!(base->flag & BASE_VISIBLE)) {
+			continue;
+		}
+
+		if (!unselected) {
+			if (base->flag & BASE_SELECTED) {
+				ED_object_base_select(base, BA_DESELECT);
+				base->flag |= BASE_HIDDEN;
+			}
+		}
+		else {
+			if (!(base->flag & BASE_SELECTED)) {
+				ED_object_base_select(base, BA_DESELECT);
+				base->flag |= BASE_HIDDEN;
+			}
+		}
+	}
+
+	BKE_layer_collection_sync(scene, view_layer);
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+
+	return OPERATOR_FINISHED;
+}
+
+void OBJECT_OT_hide_view_set(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Hide Objects";
+	ot->description = "Temporarily hide objects from the viewport";
+	ot->idname = "OBJECT_OT_hide_view_set";
+
+	/* api callbacks */
+	ot->exec = object_hide_view_set_exec;
+	ot->poll = object_hide_poll;
+
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+	PropertyRNA *prop;
+	prop = RNA_def_boolean(ot->srna, "unselected", 0, "Unselected", "Hide unselected rather than selected objects");
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE | PROP_HIDDEN);
+}
+
+static int object_hide_collection_exec(bContext *C, wmOperator *op)
+{
+	int index = RNA_int_get(op->ptr, "collection_index");
+	bool extend = (CTX_wm_window(C)->eventstate->shift != 0);
+
+	if (CTX_wm_window(C)->eventstate->alt != 0) {
+		index += 10;
+	}
+
+	Scene *scene = CTX_data_scene(C);
+	ViewLayer *view_layer = CTX_data_view_layer(C);
+	LayerCollection *lc = BKE_layer_collection_from_index(view_layer, index);
+
+	if (!lc) {
+		return OPERATOR_CANCELLED;
+	}
+
+	BKE_layer_collection_set_visible(scene, view_layer, lc, extend);
+
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+
+	return OPERATOR_FINISHED;
+}
+
+#define COLLECTION_INVALID_INDEX -1
+
+void ED_hide_collections_menu_draw(const bContext *C, uiLayout *layout)
+{
+	ViewLayer *view_layer = CTX_data_view_layer(C);
+	LayerCollection *lc_scene = view_layer->layer_collections.first;
+
+	uiLayoutSetOperatorContext(layout, WM_OP_EXEC_REGION_WIN);
+
+	for (LayerCollection *lc = lc_scene->layer_collections.first; lc; lc = lc->next) {
+		int index = BKE_layer_collection_findindex(view_layer, lc);
+		uiLayout *row = uiLayoutRow(layout, false);
+
+		if (lc->collection->flag & COLLECTION_RESTRICT_VIEW) {
+			continue;
+		}
+
+		if ((view_layer->runtime_flag & VIEW_LAYER_HAS_HIDE) &&
+		    !(lc->runtime_flag & LAYER_COLLECTION_HAS_VISIBLE_OBJECTS))
+		{
+			uiLayoutSetActive(row, false);
+		}
+
+		int icon = ICON_NONE;
+		if (BKE_layer_collection_has_selected_objects(view_layer, lc)) {
+			icon = ICON_LAYER_ACTIVE;
+		}
+		else if (lc->runtime_flag & LAYER_COLLECTION_HAS_OBJECTS) {
+			icon = ICON_LAYER_USED;
+		}
+
+		uiItemIntO(row,
+		           lc->collection->id.name + 2,
+		           icon,
+		           "OBJECT_OT_hide_collection",
+		           "collection_index",
+		           index);
+	}
+}
+
+static int object_hide_collection_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
+{
+	/* Immediately execute if collection index was specified. */
+	int index = RNA_int_get(op->ptr, "collection_index");
+	if (index != COLLECTION_INVALID_INDEX) {
+		return object_hide_collection_exec(C, op);
+	}
+
+	/* Open popup menu. */
+	const char *title = CTX_IFACE_(op->type->translation_context, op->type->name);
+	uiPopupMenu *pup = UI_popup_menu_begin(C, title, ICON_GROUP);
+	uiLayout *layout = UI_popup_menu_layout(pup);
+
+	ED_hide_collections_menu_draw(C, layout);
+
+	UI_popup_menu_end(C, pup);
+
+	return OPERATOR_INTERFACE;
+}
+
+void OBJECT_OT_hide_collection(wmOperatorType *ot)
+{
+	/* identifiers */
+	ot->name = "Hide Objects By Collection";
+	ot->description = "Show only objects in collection (Shift to extend)";
+	ot->idname = "OBJECT_OT_hide_collection";
+
+	/* api callbacks */
+	ot->exec = object_hide_collection_exec;
+	ot->invoke = object_hide_collection_invoke;
+	ot->poll = ED_operator_view3d_active;
+
+	/* flags */
+	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+	/* Properties. */
+	PropertyRNA *prop;
+	prop = RNA_def_int(ot->srna, "collection_index", COLLECTION_INVALID_INDEX, COLLECTION_INVALID_INDEX, INT_MAX,
+	                   "Collection Index", "Index of the collection to change visibility", 0, INT_MAX);
+	RNA_def_property_flag(prop, PROP_SKIP_SAVE | PROP_HIDDEN);
+}
 
 /* ******************* toggle editmode operator  ***************** */
 
@@ -191,7 +424,7 @@ static bool ED_object_editmode_load_ex(Main *bmain, Object *obedit, const bool f
 			return false;
 		}
 
-		EDBM_mesh_load(obedit);
+		EDBM_mesh_load(bmain, obedit);
 
 		if (freedata) {
 			EDBM_mesh_free(me->edit_btmesh);
@@ -473,16 +706,18 @@ static int editmode_toggle_exec(bContext *C, wmOperator *op)
 		}
 	}
 
-	ED_space_image_uv_sculpt_update(CTX_wm_manager(C), scene);
+	ED_space_image_uv_sculpt_update(bmain, CTX_wm_manager(C), scene);
 
 	WM_msg_publish_rna_prop(mbus, &obact->id, obact, Object, mode);
 
-	WM_toolsystem_update_from_context_view3d(C);
+	if (G.background == false) {
+		WM_toolsystem_update_from_context_view3d(C);
+	}
 
 	return OPERATOR_FINISHED;
 }
 
-static int editmode_toggle_poll(bContext *C)
+static bool editmode_toggle_poll(bContext *C)
 {
 	Object *ob = CTX_data_active_object(C);
 
@@ -577,7 +812,9 @@ static int posemode_exec(bContext *C, wmOperator *op)
 
 	WM_msg_publish_rna_prop(mbus, &obact->id, obact, Object, mode);
 
-	WM_toolsystem_update_from_context_view3d(C);
+	if (G.background == false) {
+		WM_toolsystem_update_from_context_view3d(C);
+	}
 
 	return OPERATOR_FINISHED;
 }
@@ -654,7 +891,6 @@ static void copy_attr(Main *bmain, Scene *scene, ViewLayer *view_layer, short ev
 	Base *base;
 	Curve *cu, *cu1;
 	Nurb *nu;
-	bool do_depgraph_update = false;
 
 	if (ID_IS_LINKED(scene)) return;
 
@@ -811,18 +1047,19 @@ static void copy_attr(Main *bmain, Scene *scene, ViewLayer *view_layer, short ev
 				else if (event == 22) {
 					/* Copy the constraint channels over */
 					BKE_constraints_copy(&base->object->constraints, &ob->constraints, true);
-
-					do_depgraph_update = true;
+					DEG_id_tag_update(&base->object->id, DEG_TAG_COPY_ON_WRITE);
+					DEG_relations_tag_update(bmain);
 				}
 				else if (event == 23) {
-					base->object->softflag = ob->softflag;
-					if (base->object->soft) sbFree(base->object->soft);
-
-					base->object->soft = copy_softbody(ob->soft, 0);
+					sbFree(base->object);
+					BKE_object_copy_softbody(base->object, ob, 0);
 
 					if (!modifiers_findByType(base->object, eModifierType_Softbody)) {
 						BLI_addhead(&base->object->modifiers, modifier_new(eModifierType_Softbody));
 					}
+
+					DEG_id_tag_update(&base->object->id, DEG_TAG_COPY_ON_WRITE);
+					DEG_relations_tag_update(bmain);
 				}
 				else if (event == 26) {
 #if 0 // XXX old animation system
@@ -863,9 +1100,6 @@ static void copy_attr(Main *bmain, Scene *scene, ViewLayer *view_layer, short ev
 			}
 		}
 	}
-
-	if (do_depgraph_update)
-		DEG_relations_tag_update(bmain);
 }
 
 static void UNUSED_FUNCTION(copy_attr_menu) (Main *bmain, Scene *scene, ViewLayer *view_layer, Object *obedit)
@@ -1094,7 +1328,7 @@ void OBJECT_OT_paths_calculate(wmOperatorType *ot)
 
 /* --------- */
 
-static int object_update_paths_poll(bContext *C)
+static bool object_update_paths_poll(bContext *C)
 {
 	if (ED_operator_object_active_editable(C)) {
 		Object *ob = ED_object_active_context(C);
@@ -1144,6 +1378,9 @@ static void object_clear_mpath(Object *ob)
 		animviz_free_motionpath(ob->mpath);
 		ob->mpath = NULL;
 		ob->avs.path_bakeflag &= ~MOTIONPATH_BAKE_HAS_PATHS;
+
+		/* tag object for copy on write - so removed paths don't still show */
+		DEG_id_tag_update(&ob->id, DEG_TAG_COPY_ON_WRITE);
 	}
 }
 
@@ -1263,7 +1500,7 @@ static int shade_smooth_exec(bContext *C, wmOperator *op)
 	return (done) ? OPERATOR_FINISHED : OPERATOR_CANCELLED;
 }
 
-static int shade_poll(bContext *C)
+static bool shade_poll(bContext *C)
 {
 	return (CTX_data_edit_object(C) == NULL);
 }
@@ -1306,7 +1543,6 @@ static const EnumPropertyItem *object_mode_set_itemsf(
 	const EnumPropertyItem *input = rna_enum_object_mode_items;
 	EnumPropertyItem *item = NULL;
 	Object *ob;
-	bGPdata *gpd;
 	int totitem = 0;
 
 	if (!C) /* needed for docs */
@@ -1322,7 +1558,9 @@ static const EnumPropertyItem *object_mode_set_itemsf(
 			    (input->value == OB_MODE_POSE && (ob->type == OB_ARMATURE)) ||
 			    (input->value == OB_MODE_PARTICLE_EDIT && use_mode_particle_edit) ||
 			    (ELEM(input->value, OB_MODE_SCULPT, OB_MODE_VERTEX_PAINT,
-			           OB_MODE_WEIGHT_PAINT, OB_MODE_TEXTURE_PAINT) && (ob->type == OB_MESH)) ||
+			          OB_MODE_WEIGHT_PAINT, OB_MODE_TEXTURE_PAINT) && (ob->type == OB_MESH)) ||
+			    (ELEM(input->value, OB_MODE_GPENCIL_EDIT, OB_MODE_GPENCIL_PAINT,
+			          OB_MODE_GPENCIL_SCULPT, OB_MODE_GPENCIL_WEIGHT) && (ob->type == OB_GPENCIL)) ||
 			    (input->value == OB_MODE_OBJECT))
 			{
 				RNA_enum_item_add(&item, &totitem, input);
@@ -1335,14 +1573,6 @@ static const EnumPropertyItem *object_mode_set_itemsf(
 		RNA_enum_items_add_value(&item, &totitem, input, OB_MODE_OBJECT);
 	}
 
-	/* On top of all the rest, GPencil Stroke Edit Mode
-	 * is available if there's a valid gp datablock...
-	 */
-	gpd = CTX_data_gpencil_data(C);
-	if (gpd) {
-		RNA_enum_items_add_value(&item, &totitem, rna_enum_object_mode_items, OB_MODE_GPENCIL);
-	}
-
 	RNA_enum_item_end(&item, &totitem);
 
 	*r_free = true;
@@ -1350,7 +1580,7 @@ static const EnumPropertyItem *object_mode_set_itemsf(
 	return item;
 }
 
-static int object_mode_set_poll(bContext *C)
+static bool object_mode_set_poll(bContext *C)
 {
 	/* Since Grease Pencil editmode is also handled here,
 	 * we have a special exception for allowing this operator
@@ -1367,7 +1597,6 @@ static int object_mode_set_exec(bContext *C, wmOperator *op)
 {
 	bool use_submode = STREQ(op->idname, "OBJECT_OT_mode_set_or_submode");
 	Object *ob = CTX_data_active_object(C);
-	bGPdata *gpd = CTX_data_gpencil_data(C);
 	eObjectMode mode = RNA_enum_get(op->ptr, "mode");
 	eObjectMode restore_mode = (ob) ? ob->mode : OB_MODE_OBJECT;
 	const bool toggle = RNA_boolean_get(op->ptr, "toggle");
@@ -1387,22 +1616,9 @@ static int object_mode_set_exec(bContext *C, wmOperator *op)
 		}
 	}
 
-	if (gpd) {
-		/* GP Mode is not bound to a specific object. Therefore,
-		 * we don't want it to be actually saved on any objects,
-		 * as weirdness can happen if you select other objects,
-		 * or load old files.
-		 *
-		 * Instead, we use the following 2 rules to ensure that
-		 * the mode selector works as expected:
-		 *  1) If there's no object, we want to enter editmode.
-		 *     (i.e. with no object, we're in object mode)
-		 *  2) Otherwise, exit stroke editmode, so that we can
-		 *     enter another mode...
-		 */
-		if (!ob || (gpd->flag & GP_DATA_STROKE_EDITMODE)) {
-			WM_operator_name_call(C, "GPENCIL_OT_editmode_toggle", WM_OP_EXEC_REGION_WIN, NULL);
-		}
+	/* by default the operator assume is a mesh, but if gp object change mode */
+	if ((ob != NULL) && (ob->type == OB_GPENCIL) && (mode == OB_MODE_EDIT)) {
+		mode = OB_MODE_GPENCIL_EDIT;
 	}
 
 	if (!ob || !ED_object_mode_compat_test(ob, mode))
@@ -1430,6 +1646,14 @@ static int object_mode_set_exec(bContext *C, wmOperator *op)
 		}
 		else if (ob->restore_mode != OB_MODE_OBJECT && ob->restore_mode != mode) {
 			ED_object_mode_toggle(C, ob->restore_mode);
+		}
+	}
+
+	/* if type is OB_GPENCIL, set cursor mode */
+	if ((ob) && (ob->type == OB_GPENCIL)) {
+		if (ob->data) {
+			bGPdata *gpd = (bGPdata *)ob->data;
+			ED_gpencil_setup_modes(C, gpd, ob->mode);
 		}
 	}
 
@@ -1548,9 +1772,7 @@ bool ED_object_editmode_calc_active_center(Object *obedit, const bool select_onl
 	return false;
 }
 
-#define COLLECTION_INVALID_INDEX -1
-
-static int move_to_collection_poll(bContext *C)
+static bool move_to_collection_poll(bContext *C)
 {
 	if (CTX_wm_space_outliner(C) != NULL) {
 		return ED_outliner_collections_editor_poll(C);
@@ -1630,8 +1852,8 @@ static int move_to_collection_exec(bContext *C, wmOperator *op)
 	            is_link ? "linked" : "moved",
 	            collection->id.name + 2);
 
-	DEG_relations_tag_update(CTX_data_main(C));
-	DEG_id_tag_update(&scene->id, 0);
+	DEG_relations_tag_update(bmain);
+	DEG_id_tag_update(&scene->id, DEG_TAG_COPY_ON_WRITE | DEG_TAG_SELECT_UPDATE);
 
 	WM_event_add_notifier(C, NC_SCENE | ND_LAYER, scene);
 	WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
@@ -1869,5 +2091,3 @@ void OBJECT_OT_link_to_collection(wmOperatorType *ot)
 	                      "Name of the newly added collection");
 	RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
-
-#undef COLLECTION_INVALID_INDEX

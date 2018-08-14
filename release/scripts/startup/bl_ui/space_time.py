@@ -36,17 +36,11 @@ class TIME_HT_editor_buttons(Header):
         toolsettings = context.tool_settings
         screen = context.screen
 
-        layout.separator()   # XXX: This should be dynamic (e.g. layout.separator(stretch=1.0))
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
+        layout.separator_spacer()
+
+        layout.prop(toolsettings, "use_keyframe_insert_auto", text="", toggle=True)
 
         row = layout.row(align=True)
-        row.prop(toolsettings, "use_keyframe_insert_auto", text="", toggle=True)
-
         row.operator("screen.frame_jump", text="", icon='REW').end = False
         row.operator("screen.keyframe_jump", text="", icon='PREV_KEYFRAME').next = False
         if not screen.is_animation_playing:
@@ -67,13 +61,7 @@ class TIME_HT_editor_buttons(Header):
         row.operator("screen.keyframe_jump", text="", icon='NEXT_KEYFRAME').next = True
         row.operator("screen.frame_jump", text="", icon='FF').end = True
 
-        layout.separator()  # XXX: This should be dynamic (e.g. layout.separator(stretch=1.0))
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
-        layout.separator()
+        layout.separator_spacer()
 
         row = layout.row()
         row.scale_x = 0.95
@@ -81,9 +69,6 @@ class TIME_HT_editor_buttons(Header):
             row.prop(scene, "frame_float", text="")
         else:
             row.prop(scene, "frame_current", text="")
-
-        layout.separator()
-        layout.separator()
 
         row = layout.row(align=True)
         row.prop(scene, "use_preview_range", text="", toggle=True)
@@ -106,16 +91,20 @@ class TIME_MT_editor_menus(Menu):
 
     @staticmethod
     def draw_menus(layout, context):
-        layout.menu("TIME_MT_view")
-        layout.menu("TIME_MT_marker")
-        layout.popover(space_type='DOPESHEET_EDITOR',
-                       region_type='HEADER',
-                       panel_type="TIME_PT_playback",
-                       text="Playback")
-        layout.popover(space_type='DOPESHEET_EDITOR',
-                       region_type='HEADER',
-                       panel_type="TIME_PT_keyframing_settings",
-                       text="Keying")
+        row = layout.row()
+        sub = row.row(align=True)
+        sub.popover(
+            panel="TIME_PT_playback",
+            text="Playback",
+        )
+        sub.popover(
+            panel="TIME_PT_keyframing_settings",
+            text="Keying",
+        )
+
+        sub = row.row(align=True)
+        sub.menu("TIME_MT_view")
+        sub.menu("TIME_MT_marker")
 
 
 class TIME_MT_marker(Menu):

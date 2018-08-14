@@ -35,14 +35,14 @@ struct ARegion;
 struct wmWindow;
 struct ReportList;
 
-#include "manipulators/wm_manipulator_wmapi.h"
+#include "gizmo/wm_gizmo_wmapi.h"
 
 typedef struct wmPaintCursor {
 	struct wmPaintCursor *next, *prev;
 
 	void *customdata;
-	
-	int (*poll)(struct bContext *C);
+
+	bool (*poll)(struct bContext *C);
 	void (*draw)(bContext *C, int, int, void *customdata);
 } wmPaintCursor;
 
@@ -54,7 +54,7 @@ extern void wm_close_and_free_all(bContext *C, ListBase *);
 
 extern void wm_add_default(struct Main *bmain, bContext *C);
 extern void wm_clear_default_size(bContext *C);
-			
+
 			/* register to windowmanager for redo or macro */
 void		wm_operator_register(bContext *C, wmOperator *op);
 
@@ -62,6 +62,7 @@ void		wm_operator_register(bContext *C, wmOperator *op);
 void wm_operatortype_free(void);
 void wm_operatortype_init(void);
 void wm_window_keymap(wmKeyConfig *keyconf);
+void wm_operatortypes_register(void);
 
 /* wm_gesture.c */
 void wm_gesture_draw(struct wmWindow *win);

@@ -61,7 +61,6 @@
 #include "BLI_bitmap.h"
 #include "BLI_rect.h"
 
-#include "BKE_DerivedMesh.h"
 #include "BKE_action.h"
 #include "BKE_armature.h"
 #include "BKE_constraint.h"
@@ -91,6 +90,7 @@
 #include "BKE_editmesh.h"
 #include "BKE_tracking.h"
 #include "BKE_mask.h"
+#include "BKE_colortools.h"
 
 #include "BIK_api.h"
 
@@ -748,7 +748,7 @@ static void bone_children_clear_transflag(int mode, short around, ListBase *lb)
 
 /* sets transform flags in the bones
  * returns total number of bones with BONE_TRANSFORM */
-int count_set_pose_transflags(Object *ob, const int mode, short around, bool has_translate_rotate[2])
+int count_set_pose_transflags(Object *ob, const int mode, const short around, bool has_translate_rotate[2])
 {
 	bArmature *arm = ob->data;
 	bPoseChannel *pchan;
@@ -851,6 +851,8 @@ static bool pchan_autoik_adjust(bPoseChannel *pchan, short chainlen)
 /* change the chain-length of auto-ik */
 void transform_autoik_update(TransInfo *t, short mode)
 {
+	Main *bmain = CTX_data_main(t->context);
+
 	short *chainlen = &t->settings->autoik_chainlen;
 	bPoseChannel *pchan;
 
@@ -887,12 +889,12 @@ void transform_autoik_update(TransInfo *t, short mode)
 
 	if (changed) {
 		/* TODO(sergey): Consider doing partial update only. */
-		DEG_relations_tag_update(G.main);
+		DEG_relations_tag_update(bmain);
 	}
 }
 
 /* frees temporal IKs */
-static void pose_grab_with_ik_clear(Object *ob)
+static void pose_grab_with_ik_clear(Main *bmain, Object *ob)
 {
 	bKinematicConstraint *data;
 	bPoseChannel *pchan;
@@ -930,7 +932,7 @@ static void pose_grab_with_ik_clear(Object *ob)
 
 	if (relations_changed) {
 		/* TODO(sergey): Consider doing partial update only. */
-		DEG_relations_tag_update(G.main);
+		DEG_relations_tag_update(bmain);
 	}
 }
 
@@ -1038,7 +1040,7 @@ static short pose_grab_with_ik_children(bPose *pose, Bone *bone)
 }
 
 /* main call which adds temporal IK chains */
-static short pose_grab_with_ik(Object *ob)
+static short pose_grab_with_ik(Main *bmain, Object *ob)
 {
 	bArmature *arm;
 	bPoseChannel *pchan, *parent;
@@ -1084,8 +1086,8 @@ static short pose_grab_with_ik(Object *ob)
 	/* iTaSC needs clear for new IK constraints */
 	if (tot_ik) {
 		BIK_clear_data(ob->pose);
-		/* TODO(sergey): Consuder doing partial update only. */
-		DEG_relations_tag_update(G.main);
+		/* TODO(sergey): Consider doing partial update only. */
+		DEG_relations_tag_update(bmain);
 	}
 
 	return (tot_ik) ? 1 : 0;
@@ -1108,6 +1110,7 @@ static void createTransPose(TransInfo *t, Object **objects, uint objects_len)
 			tc->poseobj = objects[th_index];
 		}
 	}
+	Main *bmain = CTX_data_main(t->context);
 
 	t->data_len_all = 0;
 
@@ -1135,7 +1138,7 @@ static void createTransPose(TransInfo *t, Object **objects, uint objects_len)
 
 		/* do we need to add temporal IK chains? */
 		if ((arm->flag & ARM_AUTO_IK) && t->mode == TFM_TRANSLATION) {
-			ik_on = pose_grab_with_ik(ob);
+			ik_on = pose_grab_with_ik(bmain, ob);
 			if (ik_on) t->flag |= T_AUTOIK;
 		}
 
@@ -1252,7 +1255,7 @@ static void createTransArmatureVerts(TransInfo *t)
 		bool mirror = ((arm->flag & ARM_MIRROR_EDIT) != 0);
 		int total_mirrored = 0, i;
 		int oldtot;
-		BoneInitData *bid;
+		BoneInitData *bid = NULL;
 
 		tc->data_len = 0;
 		for (ebo = edbo->first; ebo; ebo = ebo->next) {
@@ -2117,7 +2120,6 @@ static void createTransParticleVerts(bContext *C, TransInfo *t)
 void flushTransParticles(TransInfo *t)
 {
 	FOREACH_TRANS_DATA_CONTAINER (t, tc) {
-
 		Scene *scene = t->scene;
 		ViewLayer *view_layer = t->view_layer;
 		Object *ob = OBACT(view_layer);
@@ -3608,6 +3610,8 @@ static void posttrans_gpd_clean(bGPdata *gpd)
 		}
 #endif
 	}
+	/* set cache flag to dirty */
+	DEG_id_tag_update(&gpd->id, OB_RECALC_OB | OB_RECALC_DATA);
 }
 
 static void posttrans_mask_clean(Mask *mask)
@@ -5462,10 +5466,6 @@ static void freeSeqData(TransInfo *t, TransDataContainer *tc, TransCustomData *c
 		MEM_freeN(custom_data->data);
 		custom_data->data = NULL;
 	}
-	if (tc->data) {
-		MEM_freeN(tc->data); // XXX postTrans usually does this
-		tc->data = NULL;
-	}
 }
 
 static void createTransSeqData(bContext *C, TransInfo *t)
@@ -5776,8 +5776,7 @@ static void trans_object_base_deps_flag_finish(ViewLayer *view_layer)
 /* it deselects Bases, so we have to call the clear function always after */
 static void set_trans_object_base_flags(TransInfo *t)
 {
-	/* TODO(sergey): Get rid of global, use explicit main. */
-	Main *bmain = G.main;
+	Main *bmain = CTX_data_main(t->context);
 	ViewLayer *view_layer = t->view_layer;
 	Scene *scene = t->scene;
 	Depsgraph *depsgraph = BKE_scene_get_depsgraph(scene, view_layer, true);
@@ -5923,6 +5922,7 @@ static void clear_trans_object_base_flags(TransInfo *t)
 // NOTE: context may not always be available, so must check before using it as it's a luxury for a few cases
 void autokeyframe_ob_cb_func(bContext *C, Scene *scene, ViewLayer *view_layer, Object *ob, int tmode)
 {
+	Main *bmain = CTX_data_main(C);
 	ID *id = &ob->id;
 	FCurve *fcu;
 
@@ -5955,7 +5955,7 @@ void autokeyframe_ob_cb_func(bContext *C, Scene *scene, ViewLayer *view_layer, O
 			if (adt && adt->action) {
 				for (fcu = adt->action->curves.first; fcu; fcu = fcu->next) {
 					fcu->flag &= ~FCURVE_SELECTED;
-					insert_keyframe(depsgraph, reports, id, adt->action,
+					insert_keyframe(bmain, depsgraph, reports, id, adt->action,
 					                (fcu->grp ? fcu->grp->name : NULL),
 					                fcu->rna_path, fcu->array_index, cfra,
 					                ts->keyframe_type, flag);
@@ -6044,6 +6044,7 @@ void autokeyframe_ob_cb_func(bContext *C, Scene *scene, ViewLayer *view_layer, O
 // NOTE: context may not always be available, so must check before using it as it's a luxury for a few cases
 void autokeyframe_pose_cb_func(bContext *C, Scene *scene, Object *ob, int tmode, short targetless_ik)
 {
+	Main *bmain = CTX_data_main(C);
 	ID *id = &ob->id;
 	AnimData *adt = ob->adt;
 	bAction *act = (adt) ? adt->action : NULL;
@@ -6097,7 +6098,7 @@ void autokeyframe_pose_cb_func(bContext *C, Scene *scene, Object *ob, int tmode,
 								 * NOTE: this will do constraints too, but those are ok to do here too?
 								 */
 								if (pchanName && STREQ(pchanName, pchan->name)) {
-									insert_keyframe(depsgraph, reports, id, act,
+									insert_keyframe(bmain, depsgraph, reports, id, act,
 									                ((fcu->grp) ? (fcu->grp->name) : (NULL)),
 									                fcu->rna_path, fcu->array_index, cfra,
 									                ts->keyframe_type, flag);
@@ -6327,6 +6328,9 @@ static void special_aftertrans_update__mesh(bContext *UNUSED(C), TransInfo *t)
  * */
 void special_aftertrans_update(bContext *C, TransInfo *t)
 {
+	Main *bmain = CTX_data_main(t->context);
+	BLI_assert(bmain == CTX_data_main(C));
+
 	Object *ob;
 //	short redrawipo=0, resetslowpar=1;
 	const bool canceled = (t->state == TRANS_CANCEL);
@@ -6422,7 +6426,7 @@ void special_aftertrans_update(bContext *C, TransInfo *t)
 		if (canceled == 0) {
 			ED_node_post_apply_transform(C, snode->edittree);
 
-			ED_node_link_insert(t->sa);
+			ED_node_link_insert(bmain, t->sa);
 		}
 
 		/* clear link line */
@@ -6515,7 +6519,7 @@ void special_aftertrans_update(bContext *C, TransInfo *t)
 
 				// XXX: BAD! this get gpencil datablocks directly from main db...
 				// but that's how this currently works :/
-				for (gpd = G.main->gpencil.first; gpd; gpd = gpd->id.next) {
+				for (gpd = bmain->gpencil.first; gpd; gpd = gpd->id.next) {
 					if (ID_REAL_USERS(gpd))
 						posttrans_gpd_clean(gpd);
 				}
@@ -6535,7 +6539,7 @@ void special_aftertrans_update(bContext *C, TransInfo *t)
 
 				// XXX: BAD! this get gpencil datablocks directly from main db...
 				// but that's how this currently works :/
-				for (mask = G.main->mask.first; mask; mask = mask->id.next) {
+				for (mask = bmain->mask.first; mask; mask = mask->id.next) {
 					if (ID_REAL_USERS(mask))
 						posttrans_mask_clean(mask);
 				}
@@ -6683,7 +6687,7 @@ void special_aftertrans_update(bContext *C, TransInfo *t)
 				BKE_pose_where_is(t->depsgraph, t->scene, pose_ob);
 			}
 
-			/* set BONE_TRANSFORM flags for autokey, manipulator draw might have changed them */
+			/* set BONE_TRANSFORM flags for autokey, gizmo draw might have changed them */
 			if (!canceled && (t->mode != TFM_DUMMY)) {
 				count_set_pose_transflags(ob, t->mode, t->around, NULL);
 			}
@@ -6700,7 +6704,7 @@ void special_aftertrans_update(bContext *C, TransInfo *t)
 			}
 
 			if (t->mode == TFM_TRANSLATION)
-				pose_grab_with_ik_clear(ob);
+				pose_grab_with_ik_clear(bmain, ob);
 
 			/* automatic inserting of keys and unkeyed tagging - only if transform wasn't canceled (or TFM_DUMMY) */
 			if (!canceled && (t->mode != TFM_DUMMY)) {
@@ -8085,7 +8089,14 @@ void flushTransPaintCurve(TransInfo *t)
 
 static void createTransGPencil(bContext *C, TransInfo *t)
 {
+	Depsgraph *depsgraph = CTX_data_depsgraph(C);                                      \
 	bGPdata *gpd = ED_gpencil_data_get_active(C);
+	ToolSettings *ts = CTX_data_tool_settings(C);
+
+	bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
+	bool use_multiframe_falloff = (ts->gp_sculpt.flag & GP_BRUSHEDIT_FLAG_FRAME_FALLOFF) != 0;
+
+	Object *obact = CTX_data_active_object(C);
 	bGPDlayer *gpl;
 	TransData *td = NULL;
 	float mtx[3][3], smtx[3][3];
@@ -8109,49 +8120,66 @@ static void createTransGPencil(bContext *C, TransInfo *t)
 	if (gpd == NULL)
 		return;
 
+	/* initialize falloff curve */
+	if (is_multiedit) {
+		curvemapping_initialize(ts->gp_sculpt.cur_falloff);
+	}
+
 	/* First Pass: Count the number of datapoints required for the strokes,
 	 * (and additional info about the configuration - e.g. 2D/3D?)
 	 */
 	for (gpl = gpd->layers.first; gpl; gpl = gpl->next) {
 		/* only editable and visible layers are considered */
 		if (gpencil_layer_is_editable(gpl) && (gpl->actframe != NULL)) {
-			bGPDframe *gpf = gpl->actframe;
+			bGPDframe *gpf;
 			bGPDstroke *gps;
+			bGPDframe *init_gpf = gpl->actframe;
+			if (is_multiedit) {
+				init_gpf = gpl->frames.first;
+			}
 
-			for (gps = gpf->strokes.first; gps; gps = gps->next) {
-				/* skip strokes that are invalid for current view */
-				if (ED_gpencil_stroke_can_use(C, gps) == false) {
-					continue;
-				}
-				/* check if the color is editable */
-				if (ED_gpencil_stroke_color_use(gpl, gps) == false) {
-					continue;
-				}
+			for (gpf = init_gpf; gpf; gpf = gpf->next) {
+				if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
+					for (gps = gpf->strokes.first; gps; gps = gps->next) {
+						/* skip strokes that are invalid for current view */
+						if (ED_gpencil_stroke_can_use(C, gps) == false) {
+							continue;
+						}
+						/* check if the color is editable */
+						if (ED_gpencil_stroke_color_use(obact, gpl, gps) == false) {
+							continue;
+						}
 
-				if (is_prop_edit) {
-					/* Proportional Editing... */
-					if (is_prop_edit_connected) {
-						/* connected only - so only if selected */
-						if (gps->flag & GP_STROKE_SELECT)
-							tc->data_len += gps->totpoints;
-					}
-					else {
-						/* everything goes - connection status doesn't matter */
-						tc->data_len += gps->totpoints;
-					}
-				}
-				else {
-					/* only selected stroke points are considered */
-					if (gps->flag & GP_STROKE_SELECT) {
-						bGPDspoint *pt;
-						int i;
+						if (is_prop_edit) {
+							/* Proportional Editing... */
+							if (is_prop_edit_connected) {
+								/* connected only - so only if selected */
+								if (gps->flag & GP_STROKE_SELECT)
+									tc->data_len += gps->totpoints;
+							}
+							else {
+								/* everything goes - connection status doesn't matter */
+								tc->data_len += gps->totpoints;
+							}
+						}
+						else {
+							/* only selected stroke points are considered */
+							if (gps->flag & GP_STROKE_SELECT) {
+								bGPDspoint *pt;
+								int i;
 
-						// TODO: 2D vs 3D?
-						for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
-							if (pt->flag & GP_SPOINT_SELECT)
-								tc->data_len++;
+								// TODO: 2D vs 3D?
+								for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+									if (pt->flag & GP_SPOINT_SELECT)
+										tc->data_len++;
+								}
+							}
 						}
 					}
+				}
+				/* if not multiedit out of loop */
+				if (!is_multiedit) {
+					break;
 				}
 			}
 		}
@@ -8179,153 +8207,166 @@ static void createTransGPencil(bContext *C, TransInfo *t)
 			float diff_mat[4][4];
 			float inverse_diff_mat[4][4];
 
-			/* calculate difference matrix if parent object */
-			if (gpl->parent != NULL) {
-				ED_gpencil_parent_location(gpl, diff_mat);
-				/* undo matrix */
-				invert_m4_m4(inverse_diff_mat, diff_mat);
+			bGPDframe *init_gpf = gpl->actframe;
+			if (is_multiedit) {
+				init_gpf = gpl->frames.first;
 			}
+			/* init multiframe falloff options */
+			int f_init = 0;
+			int f_end = 0;
+
+			if (use_multiframe_falloff) {
+				BKE_gpencil_get_range_selected(gpl, &f_init, &f_end);
+			}
+
+			/* calculate difference matrix */
+			ED_gpencil_parent_location(depsgraph, obact, gpd, gpl, diff_mat);
+			/* undo matrix */
+			invert_m4_m4(inverse_diff_mat, diff_mat);
 
 			/* Make a new frame to work on if the layer's frame and the current scene frame don't match up
 			 * - This is useful when animating as it saves that "uh-oh" moment when you realize you've
 			 *   spent too much time editing the wrong frame...
 			 */
-			if (gpf->framenum != cfra) {
+			 // XXX: should this be allowed when framelock is enabled?
+			if ((gpf->framenum != cfra) && (!is_multiedit)) {
 				gpf = BKE_gpencil_frame_addcopy(gpl, cfra);
 				/* in some weird situations (framelock enabled) return NULL */
 				if (gpf == NULL) {
 					continue;
 				}
+				if (!is_multiedit) {
+					init_gpf = gpf;
+				}
 			}
 
 			/* Loop over strokes, adding TransData for points as needed... */
-			for (gps = gpf->strokes.first; gps; gps = gps->next) {
-				TransData *head = td;
-				TransData *tail = td;
-				bool stroke_ok;
+			for (gpf = init_gpf; gpf; gpf = gpf->next) {
+				if ((gpf == gpl->actframe) || ((gpf->flag & GP_FRAME_SELECT) && (is_multiedit))) {
 
-				/* skip strokes that are invalid for current view */
-				if (ED_gpencil_stroke_can_use(C, gps) == false) {
-					continue;
-				}
-				/* check if the color is editable */
-				if (ED_gpencil_stroke_color_use(gpl, gps) == false) {
-					continue;
-				}
-				/* What we need to include depends on proportional editing settings... */
-				if (is_prop_edit) {
-					if (is_prop_edit_connected) {
-						/* A) "Connected" - Only those in selected strokes */
-						stroke_ok = (gps->flag & GP_STROKE_SELECT) != 0;
+					/* if multiframe and falloff, recalculate and save value */
+					float falloff = 1.0f; /* by default no falloff */
+					if ((is_multiedit) && (use_multiframe_falloff)) {
+						/* Faloff depends on distance to active frame (relative to the overall frame range) */
+						falloff = BKE_gpencil_multiframe_falloff_calc(gpf, gpl->actframe->framenum,
+							f_init, f_end, ts->gp_sculpt.cur_falloff);
 					}
-					else {
-						/* B) All points, always */
-						stroke_ok = true;
-					}
-				}
-				else {
-					/* C) Only selected points in selected strokes */
-					stroke_ok = (gps->flag & GP_STROKE_SELECT) != 0;
-				}
 
-				/* Do stroke... */
-				if (stroke_ok && gps->totpoints) {
-					bGPDspoint *pt;
-					int i;
+					for (gps = gpf->strokes.first; gps; gps = gps->next) {
+						TransData *head = td;
+						TransData *tail = td;
+						bool stroke_ok;
 
-#if 0	/* XXX: this isn't needed anymore; cannot calculate center this way or is_prop_edit breaks */
-					const float ninv = 1.0f / gps->totpoints;
-					float center[3] = {0.0f};
-
-					/* compute midpoint of stroke */
-					for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
-						madd_v3_v3v3fl(center, center, &pt->x, ninv);
-					}
-#endif
-
-					/* add all necessary points... */
-					for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
-						bool point_ok;
-
-						/* include point? */
+						/* skip strokes that are invalid for current view */
+						if (ED_gpencil_stroke_can_use(C, gps) == false) {
+							continue;
+						}
+						/* check if the color is editable */
+						if (ED_gpencil_stroke_color_use(obact, gpl, gps) == false) {
+							continue;
+						}
+						/* What we need to include depends on proportional editing settings... */
 						if (is_prop_edit) {
-							/* Always all points in strokes that get included */
-							point_ok = true;
-						}
-						else {
-							/* Only selected points in selected strokes */
-							point_ok = (pt->flag & GP_SPOINT_SELECT) != 0;
-						}
-
-						/* do point... */
-						if (point_ok) {
-							copy_v3_v3(td->iloc, &pt->x);
-							copy_v3_v3(td->center, &pt->x); // XXX: what about  t->around == local?
-
-							td->loc = &pt->x;
-
-							td->flag = 0;
-
-							if (pt->flag & GP_SPOINT_SELECT)
-								td->flag |= TD_SELECTED;
-
-							/* for other transform modes (e.g. shrink-fatten), need to additional data */
-							if (t->mode == TFM_GPENCIL_SHRINKFATTEN) {
-								td->val = &pt->pressure;
-								td->ival = pt->pressure;
-							}
-
-							/* screenspace needs special matrices... */
-							if ((gps->flag & (GP_STROKE_3DSPACE | GP_STROKE_2DSPACE | GP_STROKE_2DIMAGE)) == 0) {
-								/* screenspace */
-								td->protectflag = OB_LOCK_LOCZ | OB_LOCK_ROTZ | OB_LOCK_SCALEZ;
-
-								/* apply parent transformations */
-								if (gpl->parent == NULL) {
-									copy_m3_m4(td->smtx, t->persmat);
-									copy_m3_m4(td->mtx, t->persinv);
-									unit_m3(td->axismtx);
-								}
-								else {
-									/* apply matrix transformation relative to parent */
-									copy_m3_m4(td->smtx, inverse_diff_mat); /* final position */
-									copy_m3_m4(td->mtx, diff_mat); /* display position */
-									copy_m3_m4(td->axismtx, diff_mat); /* axis orientation */
-								}
+							if (is_prop_edit_connected) {
+								/* A) "Connected" - Only those in selected strokes */
+								stroke_ok = (gps->flag & GP_STROKE_SELECT) != 0;
 							}
 							else {
-								/* configure 2D dataspace points so that they don't play up... */
-								if (gps->flag & (GP_STROKE_2DSPACE | GP_STROKE_2DIMAGE)) {
-									td->protectflag = OB_LOCK_LOCZ | OB_LOCK_ROTZ | OB_LOCK_SCALEZ;
-									// XXX: matrices may need to be different?
-								}
+								/* B) All points, always */
+								stroke_ok = true;
+							}
+						}
+						else {
+							/* C) Only selected points in selected strokes */
+							stroke_ok = (gps->flag & GP_STROKE_SELECT) != 0;
+						}
 
-								/* apply parent transformations */
-								if (gpl->parent == NULL) {
-									copy_m3_m3(td->smtx, smtx);
-									copy_m3_m3(td->mtx, mtx);
-									unit_m3(td->axismtx); // XXX?
+						/* Do stroke... */
+						if (stroke_ok && gps->totpoints) {
+							bGPDspoint *pt;
+							int i;
+
+							/* save falloff factor */
+							gps->runtime.multi_frame_falloff = falloff;
+
+							/* add all necessary points... */
+							for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
+								bool point_ok;
+
+								/* include point? */
+								if (is_prop_edit) {
+									/* Always all points in strokes that get included */
+									point_ok = true;
 								}
 								else {
-									/* apply matrix transformation relative to parent */
-									copy_m3_m4(td->smtx, inverse_diff_mat); /* final position */
-									copy_m3_m4(td->mtx, diff_mat);  /* display position */
-									copy_m3_m4(td->axismtx, diff_mat); /* axis orientation */
+									/* Only selected points in selected strokes */
+									point_ok = (pt->flag & GP_SPOINT_SELECT) != 0;
+								}
+
+								/* do point... */
+								if (point_ok) {
+									copy_v3_v3(td->iloc, &pt->x);
+									copy_v3_v3(td->center, &pt->x); // XXX: what about  t->around == local?
+
+									td->loc = &pt->x;
+
+									td->flag = 0;
+
+									if (pt->flag & GP_SPOINT_SELECT)
+										td->flag |= TD_SELECTED;
+
+									/* for other transform modes (e.g. shrink-fatten), need to additional data
+									 * but never for scale or mirror
+									 */
+									if ((t->mode != TFM_RESIZE) && (t->mode != TFM_MIRROR)) {
+										td->val = &pt->pressure;
+										td->ival = pt->pressure;
+									}
+
+									/* screenspace needs special matrices... */
+									if ((gps->flag & (GP_STROKE_3DSPACE | GP_STROKE_2DSPACE | GP_STROKE_2DIMAGE)) == 0) {
+										/* screenspace */
+										td->protectflag = OB_LOCK_LOCZ | OB_LOCK_ROTZ | OB_LOCK_SCALEZ;
+
+										/* apply matrix transformation relative to parent */
+										copy_m3_m4(td->smtx, inverse_diff_mat); /* final position */
+										copy_m3_m4(td->mtx, diff_mat); /* display position */
+										copy_m3_m4(td->axismtx, diff_mat); /* axis orientation */
+									}
+									else {
+										/* configure 2D dataspace points so that they don't play up... */
+										if (gps->flag & (GP_STROKE_2DSPACE | GP_STROKE_2DIMAGE)) {
+											td->protectflag = OB_LOCK_LOCZ | OB_LOCK_ROTZ | OB_LOCK_SCALEZ;
+											// XXX: matrices may need to be different?
+										}
+
+										/* apply parent transformations */
+										copy_m3_m4(td->smtx, inverse_diff_mat); /* final position */
+										copy_m3_m4(td->mtx, diff_mat);  /* display position */
+										copy_m3_m4(td->axismtx, diff_mat); /* axis orientation */
+									}
+									/* Triangulation must be calculated again, so save the stroke for recalc function */
+									td->extra = gps;
+
+									/* save pointer to object */
+									td->ob = obact;
+
+									td++;
+									tail++;
 								}
 							}
-							/* Triangulation must be calculated again, so save the stroke for recalc function */
-							td->extra = gps;
 
-							td++;
-							tail++;
+							/* March over these points, and calculate the proportional editing distances */
+							if (is_prop_edit && (head != tail)) {
+								/* XXX: for now, we are similar enough that this works... */
+								calc_distanceCurveVerts(head, tail - 1);
+							}
 						}
 					}
-
-					/* March over these points, and calculate the proportional editing distances */
-					if (is_prop_edit && (head != tail)) {
-						/* XXX: for now, we are similar enough that this works... */
-						calc_distanceCurveVerts(head, tail - 1);
-					}
+				}
+				/* if not multiedit out of loop */
+				if (!is_multiedit) {
+					break;
 				}
 			}
 		}
@@ -8446,6 +8487,7 @@ void createTransData(bContext *C, TransInfo *t)
 	}
 	else if (t->spacetype == SPACE_ACTION) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
 
 		createTransActionData(C, t);
 		countAndCleanTransDataContainer(t);
@@ -8458,17 +8500,23 @@ void createTransData(bContext *C, TransInfo *t)
 	}
 	else if (t->spacetype == SPACE_NLA) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
+
 		createTransNlaData(C, t);
 		countAndCleanTransDataContainer(t);
 	}
 	else if (t->spacetype == SPACE_SEQ) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
+
 		t->num.flag |= NUM_NO_FRACTION; /* sequencer has no use for floating point transformations */
 		createTransSeqData(C, t);
 		countAndCleanTransDataContainer(t);
 	}
 	else if (t->spacetype == SPACE_IPO) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
+
 		createTransGraphEditData(C, t);
 		countAndCleanTransDataContainer(t);
 
@@ -8480,6 +8528,7 @@ void createTransData(bContext *C, TransInfo *t)
 	}
 	else if (t->spacetype == SPACE_NODE) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
 
 		createTransNodeData(C, t);
 		countAndCleanTransDataContainer(t);
@@ -8492,6 +8541,8 @@ void createTransData(bContext *C, TransInfo *t)
 	}
 	else if (t->spacetype == SPACE_CLIP) {
 		t->flag |= T_POINTS | T_2D_EDIT;
+		t->obedit_type = -1;
+
 		if (t->options & CTX_MOVIECLIP) {
 			createTransTrackingData(C, t);
 			countAndCleanTransDataContainer(t);
@@ -8615,6 +8666,10 @@ void createTransData(bContext *C, TransInfo *t)
 			t->flag |= T_POINTS | T_2D_EDIT;
 			createTransPaintCurveVerts(C, t);
 			countAndCleanTransDataContainer(t);
+		}
+		/* Mark as initialized if above checks fail. */
+		if (t->data_len_all == -1) {
+			t->data_len_all = 0;
 		}
 	}
 	else {

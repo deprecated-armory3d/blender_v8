@@ -48,6 +48,7 @@
 #include "BKE_fcurve.h"
 #include "BKE_report.h"
 #include "BKE_library.h"
+#include "BKE_main.h"
 #include "BKE_global.h"
 #include "BKE_deform.h"
 
@@ -182,7 +183,8 @@ void duplicate_fcurve_keys(FCurve *fcu)
 /* Various Tools */
 
 /* Basic F-Curve 'cleanup' function that removes 'double points' and unnecessary keyframes on linear-segments only
- * optionally clears up curve if one keyframe with default value remains */
+ * optionally clears up curve if one keyframe with default value remains
+ */
 void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, bool cleardefault)
 {
 	FCurve *fcu = (FCurve *)ale->key_data;
@@ -205,7 +207,7 @@ void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, boo
 
 	/* now insert first keyframe, as it should be ok */
 	bezt = old_bezts;
-	insert_vert_fcurve(fcu, bezt->vec[1][0], bezt->vec[1][1], BEZKEYTYPE(bezt), 0);
+	insert_bezt_fcurve(fcu, bezt, 0);
 	if (!(bezt->f2 & SELECT)) {
 		lastb = fcu->bezt;
 		lastb->f1 = lastb->f2 = lastb->f3 = 0;
@@ -234,7 +236,7 @@ void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, boo
 		cur[0] = bezt->vec[1][0]; cur[1] = bezt->vec[1][1];
 
 		if (!(bezt->f2 & SELECT)) {
-			insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+			insert_bezt_fcurve(fcu, bezt, 0);
 			lastb = (fcu->bezt + (fcu->totvert - 1));
 			lastb->f1 = lastb->f2 = lastb->f3 = 0;
 			continue;
@@ -253,7 +255,7 @@ void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, boo
 				if (cur[1] > next[1]) {
 					if (IS_EQT(cur[1], prev[1], thresh) == 0) {
 						/* add new keyframe */
-						insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+						insert_bezt_fcurve(fcu, bezt, 0);
 					}
 				}
 			}
@@ -261,7 +263,7 @@ void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, boo
 				/* only add if values are a considerable distance apart */
 				if (IS_EQT(cur[1], prev[1], thresh) == 0) {
 					/* add new keyframe */
-					insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+					insert_bezt_fcurve(fcu, bezt, 0);
 				}
 			}
 		}
@@ -270,19 +272,19 @@ void clean_fcurve(struct bAnimContext *ac, bAnimListElem *ale, float thresh, boo
 			if (beztn) {
 				/* does current have same value as previous and next? */
 				if (IS_EQT(cur[1], prev[1], thresh) == 0) {
-					/* add new keyframe*/
-					insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+					/* add new keyframe */
+					insert_bezt_fcurve(fcu, bezt, 0);
 				}
 				else if (IS_EQT(cur[1], next[1], thresh) == 0) {
 					/* add new keyframe */
-					insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+					insert_bezt_fcurve(fcu, bezt, 0);
 				}
 			}
 			else {
 				/* add if value doesn't equal that of previous */
 				if (IS_EQT(cur[1], prev[1], thresh) == 0) {
 					/* add new keyframe */
-					insert_vert_fcurve(fcu, cur[0], cur[1], BEZKEYTYPE(bezt), 0);
+					insert_bezt_fcurve(fcu, bezt, 0);
 				}
 			}
 		}
@@ -729,7 +731,8 @@ static tAnimCopybufItem *pastebuf_match_path_full(FCurve *fcu, const short from_
 }
 
 /* medium match strictness: path match only (i.e. ignore ID) */
-static tAnimCopybufItem *pastebuf_match_path_property(FCurve *fcu, const short from_single, const short UNUSED(to_simple))
+static tAnimCopybufItem *pastebuf_match_path_property(
+        Main *bmain, FCurve *fcu, const short from_single, const short UNUSED(to_simple))
 {
 	tAnimCopybufItem *aci;
 
@@ -742,7 +745,7 @@ static tAnimCopybufItem *pastebuf_match_path_property(FCurve *fcu, const short f
 			 * resolve, or a bone could be renamed after copying for eg. but in normal copy & paste
 			 * this should work out ok.
 			 */
-			if (BLI_findindex(which_libbase(G.main, aci->id_type), aci->id) == -1) {
+			if (BLI_findindex(which_libbase(bmain, aci->id_type), aci->id) == -1) {
 				/* pedantic but the ID could have been removed, and beats crashing! */
 				printf("paste_animedit_keys: error ID has been removed!\n");
 			}
@@ -996,7 +999,7 @@ short paste_animedit_keys(bAnimContext *ac, ListBase *anim_data,
 
 					case 1:
 						/* less strict, just compare property names */
-						aci = pastebuf_match_path_property(fcu, from_single, to_simple);
+						aci = pastebuf_match_path_property(ac->bmain, fcu, from_single, to_simple);
 						break;
 
 					case 2:

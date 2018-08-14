@@ -40,7 +40,6 @@
 #include "BLI_bitmap.h"
 #include "BLI_math.h"
 
-#include "BKE_cdderivedmesh.h"
 #include "BKE_mesh.h"
 #include "BKE_particle.h"
 #include "BKE_deform.h"
@@ -251,7 +250,7 @@ static Mesh *applyModifier(
 	/* array size is doubled in case of using a shell */
 	const unsigned int stride = do_shell ? 2 : 1;
 
-	modifier_get_vgroup_mesh(ctx->object, mesh, smd->defgrp_name, &dvert, &defgrp_index);
+	MOD_get_vgroup(ctx->object, mesh, smd->defgrp_name, &dvert, &defgrp_index);
 
 	orig_mvert = mesh->mvert;
 	orig_medge = mesh->medge;
@@ -775,7 +774,7 @@ static Mesh *applyModifier(
 
 		/* add faces & edges */
 		origindex_edge = CustomData_get_layer(&result->edata, CD_ORIGINDEX);
-		BLI_assert(origindex_edge != NULL);
+		BLI_assert((numEdges == 0) || (origindex_edge != NULL));
 		ed = &medge[(numEdges * stride) + newEdges];  /* start after copied edges */
 		orig_ed = &origindex_edge[(numEdges * stride) + newEdges];
 		for (i = 0; i < rimVerts; i++, ed++, orig_ed++) {

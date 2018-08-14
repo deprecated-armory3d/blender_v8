@@ -24,7 +24,6 @@ from rna_prop_ui import PropertyPanel
 
 class MESH_MT_vertex_group_specials(Menu):
     bl_label = "Vertex Group Specials"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
 
     def draw(self, context):
         layout = self.layout
@@ -48,7 +47,6 @@ class MESH_MT_vertex_group_specials(Menu):
 
 class MESH_MT_shape_key_specials(Menu):
     bl_label = "Shape Key Specials"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
 
     def draw(self, context):
         layout = self.layout
@@ -137,7 +135,7 @@ class MeshButtonsPanel:
 class DATA_PT_context_mesh(MeshButtonsPanel, Panel):
     bl_label = ""
     bl_options = {'HIDE_HEADER'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -154,7 +152,8 @@ class DATA_PT_context_mesh(MeshButtonsPanel, Panel):
 
 class DATA_PT_normals(MeshButtonsPanel, Panel):
     bl_label = "Normals"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    bl_options = {'DEFAULT_CLOSED'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -174,7 +173,7 @@ class DATA_PT_normals(MeshButtonsPanel, Panel):
 class DATA_PT_texture_space(MeshButtonsPanel, Panel):
     bl_label = "Texture Space"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -194,7 +193,7 @@ class DATA_PT_texture_space(MeshButtonsPanel, Panel):
 
 class DATA_PT_vertex_groups(MeshButtonsPanel, Panel):
     bl_label = "Vertex Groups"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     @classmethod
     def poll(cls, context):
@@ -241,7 +240,8 @@ class DATA_PT_vertex_groups(MeshButtonsPanel, Panel):
 
 class DATA_PT_face_maps(MeshButtonsPanel, Panel):
     bl_label = "Face Maps"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    bl_options = {'DEFAULT_CLOSED'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     @classmethod
     def poll(cls, context):
@@ -283,7 +283,7 @@ class DATA_PT_face_maps(MeshButtonsPanel, Panel):
 
 class DATA_PT_shape_keys(MeshButtonsPanel, Panel):
     bl_label = "Shape Keys"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     @classmethod
     def poll(cls, context):
@@ -353,19 +353,16 @@ class DATA_PT_shape_keys(MeshButtonsPanel, Panel):
                     row.active = enable_edit_value
                     row.prop(kb, "value")
 
-                    split = layout.split()
+                    layout.use_property_split = True
 
-                    col = split.column(align=True)
-                    col.active = enable_edit_value
-                    col.label(text="Range:")
-                    col.prop(kb, "slider_min", text="Min")
-                    col.prop(kb, "slider_max", text="Max")
+                    col = layout.column()
+                    sub.active = enable_edit_value
+                    sub = col.column(align=True)
+                    sub.prop(kb, "slider_min", text="Range Min")
+                    sub.prop(kb, "slider_max", text="Max")
 
-                    col = split.column(align=True)
-                    col.active = enable_edit_value
-                    col.label(text="Blend:")
-                    col.prop_search(kb, "vertex_group", ob, "vertex_groups", text="")
-                    col.prop_search(kb, "relative_key", key, "key_blocks", text="")
+                    col.prop_search(kb, "vertex_group", ob, "vertex_groups", text="Vertex Group")
+                    col.prop_search(kb, "relative_key", key, "key_blocks", text="Relative To")
 
             else:
                 layout.prop(kb, "interpolation")
@@ -376,7 +373,7 @@ class DATA_PT_shape_keys(MeshButtonsPanel, Panel):
 
 class DATA_PT_uv_texture(MeshButtonsPanel, Panel):
     bl_label = "UV Maps"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -395,7 +392,7 @@ class DATA_PT_uv_texture(MeshButtonsPanel, Panel):
 
 class DATA_PT_vertex_colors(MeshButtonsPanel, Panel):
     bl_label = "Vertex Colors"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -415,10 +412,11 @@ class DATA_PT_vertex_colors(MeshButtonsPanel, Panel):
 class DATA_PT_customdata(MeshButtonsPanel, Panel):
     bl_label = "Geometry Data"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         obj = context.object
         me = context.mesh
@@ -441,7 +439,7 @@ class DATA_PT_customdata(MeshButtonsPanel, Panel):
 
 
 class DATA_PT_custom_props_mesh(MeshButtonsPanel, PropertyPanel, Panel):
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
     _context_path = "object.data"
     _property_type = bpy.types.Mesh
 
@@ -454,13 +452,13 @@ classes = (
     MESH_UL_shape_keys,
     MESH_UL_uvmaps_vcols,
     DATA_PT_context_mesh,
-    DATA_PT_normals,
-    DATA_PT_texture_space,
     DATA_PT_vertex_groups,
-    DATA_PT_face_maps,
     DATA_PT_shape_keys,
     DATA_PT_uv_texture,
     DATA_PT_vertex_colors,
+    DATA_PT_face_maps,
+    DATA_PT_normals,
+    DATA_PT_texture_space,
     DATA_PT_customdata,
     DATA_PT_custom_props_mesh,
 )

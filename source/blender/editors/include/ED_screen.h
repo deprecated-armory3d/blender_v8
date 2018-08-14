@@ -60,31 +60,46 @@ struct Main;
 struct wmMsgBus;
 struct wmMsgSubscribeKey;
 struct wmMsgSubscribeValue;
+struct wmOperatorType;
+struct IDProperty;
+struct MenuType;
+struct PropertyRNA;
 
 /* regions */
 void    ED_region_do_listen(
-        struct bScreen *sc, struct ScrArea *sa, struct ARegion *ar,
+        struct wmWindow *win, struct ScrArea *sa, struct ARegion *ar,
         struct wmNotifier *note, const Scene *scene);
 void    ED_region_do_layout(struct bContext *C, struct ARegion *ar);
 void    ED_region_do_draw(struct bContext *C, struct ARegion *ar);
 void    ED_region_exit(struct bContext *C, struct ARegion *ar);
 void    ED_region_pixelspace(struct ARegion *ar);
-void    ED_region_update_rect(struct bContext *C, struct ARegion *ar);
-void    ED_region_init(struct bContext *C, struct ARegion *ar);
+void    ED_region_update_rect(struct ARegion *ar);
+void    ED_region_init(struct ARegion *ar);
 void    ED_region_tag_redraw(struct ARegion *ar);
 void    ED_region_tag_redraw_partial(struct ARegion *ar, const struct rcti *rct);
 void    ED_region_tag_redraw_overlay(struct ARegion *ar);
 void    ED_region_tag_redraw_no_rebuild(struct ARegion *ar);
 void    ED_region_tag_refresh_ui(struct ARegion *ar);
-void    ED_region_panels_init(struct wmWindowManager *wm, struct ARegion *ar);
-void    ED_region_panels(
-            const struct bContext *C, struct ARegion *ar,
-            const char *contexts[], int contextnr,
-            const bool vertical);
-void    ED_region_header_init(struct ARegion *ar);
-void    ED_region_header(const struct bContext *C, struct ARegion *ar);
-void    ED_region_header_layout(const struct bContext *C, struct ARegion *ar);
-void    ED_region_header_draw(const struct bContext *C, struct ARegion *ar);
+
+void ED_region_panels_init(struct wmWindowManager *wm, struct ARegion *ar);
+void ED_region_panels_ex(
+        const struct bContext *C, struct ARegion *ar,
+        const char *contexts[], int contextnr, const bool vertical);
+void ED_region_panels(
+        const struct bContext *C, struct ARegion *ar);
+void ED_region_panels_layout_ex(
+        const struct bContext *C, struct ARegion *ar,
+        const char *contexts[], int contextnr, const bool vertical);
+void ED_region_panels_layout(
+        const struct bContext *C, struct ARegion *ar);
+void ED_region_panels_draw(
+        const struct bContext *C, struct ARegion *ar);
+
+void ED_region_header_init(struct ARegion *ar);
+void ED_region_header(const struct bContext *C, struct ARegion *ar);
+void ED_region_header_layout(const struct bContext *C, struct ARegion *ar);
+void ED_region_header_draw(const struct bContext *C, struct ARegion *ar);
+
 void    ED_region_cursor_set(struct wmWindow *win, struct ScrArea *sa, struct ARegion *ar);
 void    ED_region_toggle_hidden(struct bContext *C, struct ARegion *ar);
 void    ED_region_visibility_change_update(struct bContext *C, struct ARegion *ar);
@@ -122,21 +137,22 @@ void    ED_area_exit(struct bContext *C, struct ScrArea *sa);
 int     ED_screen_area_active(const struct bContext *C);
 void    ED_screen_global_areas_create(
             struct wmWindow *win);
-void    ED_area_do_listen(struct bScreen *sc, ScrArea *sa, struct wmNotifier *note, Scene *scene,
-                          struct WorkSpace *workspace);
+void    ED_area_do_listen(struct wmWindow *win, ScrArea *sa, struct wmNotifier *note, Scene *scene);
 void    ED_area_tag_redraw(ScrArea *sa);
 void    ED_area_tag_redraw_no_rebuild(ScrArea *sa);
 void    ED_area_tag_redraw_regiontype(ScrArea *sa, int type);
 void    ED_area_tag_refresh(ScrArea *sa);
 void    ED_area_do_refresh(struct bContext *C, ScrArea *sa);
 void    ED_area_azones_update(ScrArea *sa, const int mouse_xy[]);
-void    ED_area_headerprint(ScrArea *sa, const char *str);
+void    ED_area_status_text(ScrArea *sa, const char *str);
 void    ED_area_newspace(struct bContext *C, ScrArea *sa, int type, const bool skip_ar_exit);
 void    ED_area_prevspace(struct bContext *C, ScrArea *sa);
 void    ED_area_swapspace(struct bContext *C, ScrArea *sa1, ScrArea *sa2);
 int     ED_area_headersize(void);
 int     ED_area_header_alignment(const ScrArea *area);
 int     ED_area_global_size_y(const ScrArea *area);
+int     ED_area_global_min_size_y(const ScrArea *area);
+int     ED_area_global_max_size_y(const ScrArea *area);
 bool    ED_area_is_global(const ScrArea *area);
 int     ED_region_global_size_y(void);
 void    ED_area_update_region_sizes(struct wmWindowManager *wm, struct wmWindow *win, struct ScrArea *area);
@@ -168,10 +184,7 @@ void    ED_screen_refresh(struct wmWindowManager *wm, struct wmWindow *win);
 void    ED_screen_ensure_updated(struct wmWindowManager *wm, struct wmWindow *win, struct bScreen *screen);
 void    ED_screen_do_listen(struct bContext *C, struct wmNotifier *note);
 bool    ED_screen_change(struct bContext *C, struct bScreen *sc);
-void    ED_screen_update_after_scene_change(
-        const struct bScreen *screen,
-        struct Scene *scene_new,
-        struct ViewLayer *view_layer);
+void    ED_screen_scene_change(struct bContext *C, struct wmWindow *win, struct Scene *scene);
 void    ED_screen_set_active_region(struct bContext *C, struct wmWindow *win, const int xy[2]);
 void    ED_screen_exit(struct bContext *C, struct wmWindow *window, struct bScreen *screen);
 void    ED_screen_animation_timer(struct bContext *C, int redraws, int refresh, int sync, int enable);
@@ -191,9 +204,7 @@ void    ED_screen_preview_render(const struct bScreen *screen, int size_x, int s
 /* workspaces */
 struct WorkSpace *ED_workspace_add(
         struct Main *bmain,
-        const char *name,
-        Scene *scene,
-        ViewLayer *act_render_layer) ATTR_NONNULL();
+        const char *name) ATTR_NONNULL();
 bool ED_workspace_change(
         struct WorkSpace *workspace_new,
         struct bContext *C,
@@ -207,9 +218,6 @@ bool ED_workspace_delete(
         struct wmWindowManager *wm) ATTR_NONNULL();
 void ED_workspace_scene_data_sync(
         struct WorkSpaceInstanceHook *hook, Scene *scene) ATTR_NONNULL();
-void ED_workspace_view_layer_unset(
-        const struct Main *bmain, struct Scene *scene,
-        const ViewLayer *layer_unset, ViewLayer *layer_new) ATTR_NONNULL(1, 2);
 struct WorkSpaceLayout *ED_workspace_layout_add(
         struct Main *bmain,
         struct WorkSpace *workspace,
@@ -226,10 +234,7 @@ bool ED_workspace_layout_cycle(
         struct WorkSpace *workspace, const short direction,
         struct bContext *C) ATTR_NONNULL();
 
-void ED_workspace_object_mode_sync_from_object(
-        struct wmWindowManager *wm, WorkSpace *workspace, struct Object *obact);
-void ED_workspace_object_mode_sync_from_scene(
-        struct wmWindowManager *wm, WorkSpace *workspace, struct Scene *scene);
+void    ED_workspace_status_text(struct bContext *C, const char *str);
 
 /* anim */
 void    ED_update_for_newframe(struct Main *bmain, struct Depsgraph *depsgraph);
@@ -246,66 +251,101 @@ void    ED_keymap_screen(struct wmKeyConfig *keyconf);
 void    ED_operatortypes_workspace(void);
 
 /* operators; context poll callbacks */
-int     ED_operator_screenactive(struct bContext *C);
-int     ED_operator_screen_mainwinactive(struct bContext *C);
-int     ED_operator_areaactive(struct bContext *C);
-int     ED_operator_regionactive(struct bContext *C);
+bool ED_operator_screenactive(struct bContext *C);
+bool ED_operator_screen_mainwinactive(struct bContext *C);
+bool ED_operator_areaactive(struct bContext *C);
+bool ED_operator_regionactive(struct bContext *C);
 
-int     ED_operator_scene(struct bContext *C);
-int     ED_operator_scene_editable(struct bContext *C);
-int     ED_operator_objectmode(struct bContext *C);
+bool ED_operator_scene(struct bContext *C);
+bool ED_operator_scene_editable(struct bContext *C);
+bool ED_operator_objectmode(struct bContext *C);
 
-int     ED_operator_view3d_active(struct bContext *C);
-int     ED_operator_region_view3d_active(struct bContext *C);
-int     ED_operator_animview_active(struct bContext *C);
-int     ED_operator_outliner_active(struct bContext *C);
-int     ED_operator_outliner_active_no_editobject(struct bContext *C);
-int     ED_operator_file_active(struct bContext *C);
-int     ED_operator_action_active(struct bContext *C);
-int     ED_operator_buttons_active(struct bContext *C);
-int     ED_operator_node_active(struct bContext *C);
-int     ED_operator_node_editable(struct bContext *C);
-int     ED_operator_graphedit_active(struct bContext *C);
-int     ED_operator_sequencer_active(struct bContext *C);
-int     ED_operator_sequencer_active_editable(struct bContext *C);
-int     ED_operator_image_active(struct bContext *C);
-int     ED_operator_nla_active(struct bContext *C);
-int     ED_operator_info_active(struct bContext *C);
-int     ED_operator_console_active(struct bContext *C);
+bool ED_operator_view3d_active(struct bContext *C);
+bool ED_operator_region_view3d_active(struct bContext *C);
+bool ED_operator_animview_active(struct bContext *C);
+bool ED_operator_outliner_active(struct bContext *C);
+bool ED_operator_outliner_active_no_editobject(struct bContext *C);
+bool ED_operator_file_active(struct bContext *C);
+bool ED_operator_action_active(struct bContext *C);
+bool ED_operator_buttons_active(struct bContext *C);
+bool ED_operator_node_active(struct bContext *C);
+bool ED_operator_node_editable(struct bContext *C);
+bool ED_operator_graphedit_active(struct bContext *C);
+bool ED_operator_sequencer_active(struct bContext *C);
+bool ED_operator_sequencer_active_editable(struct bContext *C);
+bool ED_operator_image_active(struct bContext *C);
+bool ED_operator_nla_active(struct bContext *C);
+bool ED_operator_info_active(struct bContext *C);
+bool ED_operator_console_active(struct bContext *C);
 
 
-int     ED_operator_object_active(struct bContext *C);
-int     ED_operator_object_active_editable(struct bContext *C);
-int     ED_operator_object_active_editable_mesh(struct bContext *C);
-int     ED_operator_object_active_editable_font(struct bContext *C);
-int     ED_operator_editmesh(struct bContext *C);
-int     ED_operator_editmesh_view3d(struct bContext *C);
-int     ED_operator_editmesh_region_view3d(struct bContext *C);
-int     ED_operator_editarmature(struct bContext *C);
-int     ED_operator_editcurve(struct bContext *C);
-int     ED_operator_editcurve_3d(struct bContext *C);
-int     ED_operator_editsurf(struct bContext *C);
-int     ED_operator_editsurfcurve(struct bContext *C);
-int     ED_operator_editsurfcurve_region_view3d(struct bContext *C);
-int     ED_operator_editfont(struct bContext *C);
-int     ED_operator_editlattice(struct bContext *C);
-int     ED_operator_editmball(struct bContext *C);
-int     ED_operator_uvedit(struct bContext *C);
-int     ED_operator_uvedit_space_image(struct bContext *C);
-int     ED_operator_uvmap(struct bContext *C);
-int     ED_operator_posemode_exclusive(struct bContext *C);
-int     ED_operator_posemode_context(struct bContext *C);
-int     ED_operator_posemode(struct bContext *C);
-int     ED_operator_posemode_local(struct bContext *C);
-int     ED_operator_mask(struct bContext *C);
-int     ED_operator_camera(struct bContext *C);
+bool ED_operator_object_active(struct bContext *C);
+bool ED_operator_object_active_editable(struct bContext *C);
+bool ED_operator_object_active_editable_mesh(struct bContext *C);
+bool ED_operator_object_active_editable_font(struct bContext *C);
+bool ED_operator_editmesh(struct bContext *C);
+bool ED_operator_editmesh_view3d(struct bContext *C);
+bool ED_operator_editmesh_region_view3d(struct bContext *C);
+bool ED_operator_editmesh_auto_smooth(struct bContext *C);
+bool ED_operator_editarmature(struct bContext *C);
+bool ED_operator_editcurve(struct bContext *C);
+bool ED_operator_editcurve_3d(struct bContext *C);
+bool ED_operator_editsurf(struct bContext *C);
+bool ED_operator_editsurfcurve(struct bContext *C);
+bool ED_operator_editsurfcurve_region_view3d(struct bContext *C);
+bool ED_operator_editfont(struct bContext *C);
+bool ED_operator_editlattice(struct bContext *C);
+bool ED_operator_editmball(struct bContext *C);
+bool ED_operator_uvedit(struct bContext *C);
+bool ED_operator_uvedit_space_image(struct bContext *C);
+bool ED_operator_uvmap(struct bContext *C);
+bool ED_operator_posemode_exclusive(struct bContext *C);
+bool ED_operator_posemode_context(struct bContext *C);
+bool ED_operator_posemode(struct bContext *C);
+bool ED_operator_posemode_local(struct bContext *C);
+bool ED_operator_mask(struct bContext *C);
+bool ED_operator_camera(struct bContext *C);
 
+/* screen_user_menu.c */
+
+struct bUserMenu *ED_screen_user_menu_find(struct bContext *C);
+struct bUserMenu *ED_screen_user_menu_ensure(struct bContext *C);
+
+
+struct bUserMenuItem_Op *ED_screen_user_menu_item_find_operator(
+        struct ListBase *lb,
+        const struct wmOperatorType *ot, struct IDProperty *prop, short opcontext);
+struct bUserMenuItem_Menu *ED_screen_user_menu_item_find_menu(
+        struct ListBase *lb,
+        const struct MenuType *mt);
+struct bUserMenuItem_Prop *ED_screen_user_menu_item_find_prop(
+        struct ListBase *lb,
+        const char *context_data_path, const char *prop_id, int prop_index);
+
+void ED_screen_user_menu_item_add_operator(
+        struct ListBase *lb, const char *ui_name,
+        const struct wmOperatorType *ot, const struct IDProperty *prop, short opcontext);
+void ED_screen_user_menu_item_add_menu(
+        struct ListBase *lb, const char *ui_name,
+        const struct MenuType *mt);
+void ED_screen_user_menu_item_add_prop(
+        ListBase *lb, const char *ui_name,
+        const char *context_data_path, const char *prop_id, int prop_index);
+
+void ED_screen_user_menu_item_remove(
+        struct ListBase *lb, struct bUserMenuItem *umi);
+void ED_screen_user_menu_register(void);
 
 /* Cache display helpers */
 
 void ED_region_cache_draw_background(const struct ARegion *ar);
 void ED_region_cache_draw_curfra_label(const int framenr, const float x, const float y);
 void ED_region_cache_draw_cached_segments(const struct ARegion *ar, const int num_segments, const int *points, const int sfra, const int efra);
+
+/* interface_region_hud.c */
+struct ARegionType *ED_area_type_hud(int space_type);
+void ED_area_type_hud_clear(struct wmWindowManager *wm, ScrArea *sa_keep);
+void ED_area_type_hud_ensure(struct bContext *C, struct ScrArea *sa);
 
 /* default keymaps, bitflags */
 #define ED_KEYMAP_UI        1
@@ -317,4 +357,3 @@ void ED_region_cache_draw_cached_segments(const struct ARegion *ar, const int nu
 #define ED_KEYMAP_HEADER    64
 
 #endif /* __ED_SCREEN_H__ */
-

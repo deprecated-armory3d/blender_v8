@@ -59,6 +59,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "UI_interface.h"
 #include "UI_resources.h"
@@ -210,12 +211,12 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *ar)
 	/* first backdrop strips */
 	y = (float)(-ACHANNEL_HEIGHT(ac));
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 
 	for (ale = anim_data.first; ale; ale = ale->next) {
 		const float yminc = (float)(y - ACHANNEL_HEIGHT_HALF(ac));
@@ -319,13 +320,13 @@ void draw_channel_strips(bAnimContext *ac, SpaceAction *saction, ARegion *ar)
 		/*	Increment the step */
 		y -= ACHANNEL_STEP(ac);
 	}
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	/* black line marking 'current frame' for Time-Slide transform mode */
 	if (saction->flag & SACTION_MOVING) {
 		immUniformColor3f(0.0f, 0.0f, 0.0f);
 
-		immBegin(GWN_PRIM_LINES, 2);
+		immBegin(GPU_PRIM_LINES, 2);
 		immVertex2f(pos, saction->timeslide, v2d->cur.ymin - EXTRA_SCROLL_PAD);
 		immVertex2f(pos, saction->timeslide, v2d->cur.ymax);
 		immEnd();
@@ -403,7 +404,7 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
 
 	BKE_ptcache_ids_from_object(&pidlist, ob, scene, 0);
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 	/* iterate over pointcaches on the active object, and draw each one's range */
@@ -435,9 +436,9 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
 		if (pid->cache->cached_frames == NULL)
 			continue;
 
-		gpuPushMatrix();
-		gpuTranslate2f(0.0, (float)V2D_SCROLL_HEIGHT + yoffs);
-		gpuScale2f(1.0, cache_draw_height);
+		GPU_matrix_push();
+		GPU_matrix_translate_2f(0.0, (float)V2D_SCROLL_HEIGHT_TEXT + yoffs);
+		GPU_matrix_scale_2f(1.0, cache_draw_height);
 
 		switch (pid->type) {
 			case PTCACHE_TYPE_SOFTBODY:
@@ -475,7 +476,7 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
 		const int sta = pid->cache->startframe, end = pid->cache->endframe;
 		const int len = (end - sta + 1) * 6;
 
-		glEnable(GL_BLEND);
+		GPU_blend(true);
 
 		immUniformColor4fv(col);
 		immRectf(pos, (float)sta, 0.0, (float)end, 1.0);
@@ -491,7 +492,7 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
 		immUniformColor4fv(col);
 
 		if (len > 0) {
-			immBeginAtMost(GWN_PRIM_TRIS, len);
+			immBeginAtMost(GPU_PRIM_TRIS, len);
 
 			/* draw a quad for each cached frame */
 			for (int i = sta; i <= end; i++) {
@@ -509,9 +510,9 @@ void timeline_draw_cache(SpaceAction *saction, Object *ob, Scene *scene)
 			immEnd();
 		}
 
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 
-		gpuPopMatrix();
+		GPU_matrix_pop();
 
 		yoffs += cache_draw_height;
 	}

@@ -137,6 +137,9 @@ typedef struct SmokeDomainSettings {
 	struct GPUTexture *tex_wt;
 	struct GPUTexture *tex_shadow;
 	struct GPUTexture *tex_flame;
+	struct GPUTexture *tex_velocity_x;
+	struct GPUTexture *tex_velocity_y;
+	struct GPUTexture *tex_velocity_z;
 	float *shadow;
 
 	/* simulation data */
@@ -174,7 +177,7 @@ typedef struct SmokeDomainSettings {
 	int flags; /* show up-res or low res, etc */
 	int viewsettings;
 	short noise; /* noise type: wave, curl, anisotropic */
-	short diss_percent; 
+	short diss_percent;
 	int diss_speed;/* in frames */
 	float strength;
 	int res_wt[3];

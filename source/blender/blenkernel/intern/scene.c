@@ -103,6 +103,8 @@
 
 #include "RE_engine.h"
 
+#include "engines/eevee/eevee_lightcache.h"
+
 #include "PIL_time.h"
 
 #include "IMB_colormanagement.h"
@@ -110,10 +112,8 @@
 
 #include "bmesh.h"
 
-const char *RE_engine_id_BLENDER_CLAY = "BLENDER_CLAY";
 const char *RE_engine_id_BLENDER_EEVEE = "BLENDER_EEVEE";
-const char *RE_engine_id_BLENDER_WORKBENCH = "BLENDER_WORKBENCH";
-const char *RE_engine_id_ARMORY = "ARMORY";
+const char *RE_engine_id_BLENDER_OPENGL = "BLENDER_OPENGL";
 const char *RE_engine_id_CYCLES = "CYCLES";
 
 void free_avicodecdata(AviCodecData *acd)
@@ -138,10 +138,10 @@ static void remove_sequencer_fcurves(Scene *sce)
 
 	if (adt && adt->action) {
 		FCurve *fcu, *nextfcu;
-		
+
 		for (fcu = adt->action->curves.first; fcu; fcu = nextfcu) {
 			nextfcu = fcu->next;
-			
+
 			if ((fcu->rna_path) && strstr(fcu->rna_path, "sequences_all")) {
 				action_groups_remove_channel(adt->action, fcu);
 				free_fcurve(fcu);
@@ -173,6 +173,10 @@ ToolSettings *BKE_toolsettings_copy(ToolSettings *toolsettings, const int flag)
 		ts->uvsculpt = MEM_dupallocN(ts->uvsculpt);
 		BKE_paint_copy(&ts->uvsculpt->paint, &ts->uvsculpt->paint, flag);
 	}
+	if (ts->gp_paint) {
+		ts->gp_paint = MEM_dupallocN(ts->gp_paint);
+		BKE_paint_copy(&ts->gp_paint->paint, &ts->gp_paint->paint, flag);
+	}
 
 	BKE_paint_copy(&ts->imapaint.paint, &ts->imapaint.paint, flag);
 	ts->imapaint.paintcursor = NULL;
@@ -180,15 +184,10 @@ ToolSettings *BKE_toolsettings_copy(ToolSettings *toolsettings, const int flag)
 	ts->particle.scene = NULL;
 	ts->particle.object = NULL;
 
-	/* duplicate Grease Pencil Drawing Brushes */
-	BLI_listbase_clear(&ts->gp_brushes);
-	for (bGPDbrush *brush = toolsettings->gp_brushes.first; brush; brush = brush->next) {
-		bGPDbrush *newbrush = BKE_gpencil_brush_duplicate(brush);
-		BLI_addtail(&ts->gp_brushes, newbrush);
-	}
-
 	/* duplicate Grease Pencil interpolation curve */
 	ts->gp_interpolate.custom_ipo = curvemapping_copy(ts->gp_interpolate.custom_ipo);
+	/* duplicate Grease Pencil multiframe fallof */
+	ts->gp_sculpt.cur_falloff = curvemapping_copy(ts->gp_sculpt.cur_falloff);
 	return ts;
 }
 
@@ -213,15 +212,19 @@ void BKE_toolsettings_free(ToolSettings *toolsettings)
 		BKE_paint_free(&toolsettings->uvsculpt->paint);
 		MEM_freeN(toolsettings->uvsculpt);
 	}
+	if (toolsettings->gp_paint) {
+		BKE_paint_free(&toolsettings->gp_paint->paint);
+		MEM_freeN(toolsettings->gp_paint);
+	}
 	BKE_paint_free(&toolsettings->imapaint.paint);
-
-	/* free Grease Pencil Drawing Brushes */
-	BKE_gpencil_free_brushes(&toolsettings->gp_brushes);
-	BLI_freelistN(&toolsettings->gp_brushes);
 
 	/* free Grease Pencil interpolation curve */
 	if (toolsettings->gp_interpolate.custom_ipo) {
 		curvemapping_free(toolsettings->gp_interpolate.custom_ipo);
+	}
+	/* free Grease Pencil multiframe falloff curve */
+	if (toolsettings->gp_sculpt.cur_falloff) {
+		curvemapping_free(toolsettings->gp_sculpt.cur_falloff);
 	}
 
 	MEM_freeN(toolsettings);
@@ -318,6 +321,9 @@ void BKE_scene_copy_data(Main *bmain, Scene *sce_dst, const Scene *sce_src, cons
 	else {
 		sce_dst->preview = NULL;
 	}
+
+	sce_dst->eevee.light_cache = NULL;
+	/* TODO Copy the cache. */
 }
 
 Scene *BKE_scene_copy(Main *bmain, Scene *sce, int type)
@@ -357,6 +363,9 @@ Scene *BKE_scene_copy(Main *bmain, Scene *sce, int type)
 		BKE_color_managed_view_settings_copy(&sce_copy->r.bake.im_format.view_settings, &sce->r.bake.im_format.view_settings);
 
 		curvemapping_copy_data(&sce_copy->r.mblur_shutter_curve, &sce->r.mblur_shutter_curve);
+
+		/* viewport display settings */
+		sce_copy->display = sce->display;
 
 		/* tool settings */
 		sce_copy->toolsettings = BKE_toolsettings_copy(sce->toolsettings, 0);
@@ -422,9 +431,9 @@ Scene *BKE_scene_copy(Main *bmain, Scene *sce, int type)
 		}
 
 		/* NOTE: part of SCE_COPY_LINK_DATA and SCE_COPY_FULL operations
-		 * are done outside of blenkernel with ED_objects_single_users! */
+		 * are done outside of blenkernel with ED_object_single_users! */
 
-		/*  camera */
+		/*  camera   */
 		if (ELEM(type, SCE_COPY_LINK_DATA, SCE_COPY_FULL)) {
 			ID_NEW_REMAP(sce_copy->camera);
 		}
@@ -451,9 +460,6 @@ void BKE_scene_free_ex(Scene *sce, const bool do_id_user)
 {
 	BKE_animdata_free((ID *)sce, false);
 
-	/* check all sequences */
-	BKE_sequencer_clear_scene_in_allseqs(G.main, sce);
-
 	BKE_sequencer_editing_free(sce, do_id_user);
 
 	BKE_keyingsets_free(&sce->keyingsets);
@@ -466,8 +472,7 @@ void BKE_scene_free_ex(Scene *sce, const bool do_id_user)
 	}
 
 	if (sce->rigidbody_world) {
-		BKE_rigidbody_free_world(sce->rigidbody_world);
-		sce->rigidbody_world = NULL;
+		BKE_rigidbody_free_world(sce);
 	}
 
 	if (sce->r.avicodecdata) {
@@ -484,10 +489,10 @@ void BKE_scene_free_ex(Scene *sce, const bool do_id_user)
 	BLI_freelistN(&sce->markers);
 	BLI_freelistN(&sce->transform_spaces);
 	BLI_freelistN(&sce->r.views);
-	
+
 	BKE_toolsettings_free(sce->toolsettings);
 	sce->toolsettings = NULL;
-	
+
 	BKE_scene_free_depsgraph_hash(sce);
 
 	MEM_SAFE_FREE(sce->fps_info);
@@ -517,6 +522,11 @@ void BKE_scene_free_ex(Scene *sce, const bool do_id_user)
 		sce->master_collection = NULL;
 	}
 
+	if (sce->eevee.light_cache) {
+		EEVEE_lightcache_free(sce->eevee.light_cache);
+		sce->eevee.light_cache = NULL;
+	}
+
 	/* These are freed on doversion. */
 	BLI_assert(sce->layer_properties == NULL);
 }
@@ -537,7 +547,7 @@ void BKE_scene_init(Scene *sce)
 	BLI_assert(MEMCMP_STRUCT_OFS_IS_ZERO(sce, id));
 
 	sce->lay = sce->layact = 1;
-	
+
 	sce->r.mode = R_OSA;
 	sce->r.cfra = 1;
 	sce->r.sfra = 1;
@@ -620,7 +630,7 @@ void BKE_scene_init(Scene *sce)
 	sce->r.border.ymax = 1.0f;
 
 	sce->r.preview_start_resolution = 64;
-	
+
 	sce->r.line_thickness_mode = R_LINE_THICKNESS_ABSOLUTE;
 	sce->r.unit_line_thickness = 1.0f;
 
@@ -633,18 +643,21 @@ void BKE_scene_init(Scene *sce)
 	               CURVEMAP_SLOPE_POS_NEG);
 
 	sce->toolsettings = MEM_callocN(sizeof(struct ToolSettings), "Tool Settings Struct");
+
+	sce->toolsettings->object_flag |= SCE_OBJECT_MODE_LOCK;
 	sce->toolsettings->doublimit = 0.001;
 	sce->toolsettings->vgroup_weight = 1.0f;
 	sce->toolsettings->uvcalc_margin = 0.001f;
 	sce->toolsettings->uvcalc_flag = UVCALC_TRANSFORM_CORRECT;
 	sce->toolsettings->unwrapper = 1;
 	sce->toolsettings->select_thresh = 0.01f;
+	sce->toolsettings->gizmo_flag = SCE_MANIP_TRANSLATE | SCE_MANIP_ROTATE | SCE_MANIP_SCALE;
 
 	sce->toolsettings->selectmode = SCE_SELECT_VERTEX;
 	sce->toolsettings->uv_selectmode = UV_SELECT_VERTEX;
 	sce->toolsettings->autokey_mode = U.autokey_mode;
 
-	
+
 	sce->toolsettings->transform_pivot_point = V3D_AROUND_CENTER_MEAN;
 	sce->toolsettings->snap_mode = SCE_SNAP_MODE_INCREMENT;
 	sce->toolsettings->snap_node_mode = SCE_SNAP_MODE_GRID;
@@ -672,6 +685,19 @@ void BKE_scene_init(Scene *sce)
 	sce->toolsettings->imapaint.paint.flags |= PAINT_SHOW_BRUSH;
 	sce->toolsettings->imapaint.normal_angle = 80;
 	sce->toolsettings->imapaint.seam_bleed = 2;
+
+	/* alloc grease pencil drawing brushes */
+	sce->toolsettings->gp_paint = MEM_callocN(sizeof(GpPaint), "GpPaint");
+
+	/* grease pencil multiframe falloff curve */
+	sce->toolsettings->gp_sculpt.cur_falloff = curvemapping_add(1, 0.0f, 0.0f, 1.0f, 1.0f);
+	CurveMapping *gp_falloff_curve = sce->toolsettings->gp_sculpt.cur_falloff;
+	curvemapping_set_defaults(gp_falloff_curve, 1, 0.0f, 0.0f, 1.0f, 1.0f);
+	curvemapping_initialize(gp_falloff_curve);
+	curvemap_reset(gp_falloff_curve->cm,
+		&gp_falloff_curve->clipr,
+		CURVE_PRESET_GAUSS,
+		CURVEMAP_SLOPE_POSITIVE);
 
 	sce->physics_settings.gravity[0] = 0.0f;
 	sce->physics_settings.gravity[1] = 0.0f;
@@ -745,58 +771,81 @@ void BKE_scene_init(Scene *sce)
 	copy_v2_fl2(sce->safe_areas.action_center, 15.0f / 100.0f, 5.0f / 100.0f);
 
 	sce->preview = NULL;
-	
+
 	/* GP Sculpt brushes */
 	{
 		GP_BrushEdit_Settings *gset = &sce->toolsettings->gp_sculpt;
 		GP_EditBrush_Data *gp_brush;
-		
+		float curcolor_add[3], curcolor_sub[3];
+		ARRAY_SET_ITEMS(curcolor_add, 1.0f, 0.6f, 0.6f);
+		ARRAY_SET_ITEMS(curcolor_sub, 0.6f, 0.6f, 1.0f);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_SMOOTH];
 		gp_brush->size = 25;
 		gp_brush->strength = 0.3f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_SMOOTH_PRESSURE;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_SMOOTH_PRESSURE | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_THICKNESS];
 		gp_brush->size = 25;
 		gp_brush->strength = 0.5f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_STRENGTH];
 		gp_brush->size = 25;
 		gp_brush->strength = 0.5f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
 
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_GRAB];
 		gp_brush->size = 50;
 		gp_brush->strength = 0.3f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_PUSH];
 		gp_brush->size = 25;
 		gp_brush->strength = 0.3f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_TWIST];
 		gp_brush->size = 50;
 		gp_brush->strength = 0.3f; // XXX?
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_PINCH];
 		gp_brush->size = 50;
 		gp_brush->strength = 0.5f; // XXX?
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-		
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
+
 		gp_brush = &gset->brush[GP_EDITBRUSH_TYPE_RANDOMIZE];
 		gp_brush->size = 25;
 		gp_brush->strength = 0.5f;
-		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+		gp_brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+		copy_v3_v3(gp_brush->curcolor_add, curcolor_add);
+		copy_v3_v3(gp_brush->curcolor_sub, curcolor_sub);
 	}
-	
+
 	/* GP Stroke Placement */
 	sce->toolsettings->gpencil_v3d_align = GP_PROJECT_VIEWSPACE;
 	sce->toolsettings->gpencil_v2d_align = GP_PROJECT_VIEWSPACE;
 	sce->toolsettings->gpencil_seq_align = GP_PROJECT_VIEWSPACE;
 	sce->toolsettings->gpencil_ima_align = GP_PROJECT_VIEWSPACE;
+
+	/* Annotations */
+	sce->toolsettings->annotate_v3d_align = GP_PROJECT_VIEWSPACE | GP_PROJECT_CURSOR;
+	sce->toolsettings->annotate_thickness = 3;
 
 	sce->orientation_index_custom = -1;
 
@@ -809,21 +858,19 @@ void BKE_scene_init(Scene *sce)
 	copy_v3_v3(sce->display.light_direction, (float[3]){-M_SQRT1_3, -M_SQRT1_3, M_SQRT1_3});
 	sce->display.shadow_shift = 0.1;
 
-	sce->display.matcap_icon = 1;
-	sce->display.matcap_type = CLAY_MATCAP_NONE;
-	sce->display.matcap_hue = 0.5f;
-	sce->display.matcap_saturation = 0.5f;
-	sce->display.matcap_value = 0.5f;
 	sce->display.matcap_ssao_distance = 0.2f;
 	sce->display.matcap_ssao_attenuation = 1.0f;
-	sce->display.matcap_ssao_factor_cavity = 1.0f;
-	sce->display.matcap_ssao_factor_edge = 1.0f;
 	sce->display.matcap_ssao_samples = 16;
+
+	/* OpenGL Render. */
+	BKE_screen_view3d_shading_init(&sce->display.shading);
 
 	/* SceneEEVEE */
 	sce->eevee.gi_diffuse_bounces = 3;
 	sce->eevee.gi_cubemap_resolution = 512;
 	sce->eevee.gi_visibility_resolution = 32;
+	sce->eevee.gi_cubemap_draw_size = 0.3f;
+	sce->eevee.gi_irradiance_draw_size = 0.1f;
 
 	sce->eevee.taa_samples = 16;
 	sce->eevee.taa_render_samples = 64;
@@ -866,9 +913,10 @@ void BKE_scene_init(Scene *sce)
 	sce->eevee.shadow_cube_size = 512;
 	sce->eevee.shadow_cascade_size = 1024;
 
+	sce->eevee.light_cache = NULL;
+
 	sce->eevee.flag =
 	        SCE_EEVEE_VOLUMETRIC_LIGHTS |
-	        SCE_EEVEE_VOLUMETRIC_COLORED |
 	        SCE_EEVEE_GTAO_BENT_NORMALS |
 	        SCE_EEVEE_GTAO_BOUNCE |
 	        SCE_EEVEE_TAA_REPROJECTION |
@@ -916,15 +964,15 @@ Object *BKE_scene_object_find_by_name(Scene *scene, const char *name)
 /**
  * Sets the active scene, mainly used when running in background mode (``--scene`` command line argument).
  * This is also called to set the scene directly, bypassing windowing code.
- * Otherwise #WM_window_change_active_scene is used when changing scenes by the user.
+ * Otherwise #WM_window_set_active_scene is used when changing scenes by the user.
  */
 void BKE_scene_set_background(Main *bmain, Scene *scene)
 {
 	Object *ob;
-	
+
 	/* check for cyclic sets, for reading old files but also for definite security (py?) */
 	BKE_scene_validate_setscene(bmain, scene);
-	
+
 	/* deselect objects (for dataselect) */
 	for (ob = bmain->object.first; ob; ob = ob->id.next)
 		ob->flag &= ~SELECT;
@@ -955,12 +1003,11 @@ Scene *BKE_scene_set_name(Main *bmain, const char *name)
 }
 
 /* Used by metaballs, return *all* objects (including duplis) existing in the scene (including scene's sets) */
-int BKE_scene_base_iter_next(
-        Depsgraph *depsgraph, SceneBaseIter *iter,
+int BKE_scene_base_iter_next(Depsgraph *depsgraph, SceneBaseIter *iter,
         Scene **scene, int val, Base **base, Object **ob)
 {
 	bool run_again = true;
-	
+
 	/* init */
 	if (val == 0) {
 		iter->phase = F_START;
@@ -1019,19 +1066,19 @@ int BKE_scene_base_iter_next(
 					}
 				}
 			}
-			
+
 			if (*base == NULL) {
 				iter->phase = F_START;
 			}
 			else {
 				if (iter->phase != F_DUPLI) {
 					if (depsgraph && (*base)->object->transflag & OB_DUPLI) {
-						/* collections cannot be duplicated for mballs yet, 
-						 * this enters eternal loop because of 
+						/* collections cannot be duplicated for mballs yet,
+						 * this enters eternal loop because of
 						 * makeDispListMBall getting called inside of collection_duplilist */
 						if ((*base)->object->dup_group == NULL) {
 							iter->duplilist = object_duplilist(depsgraph, (*scene), (*base)->object);
-							
+
 							iter->dupob = iter->duplilist->first;
 
 							if (!iter->dupob) {
@@ -1064,13 +1111,13 @@ int BKE_scene_base_iter_next(
 				else if (iter->phase == F_DUPLI) {
 					iter->phase = F_SCENE;
 					(*base)->flag_legacy &= ~OB_FROMDUPLI;
-					
+
 					if (iter->dupli_refob) {
 						/* Restore last object's real matrix. */
 						copy_m4_m4(iter->dupli_refob->obmat, iter->omat);
 						iter->dupli_refob = NULL;
 					}
-					
+
 					free_object_duplilist(iter->duplilist);
 					iter->duplilist = NULL;
 					run_again = true;
@@ -1150,6 +1197,7 @@ int BKE_scene_camera_switch_update(Scene *scene)
 	Object *camera = BKE_scene_camera_switch_find(scene);
 	if (camera) {
 		scene->camera = camera;
+		DEG_id_tag_update(&scene->id, DEG_TAG_COPY_ON_WRITE);
 		return 1;
 	}
 #else
@@ -1198,14 +1246,24 @@ char *BKE_scene_find_last_marker_name(Scene *scene, int frame)
 	return best_marker ? best_marker->name : NULL;
 }
 
-void BKE_scene_remove_rigidbody_object(Scene *scene, Object *ob)
+int BKE_scene_frame_snap_by_seconds(Scene *scene, double interval_in_seconds, int cfra)
+{
+	const int fps = round_db_to_int(FPS * interval_in_seconds);
+	const int second_prev = cfra - mod_i(cfra, fps);
+	const int second_next = second_prev + fps;
+	const int delta_prev = cfra - second_prev;
+	const int delta_next = second_next - cfra;
+	return (delta_prev < delta_next) ? second_prev : second_next;
+}
+
+void BKE_scene_remove_rigidbody_object(struct Main *bmain, Scene *scene, Object *ob)
 {
 	/* remove rigid body constraint from world before removing object */
 	if (ob->rigidbody_constraint)
 		BKE_rigidbody_remove_constraint(scene, ob);
 	/* remove rigid body object from world before removing object */
 	if (ob->rigidbody_object)
-		BKE_rigidbody_remove_object(scene, ob);
+		BKE_rigidbody_remove_object(bmain, scene, ob);
 }
 
 /* checks for cycle, returns 1 if it's all OK */
@@ -1216,7 +1274,7 @@ bool BKE_scene_validate_setscene(Main *bmain, Scene *sce)
 
 	if (sce->set == NULL) return true;
 	totscene = BLI_listbase_count(&bmain->scene);
-	
+
 	for (a = 0, sce_iter = sce; sce_iter->set; sce_iter = sce_iter->set, a++) {
 		/* more iterations than scenes means we have a cycle */
 		if (a > totscene) {
@@ -1243,7 +1301,7 @@ float BKE_scene_frame_get_from_ctime(const Scene *scene, const float frame)
 	float ctime = frame;
 	ctime += scene->r.subframe;
 	ctime *= scene->r.framelen;
-	
+
 	return ctime;
 }
 
@@ -1278,7 +1336,7 @@ static void scene_armature_depsgraph_workaround(Main *bmain, Depsgraph *depsgrap
 	for (ob = bmain->object.first; ob; ob = ob->id.next) {
 		if (ob->type == OB_ARMATURE && ob->adt && ob->adt->recalc & ADT_RECALC_ANIM) {
 			if (ob->pose == NULL || (ob->pose->flag & POSE_RECALC)) {
-				BKE_pose_rebuild(ob, ob->data);
+				BKE_pose_rebuild(bmain, ob, ob->data, true);
 			}
 		}
 	}
@@ -1303,7 +1361,7 @@ static bool check_rendered_viewport_visible(Main *bmain)
 			if (area->spacetype != SPACE_VIEW3D) {
 				continue;
 			}
-			if (v3d->drawtype == OB_RENDER) {
+			if (v3d->shading.type == OB_RENDER) {
 				return true;
 			}
 		}
@@ -1335,7 +1393,7 @@ static void prepare_mesh_for_viewport_render(
 			if (check_rendered_viewport_visible(bmain)) {
 				BMesh *bm = mesh->edit_btmesh->bm;
 				BM_mesh_bm_to_me(
-				        bm, mesh,
+				        bmain, bm, mesh,
 				        (&(struct BMeshToMeshParams){
 				            .calc_object_remap = true,
 				        }));
@@ -1354,8 +1412,6 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	Scene *scene = DEG_get_input_scene(depsgraph);
 	ViewLayer *view_layer = DEG_get_input_view_layer(depsgraph);
 
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: armory
-
 	/* TODO(sergey): Some functions here are changing global state,
 	 * for example, clearing update tags from bmain.
 	 */
@@ -1373,9 +1429,6 @@ void BKE_scene_graph_update_tagged(Depsgraph *depsgraph,
 	DEG_evaluate_on_refresh(depsgraph);
 	/* Update sound system animation (TODO, move to depsgraph). */
 	BKE_sound_update_scene(bmain, scene);
-
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: armory
-	
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, false);
 	/* Clear recalc flags. */
@@ -1395,7 +1448,6 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	const float ctime = BKE_scene_frame_get(scene);
 	/* Keep this first. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_PRE);
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_PRE); //// TODO: armory
 	/* Update animated image textures for particles, modifiers, gpu, etc,
 	 * call this at the start so modifiers with textures don't lag 1 frame.
 	 */
@@ -1419,11 +1471,22 @@ void BKE_scene_graph_update_for_newframe(Depsgraph *depsgraph,
 	BKE_sound_update_scene(bmain, scene);
 	/* Notify editors and python about recalc. */
 	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_FRAME_CHANGE_POST);
-	BLI_callback_exec(bmain, &scene->id, BLI_CB_EVT_SCENE_UPDATE_POST); //// TODO: armory
 	/* Inform editors about possible changes. */
 	DEG_ids_check_recalc(bmain, depsgraph, scene, view_layer, true);
 	/* clear recalc flags */
 	DEG_ids_clear_recalc(bmain, depsgraph);
+}
+
+/** Ensures given scene/view_layer pair has a valid, up-to-date depsgraph.
+ *
+ * \warning Sets matching depsgraph as active, so should only be called from the active editing context
+ *          (usually, from operators).
+ */
+void BKE_scene_view_layer_graph_evaluated_ensure(Main *bmain, Scene *scene, ViewLayer *view_layer)
+{
+	Depsgraph *depsgraph = BKE_scene_get_depsgraph(scene, view_layer, true);
+	DEG_make_active(depsgraph);
+	BKE_scene_graph_update_tagged(depsgraph, bmain);
 }
 
 /* return default view */
@@ -1544,6 +1607,11 @@ bool BKE_scene_uses_blender_eevee(const Scene *scene)
 	return STREQ(scene->r.engine, RE_engine_id_BLENDER_EEVEE);
 }
 
+bool BKE_scene_uses_blender_opengl(const Scene *scene)
+{
+	return STREQ(scene->r.engine, RE_engine_id_BLENDER_OPENGL);
+}
+
 bool BKE_scene_uses_cycles(const Scene *scene)
 {
 	return STREQ(scene->r.engine, RE_engine_id_CYCLES);
@@ -1580,7 +1648,7 @@ void BKE_scene_object_base_flag_sync_from_object(Base *base)
 
 	if ((ob->flag & SELECT) != 0) {
 		base->flag |= BASE_SELECTED;
-		BLI_assert((base->flag & BASE_SELECTABLED) != 0);
+		BLI_assert((base->flag & BASE_SELECTABLE) != 0);
 	}
 	else {
 		base->flag &= ~BASE_SELECTED;
@@ -1630,7 +1698,7 @@ int BKE_render_num_threads(const RenderData *rd)
 		threads = rd->threads;
 	else
 		threads = BLI_system_thread_count();
-	
+
 	return max_ii(threads, 1);
 }
 

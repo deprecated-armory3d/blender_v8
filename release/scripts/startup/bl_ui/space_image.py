@@ -19,7 +19,7 @@
 # <pep8 compliant>
 import bpy
 import math
-from bpy.types import Header, Menu, Panel
+from bpy.types import Header, Menu, Panel, UIList
 from .properties_paint_common import (
     UnifiedPaintPanel,
     brush_texture_settings,
@@ -28,12 +28,7 @@ from .properties_paint_common import (
 )
 from .properties_grease_pencil_common import (
     GreasePencilDrawingToolsPanel,
-    GreasePencilStrokeEditPanel,
-    GreasePencilStrokeSculptPanel,
-    GreasePencilBrushPanel,
-    GreasePencilBrushCurvesPanel,
     GreasePencilDataPanel,
-    GreasePencilPaletteColorPanel,
 )
 from bpy.app.translations import pgettext_iface as iface_
 
@@ -104,7 +99,11 @@ class IMAGE_MT_view(Menu):
         ratios = ((1, 8), (1, 4), (1, 2), (1, 1), (2, 1), (4, 1), (8, 1))
 
         for a, b in ratios:
-            layout.operator("image.view_zoom_ratio", text=iface_("Zoom %d:%d") % (a, b), translate=False).ratio = a / b
+            layout.operator(
+                "image.view_zoom_ratio",
+                text=iface_(f"Zoom {a:d}:{b:d}"),
+                translate=False,
+            ).ratio = a / b
 
         layout.separator()
 
@@ -135,24 +134,25 @@ class IMAGE_MT_select(Menu):
     def draw(self, context):
         layout = self.layout
 
+        layout.operator("uv.select_all", text="All").action = 'SELECT'
+        layout.operator("uv.select_all", text="None").action = 'DESELECT'
+        layout.operator("uv.select_all", text="Invert").action = 'INVERT'
+
+        layout.separator()
+
         layout.operator("uv.select_border").pinned = False
         layout.operator("uv.select_border", text="Border Select Pinned").pinned = True
         layout.operator("uv.circle_select")
 
         layout.separator()
 
-        layout.operator("uv.select_all").action = 'TOGGLE'
-        layout.operator("uv.select_all", text="Inverse").action = 'INVERT'
+        layout.operator("uv.select_less", text="Less")
+        layout.operator("uv.select_more", text="More")
 
         layout.separator()
 
         layout.operator("uv.select_pinned")
         layout.operator("uv.select_linked").extend = False
-
-        layout.separator()
-
-        layout.operator("uv.select_less", text="Less")
-        layout.operator("uv.select_more", text="More")
 
         layout.separator()
 
@@ -186,30 +186,33 @@ class IMAGE_MT_image(Menu):
 
         sima = context.space_data
         ima = sima.image
-
-        layout.operator("image.new")
-        layout.operator("image.open")
-
         show_render = sima.show_render
 
+        layout.operator("image.new", text="New")
+        layout.operator("image.open", text="Open...")
+
         layout.operator("image.read_viewlayers")
+
+        if ima:
+            if not show_render:
+                layout.operator("image.replace", text="Replace...")
+                layout.operator("image.reload", text="Reload")
+
+            layout.operator("image.external_edit", "Edit Externally")
+
+        layout.separator()
+
+        if ima:
+            layout.operator("image.save", text="Save")
+            layout.operator("image.save_as", text="Save As...")
+            layout.operator("image.save_as", text="Save a Copy...").copy = True
+
+        if ima and ima.source == 'SEQUENCE':
+            layout.operator("image.save_sequence")
 
         layout.operator("image.save_dirty", text="Save All Images")
 
         if ima:
-            if not show_render:
-                layout.operator("image.replace")
-                layout.operator("image.reload")
-
-            layout.operator("image.save")
-            layout.operator("image.save_as")
-            layout.operator("image.save_as", text="Save a Copy").copy = True
-
-            if ima.source == 'SEQUENCE':
-                layout.operator("image.save_sequence")
-
-            layout.operator("image.external_edit", "Edit Externally")
-
             layout.separator()
 
             layout.menu("IMAGE_MT_image_invert")
@@ -217,7 +220,7 @@ class IMAGE_MT_image(Menu):
             if not show_render:
                 if not ima.packed_file:
                     layout.separator()
-                    layout.operator("image.pack")
+                    layout.operator("image.pack", text="Pack")
 
                 # only for dirty && specific image types, perhaps
                 # this could be done in operator poll too
@@ -480,18 +483,6 @@ class IMAGE_HT_header(Header):
 
         layout.prop(sima, "mode", text="")
 
-        MASK_MT_editor_menus.draw_collapsible(context, layout)
-
-        layout.template_ID(sima, "image", new="image.new", open="image.open")
-        if not show_render:
-            layout.prop(sima, "use_image_pin", text="")
-
-        if show_maskedit:
-            row = layout.row()
-            row.template_ID(sima, "mask", new="mask.new")
-
-        layout.prop(sima, "pivot_point", icon_only=True)
-
         # uv editing
         if show_uvedit:
             uvedit = sima.uv_editor
@@ -504,19 +495,45 @@ class IMAGE_HT_header(Header):
                 layout.prop(toolsettings, "uv_select_mode", text="", expand=True)
                 layout.prop(uvedit, "sticky_select_mode", icon_only=True)
 
-            row = layout.row(align=True)
-            row.prop(toolsettings, "proportional_edit", icon_only=True)
-            if toolsettings.proportional_edit != 'DISABLED':
-                row.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
+        MASK_MT_editor_menus.draw_collapsible(context, layout)
 
+        layout.separator_spacer()
+
+        layout.template_ID(sima, "image", new="image.new", open="image.open")
+
+        if show_maskedit:
+            row = layout.row()
+            row.template_ID(sima, "mask", new="mask.new")
+
+        layout.separator_spacer()
+
+        if show_uvedit or show_maskedit or mode == 'PAINT':
+            layout.prop(sima, "use_realtime_update", icon_only=True, icon='FILE_REFRESH')
+
+        if not show_render:
+            layout.prop(sima, "use_image_pin", text="")
+
+        if show_uvedit:
+            uvedit = sima.uv_editor
+
+            mesh = context.edit_object.data
+            layout.prop_search(mesh.uv_layers, "active", mesh, "uv_layers", text="")
+
+            # Snap
             row = layout.row(align=True)
             row.prop(toolsettings, "use_snap", text="")
             row.prop(toolsettings, "snap_uv_element", icon_only=True)
             if toolsettings.snap_uv_element != 'INCREMENT':
                 row.prop(toolsettings, "snap_target", text="")
 
-            mesh = context.edit_object.data
-            layout.prop_search(mesh.uv_layers, "active", mesh, "uv_layers", text="")
+            row = layout.row(align=True)
+            row.prop(toolsettings, "proportional_edit", icon_only=True)
+            # if toolsettings.proportional_edit != 'DISABLED':
+            sub = row.row(align=True)
+            sub.active = toolsettings.proportional_edit != 'DISABLED'
+            sub.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
+
+        layout.prop(sima, "pivot_point", icon_only=True)
 
         if ima:
             if ima.is_stereo_3d:
@@ -535,9 +552,6 @@ class IMAGE_HT_header(Header):
                 row.operator("image.record_composite", icon='REC')
             if ima.type == 'COMPOSITE' and ima.source in {'MOVIE', 'SEQUENCE'}:
                 row.operator("image.play_composite", icon='PLAY')
-
-        if show_uvedit or show_maskedit or mode == 'PAINT':
-            layout.prop(sima, "use_realtime_update", icon_only=True, icon='LOCKED')
 
 
 class MASK_MT_editor_menus(Menu):
@@ -717,10 +731,41 @@ class IMAGE_PT_view_properties(Panel):
             row.active = uvedit.show_other_objects
             row.prop(uvedit, "other_uv_filter", text="Filter")
 
-        if show_render and ima:
-            layout.separator()
-            render_slot = ima.render_slots.active
-            layout.prop(render_slot, "name", text="Slot Name")
+
+class IMAGE_UL_render_slots(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        slot = item
+        layout.prop(slot, "name", text="", emboss=False)
+
+
+class IMAGE_PT_render_slots(Panel):
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'UI'
+    bl_label = "Render Slots"
+
+    @classmethod
+    def poll(cls, context):
+        sima = context.space_data
+        return (sima and sima.image and sima.show_render)
+
+    def draw(self, context):
+        layout = self.layout
+
+        sima = context.space_data
+        ima = sima.image
+
+        row = layout.row()
+
+        col = row.column()
+        col.template_list("IMAGE_UL_render_slots", "render_slots", ima, "render_slots", ima.render_slots, "active_index", rows=3)
+
+        col = row.column(align=True)
+        col.operator("image.add_render_slot", icon='ZOOMIN', text="")
+        col.operator("image.remove_render_slot", icon='ZOOMOUT', text="")
+
+        col.separator()
+
+        col.operator("image.clear_render_slot", icon='X', text="")
 
 
 class IMAGE_PT_tools_transform_uvs(Panel, UVToolsPanel):
@@ -1296,38 +1341,12 @@ class IMAGE_PT_grease_pencil(GreasePencilDataPanel, Panel):
 
     # NOTE: this is just a wrapper around the generic GP Panel
 
-
-# Grease Pencil palette colors
-class IMAGE_PT_grease_pencil_palettecolor(GreasePencilPaletteColorPanel, Panel):
-    bl_space_type = 'IMAGE_EDITOR'
-    bl_region_type = 'UI'
-
-    # NOTE: this is just a wrapper around the generic GP Panel
-
-
 # Grease Pencil drawing tools
+
+
 class IMAGE_PT_tools_grease_pencil_draw(GreasePencilDrawingToolsPanel, Panel):
     bl_space_type = 'IMAGE_EDITOR'
-
-
-# Grease Pencil stroke editing tools
-class IMAGE_PT_tools_grease_pencil_edit(GreasePencilStrokeEditPanel, Panel):
-    bl_space_type = 'IMAGE_EDITOR'
-
-
-# Grease Pencil stroke sculpting tools
-class IMAGE_PT_tools_grease_pencil_sculpt(GreasePencilStrokeSculptPanel, Panel):
-    bl_space_type = 'IMAGE_EDITOR'
-
-
-# Grease Pencil drawing brushes
-class IMAGE_PT_tools_grease_pencil_brush(GreasePencilBrushPanel, Panel):
-    bl_space_type = 'IMAGE_EDITOR'
-
-
-# Grease Pencil drawing curves
-class IMAGE_PT_tools_grease_pencil_brushcurves(GreasePencilBrushCurvesPanel, Panel):
-    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'TOOLS'
 
 
 classes = (
@@ -1354,6 +1373,8 @@ classes = (
     IMAGE_PT_active_mask_spline,
     IMAGE_PT_active_mask_point,
     IMAGE_PT_image_properties,
+    IMAGE_UL_render_slots,
+    IMAGE_PT_render_slots,
     IMAGE_PT_view_properties,
     IMAGE_PT_tools_transform_uvs,
     IMAGE_PT_tools_align_uvs,
@@ -1378,12 +1399,7 @@ classes = (
     IMAGE_PT_sample_line,
     IMAGE_PT_scope_sample,
     IMAGE_PT_grease_pencil,
-    IMAGE_PT_grease_pencil_palettecolor,
     IMAGE_PT_tools_grease_pencil_draw,
-    IMAGE_PT_tools_grease_pencil_edit,
-    IMAGE_PT_tools_grease_pencil_sculpt,
-    IMAGE_PT_tools_grease_pencil_brush,
-    IMAGE_PT_tools_grease_pencil_brushcurves,
 )
 
 if __name__ == "__main__":  # only for live edit.

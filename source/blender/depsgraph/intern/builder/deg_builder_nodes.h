@@ -37,6 +37,7 @@
 
 struct Base;
 struct bArmature;
+struct bAction;
 struct CacheFile;
 struct Camera;
 struct bGPdata;
@@ -62,6 +63,7 @@ struct Probe;
 struct bPoseChannel;
 struct bConstraint;
 struct Scene;
+struct Speaker;
 struct Tex;
 struct World;
 
@@ -156,12 +158,13 @@ struct DepsgraphNodeBuilder {
 	                                       const char *name = "",
 	                                       int name_tag = -1);
 
-	void build_id(ID* id);
+	void build_id(ID *id);
 	void build_layer_collections(ListBase *lb);
 	void build_view_layer(Scene *scene,
-	                       ViewLayer *view_layer,
-	                       eDepsNode_LinkedState_Type linked_state);
-	void build_collection(Collection *collection);
+	                      ViewLayer *view_layer,
+	                      eDepsNode_LinkedState_Type linked_state);
+	void build_collection(eDepsNode_CollectionOwner owner_type,
+	                      Collection *collection);
 	void build_object(int base_index,
 	                  Object *object,
 	                  eDepsNode_LinkedState_Type linked_state);
@@ -174,6 +177,7 @@ struct DepsgraphNodeBuilder {
 	void build_object_data_geometry_datablock(ID *obdata);
 	void build_object_data_lamp(Object *object);
 	void build_object_data_lightprobe(Object *object);
+	void build_object_data_speaker(Object *object);
 	void build_object_transform(Object *object);
 	void build_object_constraints(Object *object);
 	void build_pose_constraints(Object *object, bPoseChannel *pchan, int pchan_index);
@@ -182,6 +186,7 @@ struct DepsgraphNodeBuilder {
 	void build_particle_settings(ParticleSettings *part);
 	void build_cloth(Object *object);
 	void build_animdata(ID *id);
+	void build_action(bAction *action);
 	void build_driver(ID *id, FCurve *fcurve, int driver_index);
 	void build_driver_variables(ID *id, FCurve *fcurve);
 	void build_driver_id_property(ID *id, const char *rna_path);
@@ -208,6 +213,7 @@ struct DepsgraphNodeBuilder {
 	void build_mask(Mask *mask);
 	void build_movieclip(MovieClip *clip);
 	void build_lightprobe(LightProbe *probe);
+	void build_speaker(Speaker *speaker);
 
 protected:
 	struct SavedEntryTag {

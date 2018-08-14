@@ -63,7 +63,9 @@
 #include "BKE_global.h"
 #include "BKE_material.h"
 #include "BKE_modifier.h"
+#include "BKE_gpencil_modifier.h"
 #include "BKE_node.h"
+#include "BKE_shader_fx.h"
 #include "BKE_sound.h"
 #include "BKE_image.h"
 #include "BKE_particle.h"
@@ -236,6 +238,11 @@ int main(
 	struct CreatorAtExitData app_init_data = {NULL};
 	BKE_blender_atexit_register(callback_main_atexit, &app_init_data);
 
+	/* Unbuffered stdout makes stdout and stderr better synchronized, and helps
+	 * when stepping through code in a debugger (prints are immediately
+	 * visible). */
+	setvbuf(stdout, NULL, _IONBF, 0);
+
 #ifdef WIN32
 	/* We delay loading of openmp so we can set the policy here. */
 # if defined(_MSC_VER)
@@ -333,7 +340,7 @@ int main(
 #endif
 
 	main_callback_setup();
-	
+
 #if defined(__APPLE__) && !defined(WITH_PYTHON_MODULE)
 	/* patch to ignore argument finder gives us (pid?) */
 	if (argc == 2 && STREQLEN(argv[1], "-psn_", 5)) {
@@ -348,7 +355,7 @@ int main(
 		}
 	}
 #endif
-	
+
 #ifdef __FreeBSD__
 	fpsetmask(0);
 #endif
@@ -366,11 +373,13 @@ int main(
 	BKE_cachefiles_init();
 	BKE_images_init();
 	BKE_modifier_init();
+	BKE_gpencil_modifier_init();
+	BKE_shaderfx_init();
 	DEG_register_node_types();
 
 	BKE_brush_system_init();
 	RE_texture_rng_init();
-	
+
 
 	BLI_callback_global_init();
 
@@ -418,7 +427,7 @@ int main(
 	/* Initialize ffmpeg if built in, also needed for bg mode if videos are
 	 * rendered via ffmpeg */
 	BKE_sound_init_once();
-	
+
 	init_def_material();
 
 	if (G.background == 0) {
@@ -454,7 +463,7 @@ int main(
 #else
 	printf("\n* WARNING * - Blender compiled without Python!\nthis is not intended for typical usage\n\n");
 #endif
-	
+
 	CTX_py_init_set(C, 1);
 	WM_keymap_init(C);
 
@@ -472,7 +481,7 @@ int main(
 	/* OK we are ready for it */
 #ifndef WITH_PYTHON_MODULE
 	main_args_setup_post(C, ba);
-	
+
 	if (G.background == 0) {
 		if (!G.file_loaded)
 			if (U.uiflag2 & USER_KEEP_SESSION)

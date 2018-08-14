@@ -61,6 +61,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "UI_interface.h"
 #include "UI_interface_icons.h"
@@ -75,6 +76,8 @@
 #include "ED_object.h"
 #include "ED_transform.h"
 #include "ED_types.h"
+
+#include "DEG_depsgraph.h"
 
 /* ************* Marker API **************** */
 
@@ -387,8 +390,8 @@ static void draw_marker(
 #endif
 	int icon_id;
 
-	glEnable(GL_BLEND);
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	GPU_blend(true);
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
 
 	/* vertical line - dotted */
 #ifdef DURIAN_CAMERA_SWITCH
@@ -397,13 +400,13 @@ static void draw_marker(
 	if (flag & DRAW_MARKERS_LINES)
 #endif
 	{
-		Gwn_VertFormat *format = immVertexFormat();
-		uint pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+		GPUVertFormat *format = immVertexFormat();
+		uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 		immBindBuiltinProgram(GPU_SHADER_2D_LINE_DASHED_UNIFORM_COLOR);
 
 		float viewport_size[4];
-		glGetFloatv(GL_VIEWPORT, viewport_size);
+		GPU_viewport_size_get_f(viewport_size);
 		immUniform2f("viewport_size", viewport_size[2] / UI_DPI_FAC, viewport_size[3] / UI_DPI_FAC);
 
 		if (marker->flag & SELECT) {
@@ -415,7 +418,7 @@ static void draw_marker(
 		immUniform1f("dash_width", 6.0f);
 		immUniform1f("dash_factor", 0.5f);
 
-		immBegin(GWN_PRIM_LINES, 2);
+		immBegin(GPU_PRIM_LINES, 2);
 		immVertex2f(pos, xpos + 0.5f, 12.0f);
 		immVertex2f(pos, xpos + 0.5f, (v2d->cur.ymax + 12.0f) * yscale);
 		immEnd();
@@ -442,7 +445,7 @@ static void draw_marker(
 
 	UI_icon_draw(xpos - 0.45f * UI_DPI_ICON_SIZE, yoffs + UI_DPI_ICON_SIZE, icon_id);
 
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	/* and the marker name too, shifted slightly to the top-right */
 #ifdef DURIAN_CAMERA_SWITCH
@@ -483,18 +486,18 @@ void ED_markers_draw(const bContext *C, int flag)
 	v2d = UI_view2d_fromcontext(C);
 
 	if (flag & DRAW_MARKERS_MARGIN) {
-		unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+		uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 		immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 		const unsigned char shade[4] = {0, 0, 0, 16};
 		immUniformColor4ubv(shade);
 
-		glEnable(GL_BLEND);
-		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		GPU_blend(true);
+		GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
 
 		immRectf(pos, v2d->cur.xmin, 0, v2d->cur.xmax, UI_MARKER_MARGIN_Y);
 
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 
 		immUnbindProgram();
 	}
@@ -502,8 +505,8 @@ void ED_markers_draw(const bContext *C, int flag)
 	/* no time correction for framelen! space is drawn with old values */
 	ypixels = BLI_rcti_size_y(&v2d->mask);
 	UI_view2d_scale_get(v2d, &xscale, &yscale);
-	gpuPushMatrix();
-	gpuScale2f(1.0f / xscale, 1.0f);
+	GPU_matrix_push();
+	GPU_matrix_scale_2f(1.0f / xscale, 1.0f);
 
 	/* x-bounds with offset for text (adjust for long string, avoid checking string width) */
 	font_width_max = (10 * UI_DPI_FAC) / xscale;
@@ -526,7 +529,7 @@ void ED_markers_draw(const bContext *C, int flag)
 		}
 	}
 
-	gpuPopMatrix();
+	GPU_matrix_pop();
 }
 
 /* ************************ Marker Wrappers API ********************* */
@@ -538,7 +541,7 @@ void ED_markers_draw(const bContext *C, int flag)
 /* ------------------------ */
 
 /* special poll() which checks if there are selected markers first */
-static int ed_markers_poll_selected_markers(bContext *C)
+static bool ed_markers_poll_selected_markers(bContext *C)
 {
 	ListBase *markers = ED_context_get_markers(C);
 
@@ -550,7 +553,7 @@ static int ed_markers_poll_selected_markers(bContext *C)
 	return ED_markers_get_first_selected(markers) != NULL;
 }
 
-static int ed_markers_poll_selected_no_locked_markers(bContext *C)
+static bool ed_markers_poll_selected_no_locked_markers(bContext *C)
 {
 	ListBase *markers = ED_context_get_markers(C);
 	ToolSettings *ts = CTX_data_tool_settings(C);
@@ -568,7 +571,7 @@ static int ed_markers_poll_selected_no_locked_markers(bContext *C)
 
 
 /* special poll() which checks if there are any markers at all first */
-static int ed_markers_poll_markers_exist(bContext *C)
+static bool ed_markers_poll_markers_exist(bContext *C)
 {
 	ListBase *markers = ED_context_get_markers(C);
 	ToolSettings *ts = CTX_data_tool_settings(C);
@@ -767,7 +770,7 @@ static void ed_marker_move_update_header(bContext *C, wmOperator *op)
 		BLI_snprintf(str, sizeof(str), IFACE_("Marker offset %s"), str_offs);
 	}
 
-	ED_area_headerprint(CTX_wm_area(C), str);
+	ED_area_status_text(CTX_wm_area(C), str);
 }
 
 /* copy selection to temp buffer */
@@ -827,7 +830,7 @@ static void ed_marker_move_exit(bContext *C, wmOperator *op)
 	op->customdata = NULL;
 
 	/* clear custom header prints */
-	ED_area_headerprint(CTX_wm_area(C), NULL);
+	ED_area_status_text(CTX_wm_area(C), NULL);
 }
 
 static int ed_marker_move_invoke(bContext *C, wmOperator *op, const wmEvent *event)
@@ -1196,6 +1199,7 @@ static int ed_marker_select(bContext *C, const wmEvent *event, bool extend, bool
 			}
 		}
 
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 	}
 #else
@@ -1666,9 +1670,15 @@ void ED_keymap_marker(wmKeyConfig *keyconf)
 #endif
 
 	WM_keymap_verify_item(keymap, "MARKER_OT_select_border", BKEY, KM_PRESS, 0, 0);
-	WM_keymap_verify_item(keymap, "MARKER_OT_select_all", AKEY, KM_PRESS, 0, 0);
+
+	kmi = WM_keymap_verify_item(keymap, "MARKER_OT_select_all", AKEY, KM_PRESS, 0, 0);
+	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
+	kmi = WM_keymap_verify_item(keymap, "MARKER_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
+	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
+
 	WM_keymap_add_item(keymap, "MARKER_OT_delete", XKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "MARKER_OT_delete", DELKEY, KM_PRESS, 0, 0);
+
 	WM_keymap_verify_item(keymap, "MARKER_OT_rename", MKEY, KM_PRESS, KM_CTRL, 0);
 
 	WM_keymap_add_item(keymap, "MARKER_OT_move", GKEY, KM_PRESS, 0, 0);

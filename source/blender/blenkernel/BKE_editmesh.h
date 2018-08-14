@@ -57,7 +57,7 @@ typedef struct BMEditMesh {
 	/*this is for undoing failed operations*/
 	struct BMEditMesh *emcopy;
 	int emcopyusers;
-	
+
 	/* we store tessellations as triplets of three loops,
 	 * which each define a triangle.*/
 	struct BMLoop *(*looptris)[3];
@@ -93,6 +93,7 @@ void        BKE_editmesh_free(BMEditMesh *em);
 void        BKE_editmesh_color_free(BMEditMesh *em);
 void        BKE_editmesh_color_ensure(BMEditMesh *em, const char htype);
 float     (*BKE_editmesh_vertexCos_get_orco(BMEditMesh *em, int *r_numVerts))[3];
+void        BKE_editmesh_lnorspace_update(BMEditMesh *em);
 
 /* editderivedmesh.c */
 /* should really be defined in editmesh.c, but they use 'EditDerivedBMesh' */

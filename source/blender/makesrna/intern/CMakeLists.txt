@@ -49,6 +49,8 @@ set(DEFSRC
 	rna_fcurve.c
 	rna_fluidsim.c
 	rna_gpencil.c
+	rna_gpencil_modifier.c
+	rna_shader_fx.c
 	rna_group.c
 	rna_image.c
 	rna_key.c
@@ -92,7 +94,7 @@ set(DEFSRC
 	rna_userdef.c
 	rna_vfont.c
 	rna_wm.c
-	rna_wm_manipulator.c
+	rna_wm_gizmo.c
 	rna_workspace.c
 	rna_world.c
 )
@@ -121,7 +123,7 @@ set(APISRC
 	rna_ui_api.c
 	rna_vfont_api.c
 	rna_wm_api.c
-	rna_wm_manipulator_api.c
+	rna_wm_gizmo_api.c
 	rna_workspace_api.c
 )
 
@@ -185,10 +187,6 @@ if(WITH_PYTHON)
 	list(APPEND INC
 		../../python
 	)
-endif()
-
-if(WITH_CLAY_ENGINE)
-	add_definitions(-DWITH_CLAY_ENGINE)
 endif()
 
 if(WITH_IMAGE_OPENEXR)
@@ -305,6 +303,10 @@ if(WITH_OPENSUBDIV)
 		../../../../intern/opensubdiv
 	)
 	add_definitions(-DWITH_OPENSUBDIV)
+endif()
+
+if(WITH_OPENSUBDIV_MODIFIER)
+	add_definitions(-DWITH_OPENSUBDIV_MODIFIER)
 endif()
 
 if(WITH_OPENVDB)

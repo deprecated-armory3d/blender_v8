@@ -70,11 +70,14 @@ void BKE_camera_init(Camera *cam)
 	cam->sensor_x = DEFAULT_SENSOR_WIDTH;
 	cam->sensor_y = DEFAULT_SENSOR_HEIGHT;
 	cam->clipsta = 0.1f;
-	cam->clipend = 100.0f;
+	cam->clipend = 1000.0f;
 	cam->drawsize = 0.5f;
 	cam->ortho_scale = 6.0;
 	cam->flag |= CAM_SHOWPASSEPARTOUT;
 	cam->passepartalpha = 0.5f;
+
+	cam->gpu_dof.fstop = 128.0f;
+	cam->gpu_dof.ratio = 1.0f;
 
 	/* stereoscopy 3d */
 	cam->stereo.interocular_distance = 0.065f;
@@ -102,19 +105,9 @@ void *BKE_camera_add(Main *bmain, const char *name)
  *
  * \param flag  Copying options (see BKE_library.h's LIB_ID_COPY_... flags for more).
  */
-void BKE_camera_copy_data(Main *UNUSED(bmain), Camera *cam_dst, const Camera *cam_src, const int flag)
+void BKE_camera_copy_data(Main *UNUSED(bmain), Camera *cam_dst, const Camera *cam_src, const int UNUSED(flag))
 {
 	BLI_duplicatelist(&cam_dst->bg_images, &cam_src->bg_images);
-	if ((flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0) {
-		for (CameraBGImage *bgpic = cam_dst->bg_images.first; bgpic; bgpic = bgpic->next) {
-			if (bgpic->source == CAM_BGIMG_SOURCE_IMAGE) {
-				id_us_plus((ID *)bgpic->ima);
-			}
-			else if (bgpic->source == CAM_BGIMG_SOURCE_MOVIE) {
-				id_us_plus((ID *)bgpic->clip);
-			}
-		}
-	}
 }
 
 Camera *BKE_camera_copy(Main *bmain, const Camera *cam)
@@ -132,14 +125,6 @@ void BKE_camera_make_local(Main *bmain, Camera *cam, const bool lib_local)
 /** Free (or release) any data used by this camera (does not free the camera itself). */
 void BKE_camera_free(Camera *ca)
 {
-	for (CameraBGImage *bgpic = ca->bg_images.first; bgpic; bgpic = bgpic->next) {
-		if (bgpic->source == CAM_BGIMG_SOURCE_IMAGE) {
-			id_us_min((ID *)bgpic->ima);
-		}
-		else if (bgpic->source == CAM_BGIMG_SOURCE_MOVIE) {
-			id_us_min((ID *)bgpic->clip);
-		}
-	}
 	BLI_freelistN(&ca->bg_images);
 
 	BKE_animdata_free((ID *)ca, false);
@@ -161,7 +146,7 @@ void BKE_camera_object_mode(RenderData *rd, Object *cam_ob)
 /* get the camera's dof value, takes the dof object into account */
 float BKE_camera_object_dof_distance(Object *ob)
 {
-	Camera *cam = (Camera *)ob->data; 
+	Camera *cam = (Camera *)ob->data;
 	if (ob->type != OB_CAMERA)
 		return 0.0f;
 	if (cam->dof_ob) {
@@ -649,7 +634,7 @@ static bool camera_frame_fit_calc_from_data(
 /* don't move the camera, just yield the fit location */
 /* r_scale only valid/useful for ortho cameras */
 bool BKE_camera_view_frame_fit_to_scene(
-        Depsgraph *depsgraph, Scene *scene, ViewLayer *view_layer, Object *camera_ob, float r_co[3], float *r_scale)
+        Depsgraph *depsgraph, Scene *scene, Object *camera_ob, float r_co[3], float *r_scale)
 {
 	CameraParams params;
 	CameraViewFrameData data_cb;
@@ -660,7 +645,7 @@ bool BKE_camera_view_frame_fit_to_scene(
 	camera_frame_fit_data_init(scene, camera_ob, &params, &data_cb);
 
 	/* run callback on all visible points */
-	BKE_scene_foreach_display_point(depsgraph, scene, view_layer, camera_to_frame_view_cb, &data_cb);
+	BKE_scene_foreach_display_point(depsgraph, camera_to_frame_view_cb, &data_cb);
 
 	return camera_frame_fit_calc_from_data(&params, &data_cb, r_co, r_scale);
 }
@@ -977,7 +962,6 @@ CameraBGImage *BKE_camera_background_image_new(Camera *cam)
 
 	bgpic->scale = 1.0f;
 	bgpic->alpha = 0.5f;
-	bgpic->iuser.fie_ima = 2;
 	bgpic->iuser.ok = 1;
 	bgpic->iuser.flag |= IMA_ANIM_ALWAYS;
 	bgpic->flag |= CAM_BGIMG_FLAG_EXPANDED;

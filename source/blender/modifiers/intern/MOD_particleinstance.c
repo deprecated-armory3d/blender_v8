@@ -54,6 +54,7 @@
 #include "BKE_pointcache.h"
 
 #include "DEG_depsgraph_build.h"
+#include "DEG_depsgraph_query.h"
 
 static void initData(ModifierData *md)
 {
@@ -87,7 +88,7 @@ static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
 
 }
 
-static bool isDisabled(ModifierData *md, int useRenderParams)
+static bool isDisabled(const struct Scene *scene, ModifierData *md, bool useRenderParams)
 {
 	ParticleInstanceModifierData *pimd = (ParticleInstanceModifierData *)md;
 	ParticleSystem *psys;
@@ -112,7 +113,7 @@ static bool isDisabled(ModifierData *md, int useRenderParams)
 				if (useRenderParams) required_mode = eModifierMode_Render;
 				else required_mode = eModifierMode_Realtime;
 
-				if (!modifier_isEnabled(md->scene, ob_md, required_mode))
+				if (!modifier_isEnabled(scene, ob_md, required_mode))
 					return true;
 
 				break;
@@ -149,7 +150,7 @@ static bool particle_skip(ParticleInstanceModifierData *pimd, ParticleSystem *ps
 
 	if (p >= psys->totpart) {
 		ChildParticle *cpa = psys->child + (p - psys->totpart);
-		pa = psys->particles + (between? cpa->pa[0]: cpa->parent);
+		pa = psys->particles + (between ? cpa->pa[0] : cpa->parent);
 	}
 	else {
 		pa = psys->particles + p;
@@ -173,8 +174,8 @@ static bool particle_skip(ParticleInstanceModifierData *pimd, ParticleSystem *ps
 	/* TODO make randomization optional? */
 	randp = (int)(psys_frand(psys, 3578 + p) * totpart) % totpart;
 
-	minp = (int)(totpart * pimd->particle_offset) % (totpart+1);
-	maxp = (int)(totpart * (pimd->particle_offset + pimd->particle_amount)) % (totpart+1);
+	minp = (int)(totpart * pimd->particle_offset) % (totpart + 1);
+	maxp = (int)(totpart * (pimd->particle_offset + pimd->particle_amount)) % (totpart + 1);
 
 	if (maxp > minp) {
 		return randp < minp || randp >= maxp;
@@ -202,6 +203,7 @@ static Mesh *applyModifier(
 {
 	Mesh *result;
 	ParticleInstanceModifierData *pimd = (ParticleInstanceModifierData *) md;
+	struct Scene *scene = DEG_get_evaluated_scene(ctx->depsgraph);
 	ParticleSimulationData sim;
 	ParticleSystem *psys = NULL;
 	ParticleData *pa = NULL;
@@ -247,7 +249,7 @@ static Mesh *applyModifier(
 		return mesh;
 
 	sim.depsgraph = ctx->depsgraph;
-	sim.scene = md->scene;
+	sim.scene = scene;
 	sim.ob = pimd->ob;
 	sim.psys = psys;
 	sim.psmd = psys_get_modifier(pimd->ob, psys);
@@ -340,7 +342,7 @@ static Mesh *applyModifier(
 	for (p = part_start, p_skip = 0; p < part_end; p++) {
 		float prev_dir[3];
 		float frame[4]; /* frame orientation quaternion */
-		float p_random = psys_frand(psys, 77091 + 283*p);
+		float p_random = psys_frand(psys, 77091 + 283 * p);
 
 		/* skip particle? */
 		if (particle_skip(pimd, psys, p))
@@ -404,7 +406,7 @@ static Mesh *applyModifier(
 						pa = psys->particles + p;
 					else {
 						ChildParticle *cpa = psys->child + (p - psys->totpart);
-						pa = psys->particles + (between? cpa->pa[0]: cpa->parent);
+						pa = psys->particles + (between ? cpa->pa[0] : cpa->parent);
 					}
 					psys_mat_hair_to_global(sim.ob, sim.psmd->mesh_final, sim.psys->part->from, pa, hairmat);
 					copy_m3_m4(mat, hairmat);
@@ -412,7 +414,7 @@ static Mesh *applyModifier(
 					mat3_to_quat(frame, mat);
 
 					if (pimd->rotation > 0.0f || pimd->random_rotation > 0.0f) {
-						float angle = 2.0f*M_PI * (pimd->rotation + pimd->random_rotation * (psys_frand(psys, 19957323 + p) - 0.5f));
+						float angle = 2.0f * M_PI * (pimd->rotation + pimd->random_rotation * (psys_frand(psys, 19957323 + p) - 0.5f));
 						float eul[3] = { 0.0f, 0.0f, angle };
 						float rot[4];
 

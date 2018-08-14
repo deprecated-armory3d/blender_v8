@@ -76,22 +76,6 @@ typedef struct bFaceMap {
 	char pad[7];
 } bFaceMap;
 
-/* Object Runtime display data */
-struct ObjectEngineData;
-typedef void (*ObjectEngineDataInitCb)(struct ObjectEngineData *engine_data);
-typedef void (*ObjectEngineDataFreeCb)(struct ObjectEngineData *engine_data);
-
-#
-#
-typedef struct ObjectEngineData {
-	struct ObjectEngineData *next, *prev;
-	struct DrawEngineType *engine_type;
-	/* Only nested data, NOT the engine data itself. */
-	ObjectEngineDataFreeCb free;
-	/* Accumulated recalc flags, which corresponds to ID->recalc flags. */
-	int recalc;
-} ObjectEngineData;
-
 #define MAX_VGROUP_NAME 64
 
 /* bDeformGroup->flag */
@@ -147,7 +131,7 @@ typedef struct ObjectDisplay {
 typedef struct Object_Runtime {
 	/* Original mesh pointer, before object->data was changed to point
 	 * to mesh_eval.
-	 * Is assigned by dependency craph's copy-on-write evaluation.
+	 * Is assigned by dependency graph's copy-on-write evaluation.
 	 */
 	struct Mesh *mesh_orig;
 	/* Mesh structure created during object evaluation.
@@ -158,14 +142,19 @@ typedef struct Object_Runtime {
 	 * It has deforemation only modifiers applied on it.
 	 */
 	struct Mesh *mesh_deform_eval;
+
+
+	/* Runtime evaluated curve-specific data, not stored in the file. */
+	struct CurveCache *curve_cache;
 } Object_Runtime;
 
 typedef struct Object {
 	ID id;
-	struct AnimData *adt;		/* animation data (must be immediately after id for utilities to use it) */ 
+	struct AnimData *adt;		/* animation data (must be immediately after id for utilities to use it) */
+	struct DrawDataList drawdata; /* runtime (must be immediately after id for utilities to use it). */
 
 	struct SculptSession *sculpt;
-	
+
 	short type, partype;
 	int par1, par2, par3;	/* can be vertexnrs */
 	char parsubstr[64];	/* String describing subobject info, MAX_ID_NAME-2 */
@@ -180,18 +169,20 @@ typedef struct Object {
 	struct bAction *poselib;
 	struct bPose *pose;  /* pose data, armature objects only */
 	void *data;  /* pointer to objects data - an 'ID' or NULL */
-	
+
 	struct bGPdata *gpd;	/* Grease Pencil data */
-	
+
 	bAnimVizSettings avs;	/* settings for visualization of object-transform animation */
 	bMotionPath *mpath;		/* motion path cache for this object */
 	void *pad1;
-	
+
 	ListBase constraintChannels  DNA_DEPRECATED; // XXX deprecated... old animation system
 	ListBase effect  DNA_DEPRECATED;             // XXX deprecated... keep for readfile
 	ListBase defbase;   /* list of bDeformGroup (vertex groups) names and flag only */
 	ListBase modifiers; /* list of ModifierData structures */
+	ListBase greasepencil_modifiers; /* list of GpencilModifierData structures */
 	ListBase fmaps;     /* list of facemaps */
+	ListBase shader_fx; /* list of viewport effects. Actually only used by grease pencil */
 
 	int mode;           /* Local object mode */
 	int restore_mode;
@@ -201,7 +192,7 @@ typedef struct Object {
 	char *matbits;			/* a boolean field, with each byte 1 if corresponding material is linked to object */
 	int totcol;				/* copy of mesh, curve & meta struct member of same name (keep in sync) */
 	int actcol;				/* currently selected material in the UI */
-	
+
 	/* rot en drot have to be together! (transform('r' en 's')) */
 	float loc[3], dloc[3], orig[3];
 	float size[3];              /* scale in fact */
@@ -218,18 +209,18 @@ typedef struct Object {
 	                    /* note: this isn't assured to be valid as with 'obmat',
 	                     *       before using this value you should do...
 	                     *       invert_m4_m4(ob->imat, ob->obmat); */
-	
+
 	/* Previously 'imat' was used at render time, but as other places use it too
 	 * the interactive ui of 2.5 creates problems. So now only 'imat_ren' should
 	 * be used when ever the inverse of ob->obmat * re->viewmat is needed! - jahka
 	 */
 	float imat_ren[4][4];
-	
+
 	unsigned int lay;	/* copy of Base's layer in the scene */
 
 	short flag;			/* copy of Base */
 	short colbits DNA_DEPRECATED;		/* deprecated, use 'matbits' */
-	
+
 	short transflag, protectflag;	/* transformation settings and transform locks  */
 	short trackflag, upflag;
 	short nlaflag;				/* used for DopeSheet filtering settings (expanded/collapsed) */
@@ -277,7 +268,7 @@ typedef struct Object {
 	ListBase nlastrips  DNA_DEPRECATED;			// XXX deprecated... old animation system
 	ListBase hooks  DNA_DEPRECATED;				// XXX deprecated... old animation system
 	ListBase particlesystem;	/* particle systems */
-	
+
 	struct PartDeflect *pd;		/* particle deflector/attractor/collision data */
 	struct SoftBody *soft;		/* if exists, saved in file */
 	struct Collection *dup_group;	/* object duplicator for group */
@@ -295,12 +286,8 @@ typedef struct Object {
 	uint64_t lastDataMask;   /* the custom data layer mask that was last used to calculate derivedDeform and derivedFinal */
 	uint64_t customdata_mask; /* (extra) custom data layer mask to use for creating derivedmesh, set by depsgraph */
 
-	/* Runtime valuated curve-specific data, not stored in the file */
-	struct CurveCache *curve_cache;
-
-	ListBase gpulamp;		/* runtime, for glsl lamp display only */
 	ListBase pc_ids;
-	
+
 	struct RigidBodyOb *rigidbody_object;		/* settings for Bullet rigid body */
 	struct RigidBodyCon *rigidbody_constraint;	/* settings for Bullet constraint */
 
@@ -312,7 +299,6 @@ typedef struct Object {
 
 	struct PreviewImage *preview;
 
-	ListBase drawdata;		/* runtime, ObjectEngineData */
 	int pad6;
 	int select_color;
 
@@ -327,13 +313,13 @@ typedef struct Object {
 /* Warning, this is not used anymore because hooks are now modifiers */
 typedef struct ObHook {
 	struct ObHook *next, *prev;
-	
+
 	struct Object *parent;
 	float parentinv[4][4];	/* matrix making current transform unmodified */
 	float mat[4][4];		/* temp matrix while hooking */
 	float cent[3];			/* visualization of hook */
 	float falloff;			/* if not zero, falloff is distance where influence zero */
-	
+
 	char name[64];	/* MAX_NAME */
 
 	int *indexar;
@@ -367,6 +353,10 @@ enum {
 
 /* 23 and 24 are for life and sector (old file compat.) */
 	OB_ARMATURE   = 25,
+/* Grease Pencil object used in 3D view but not used for annotation in 2D */
+	OB_GPENCIL  = 26,
+
+	OB_TYPE_MAX,
 };
 
 /* ObjectDisplay.flag */
@@ -376,9 +366,9 @@ enum {
 
 /* check if the object type supports materials */
 #define OB_TYPE_SUPPORT_MATERIAL(_type) \
-	((_type) >= OB_MESH && (_type) <= OB_MBALL)
+	(((_type) >= OB_MESH && (_type) <= OB_MBALL) || ((_type) == OB_GPENCIL))
 #define OB_TYPE_SUPPORT_VGROUP(_type) \
-	(ELEM(_type, OB_MESH, OB_LATTICE))
+	(ELEM(_type, OB_MESH, OB_LATTICE, OB_GPENCIL))
 #define OB_TYPE_SUPPORT_EDITMODE(_type) \
 	(ELEM(_type, OB_MESH, OB_FONT, OB_CURVE, OB_SURF, OB_MBALL, OB_LATTICE, OB_ARMATURE))
 #define OB_TYPE_SUPPORT_PARVERT(_type) \
@@ -390,10 +380,10 @@ enum {
 
 /* is this ID type used as object data */
 #define OB_DATA_SUPPORT_ID(_id_type) \
-	(ELEM(_id_type, ID_ME, ID_CU, ID_MB, ID_LA, ID_SPK, ID_LP, ID_CA, ID_LT, ID_AR))
+	(ELEM(_id_type, ID_ME, ID_CU, ID_MB, ID_LA, ID_SPK, ID_LP, ID_CA, ID_LT, ID_GD, ID_AR))
 
 #define OB_DATA_SUPPORT_ID_CASE \
-	ID_ME: case ID_CU: case ID_MB: case ID_LA: case ID_SPK: case ID_LP: case ID_CA: case ID_LT: case ID_AR
+	ID_ME: case ID_CU: case ID_MB: case ID_LA: case ID_SPK: case ID_LP: case ID_CA: case ID_LT: case ID_GD: case ID_AR
 
 /* partype: first 4 bits: type */
 enum {
@@ -479,6 +469,13 @@ enum {
 	OB_EMPTY_SPHERE  = 6,
 	OB_EMPTY_CONE    = 7,
 	OB_EMPTY_IMAGE   = 8,
+};
+
+/* gpencil add types */
+enum {
+	GP_EMPTY = 0,
+	GP_STROKE = 1,
+	GP_MONKEY = 2
 };
 
 /* boundtype */
@@ -603,4 +600,3 @@ enum {
 #endif
 
 #endif
-

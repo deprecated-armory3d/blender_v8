@@ -45,6 +45,27 @@ struct ID;
 struct PackedFile;
 struct GPUTexture;
 
+/* Runtime display data */
+struct DrawData;
+typedef void (*DrawDataInitCb)(struct DrawData *engine_data);
+typedef void (*DrawDataFreeCb)(struct DrawData *engine_data);
+
+#
+#
+typedef struct DrawData {
+	struct DrawData *next, *prev;
+	struct DrawEngineType *engine_type;
+	/* Only nested data, NOT the engine data itself. */
+	DrawDataFreeCb free;
+	/* Accumulated recalc flags, which corresponds to ID->recalc flags. */
+	int recalc;
+} DrawData;
+
+typedef struct DrawDataList {
+	struct DrawData *first, *last;
+} DrawDataList;
+
+
 typedef struct IDPropertyData {
 	void *pointer;
 	ListBase group;
@@ -250,7 +271,7 @@ typedef struct Library {
 	char filepath[1024];
 
 	struct Library *parent;	/* set for indirectly linked libs, used in the outliner and while reading */
-	
+
 	struct PackedFile *packedfile;
 
 	/* Temp data needed by read/write code. */
@@ -382,6 +403,7 @@ typedef enum ID_Type {
 #define ID_CHECK_UNDO(id) ((GS((id)->name) != ID_SCR) && (GS((id)->name) != ID_WM) && (GS((id)->name) != ID_WS))
 
 #define ID_BLEND_PATH(_bmain, _id) ((_id)->lib ? (_id)->lib->filepath : BKE_main_blendfile_path((_bmain)))
+#define ID_BLEND_PATH_FROM_GLOBAL(_id) ((_id)->lib ? (_id)->lib->filepath : BKE_main_blendfile_path_from_global())
 
 #define ID_MISSING(_id) (((_id)->tag & LIB_TAG_MISSING) != 0)
 
@@ -542,6 +564,7 @@ enum {
 	INDEX_ID_IP,
 	INDEX_ID_AC,
 	INDEX_ID_KE,
+	INDEX_ID_PAL,
 	INDEX_ID_GD,
 	INDEX_ID_NT,
 	INDEX_ID_IM,
@@ -559,7 +582,6 @@ enum {
 	INDEX_ID_TXT,
 	INDEX_ID_SO,
 	INDEX_ID_GR,
-	INDEX_ID_PAL,
 	INDEX_ID_PC,
 	INDEX_ID_BR,
 	INDEX_ID_PA,
@@ -575,6 +597,7 @@ enum {
 	INDEX_ID_WM,
 	INDEX_ID_MSK,
 	INDEX_ID_NULL,
+	INDEX_ID_MAX,
 };
 
 #ifdef __cplusplus

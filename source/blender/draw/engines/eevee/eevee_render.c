@@ -134,34 +134,49 @@ void EEVEE_render_init(EEVEE_Data *ved, RenderEngine *engine, struct Depsgraph *
 	EEVEE_volumes_cache_init(sldata, vedata);
 }
 
+/* Used by light cache. in this case engine is NULL. */
 void EEVEE_render_cache(
         void *vedata, struct Object *ob,
         struct RenderEngine *engine, struct Depsgraph *UNUSED(depsgraph))
 {
 	EEVEE_ViewLayerData *sldata = EEVEE_view_layer_data_ensure();
+	EEVEE_LightProbesInfo *pinfo = sldata->probes;
+	bool cast_shadow = false;
 
-	char info[42];
-	BLI_snprintf(info, sizeof(info), "Syncing %s", ob->id.name + 2);
-	RE_engine_update_stats(engine, NULL, info);
+	if (pinfo->vis_data.collection) {
+		/* Used for rendering probe with visibility groups. */
+		bool ob_vis = BKE_collection_has_object_recursive(pinfo->vis_data.collection, ob);
+		ob_vis = (pinfo->vis_data.invert) ? !ob_vis : ob_vis;
 
-	if (DRW_check_object_visible_within_active_context(ob) == false) {
-		return;
-	}
-
-	if (ELEM(ob->type, OB_MESH, OB_CURVE, OB_SURF, OB_FONT)) {
-		bool cast_shadow;
-
-		EEVEE_materials_cache_populate(vedata, sldata, ob, &cast_shadow);
-
-		if (cast_shadow) {
-			EEVEE_lights_cache_shcaster_object_add(sldata, ob);
+		if (!ob_vis) {
+			return;
 		}
 	}
-	else if (ob->type == OB_LIGHTPROBE) {
-		EEVEE_lightprobes_cache_add(sldata, ob);
+
+	if (engine) {
+		char info[42];
+		BLI_snprintf(info, sizeof(info), "Syncing %s", ob->id.name + 2);
+		RE_engine_update_stats(engine, NULL, info);
 	}
-	else if (ob->type == OB_LAMP) {
-		EEVEE_lights_cache_add(sldata, ob);
+
+	if (ob->base_flag & BASE_VISIBLE) {
+		EEVEE_hair_cache_populate(vedata, sldata, ob, &cast_shadow);
+	}
+
+	if (DRW_check_object_visible_within_active_context(ob)) {
+		if (ELEM(ob->type, OB_MESH, OB_CURVE, OB_SURF, OB_FONT, OB_MBALL)) {
+			EEVEE_materials_cache_populate(vedata, sldata, ob, &cast_shadow);
+		}
+		else if (ob->type == OB_LIGHTPROBE) {
+			EEVEE_lightprobes_cache_add(sldata, vedata, ob);
+		}
+		else if (ob->type == OB_LAMP) {
+			EEVEE_lights_cache_add(sldata, ob);
+		}
+	}
+
+	if (cast_shadow) {
+		EEVEE_lights_cache_shcaster_object_add(sldata, ob);
 	}
 }
 
@@ -421,6 +436,11 @@ void EEVEE_render_draw(EEVEE_Data *vedata, RenderEngine *engine, RenderLayer *rl
 	/* Push instances attribs to the GPU. */
 	DRW_render_instance_buffer_finish();
 
+	/* Need to be called after DRW_render_instance_buffer_finish() */
+	/* Also we weed to have a correct fbo bound for DRW_hair_update */
+	GPU_framebuffer_bind(fbl->main_fb);
+	DRW_hair_update();
+
 	if ((view_layer->passflag & (SCE_PASS_SUBSURFACE_COLOR |
 	                             SCE_PASS_SUBSURFACE_DIRECT |
 	                             SCE_PASS_SUBSURFACE_INDIRECT)) != 0)
@@ -471,14 +491,8 @@ void EEVEE_render_draw(EEVEE_Data *vedata, RenderEngine *engine, RenderLayer *rl
 		DRW_viewport_matrix_override_set(g_data->viewinv, DRW_MAT_VIEWINV);
 
 		/* Refresh Probes */
-		while (EEVEE_lightprobes_all_probes_ready(sldata, vedata) == false) {
-			RE_engine_update_stats(engine, NULL, "Updating Probes");
-			EEVEE_lightprobes_refresh(sldata, vedata);
-			/* Refreshing probes can take some times, allow exit. */
-			if (RE_engine_test_break(engine)) {
-				return;
-			}
-		}
+		RE_engine_update_stats(engine, NULL, "Updating Probes");
+		EEVEE_lightprobes_refresh(sldata, vedata);
 		EEVEE_lightprobes_refresh_planar(sldata, vedata);
 		DRW_uniformbuffer_update(sldata->common_ubo, &sldata->common_data);
 

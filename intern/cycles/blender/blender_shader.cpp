@@ -154,7 +154,7 @@ static SocketType::Type convert_socket_type(BL::NodeSocket& b_socket)
 			return SocketType::STRING;
 		case BL::NodeSocket::type_SHADER:
 			return SocketType::CLOSURE;
-		
+
 		default:
 			return SocketType::UNDEFINED;
 	}
@@ -436,7 +436,7 @@ static ShaderNode *add_node(Scene *scene,
 	else if(b_node.is_a(&RNA_ShaderNodeBsdfGlossy)) {
 		BL::ShaderNodeBsdfGlossy b_glossy_node(b_node);
 		GlossyBsdfNode *glossy = new GlossyBsdfNode();
-		
+
 		switch(b_glossy_node.distribution()) {
 			case BL::ShaderNodeBsdfGlossy::distribution_SHARP:
 				glossy->distribution = CLOSURE_BSDF_REFLECTION_ID;
@@ -517,6 +517,12 @@ static ShaderNode *add_node(Scene *scene,
 		}
 		node = hair;
 	}
+	else if(b_node.is_a(&RNA_ShaderNodeBsdfHairPrincipled)) {
+		BL::ShaderNodeBsdfHairPrincipled b_principled_hair_node(b_node);
+		PrincipledHairBsdfNode *principled_hair = new PrincipledHairBsdfNode();
+		principled_hair->parametrization = (NodePrincipledHairParametrization) get_enum(b_principled_hair_node.ptr, "parametrization", NODE_PRINCIPLED_HAIR_NUM, NODE_PRINCIPLED_HAIR_REFLECTANCE);
+		node = principled_hair;
+	}
 	else if(b_node.is_a(&RNA_ShaderNodeBsdfPrincipled)) {
 		BL::ShaderNodeBsdfPrincipled b_principled_node(b_node);
 		PrincipledBsdfNode *principled = new PrincipledBsdfNode();
@@ -551,7 +557,12 @@ static ShaderNode *add_node(Scene *scene,
 		node = new EmissionNode();
 	}
 	else if(b_node.is_a(&RNA_ShaderNodeAmbientOcclusion)) {
-		node = new AmbientOcclusionNode();
+		BL::ShaderNodeAmbientOcclusion b_ao_node(b_node);
+		AmbientOcclusionNode *ao = new AmbientOcclusionNode();
+		ao->samples = b_ao_node.samples();
+		ao->inside = b_ao_node.inside();
+		ao->only_local = b_ao_node.only_local();
+		node = ao;
 	}
 	else if(b_node.is_a(&RNA_ShaderNodeVolumeScatter)) {
 		node = new ScatterVolumeNode();
@@ -742,6 +753,8 @@ static ShaderNode *add_node(Scene *scene,
 		BL::ShaderNodeTexVoronoi b_voronoi_node(b_node);
 		VoronoiTextureNode *voronoi = new VoronoiTextureNode();
 		voronoi->coloring = (NodeVoronoiColoring)b_voronoi_node.coloring();
+		voronoi->metric = (NodeVoronoiDistanceMetric)b_voronoi_node.distance();
+		voronoi->feature = (NodeVoronoiFeature)b_voronoi_node.feature();
 		BL::TexMapping b_texture_mapping(b_voronoi_node.texture_mapping());
 		get_tex_mapping(&voronoi->tex_mapping, b_texture_mapping);
 		node = voronoi;
@@ -862,9 +875,11 @@ static ShaderNode *add_node(Scene *scene,
 		point_density->space = (NodeTexVoxelSpace)b_point_density_node.space();
 		point_density->interpolation = get_image_interpolation(b_point_density_node);
 		point_density->builtin_data = b_point_density_node.ptr.data;
+		point_density->image_manager = scene->image_manager;
 
 		/* TODO(sergey): Use more proper update flag. */
 		if(true) {
+			point_density->add_image();
 			b_point_density_node.cache_point_density(b_depsgraph);
 			scene->image_manager->tag_reload_image(
 			        point_density->filename.string(),
@@ -933,7 +948,7 @@ static ShaderInput *node_find_input_by_name(ShaderNode *node,
                                             BL::NodeSocket& b_socket)
 {
 	string name = b_socket.name();
-	
+
 	if(node_use_modified_socket_name(node)) {
 		BL::Node::inputs_iterator b_input;
 		bool found = false;
@@ -994,31 +1009,6 @@ static ShaderOutput *node_find_output_by_name(ShaderNode *node,
 	return node->output(name.c_str());
 }
 
-static BL::ShaderNode find_output_node(BL::ShaderNodeTree& b_ntree)
-{
-	BL::ShaderNodeTree::nodes_iterator b_node;
-	BL::ShaderNode output_node(PointerRNA_NULL);
-
-	for(b_ntree.nodes.begin(b_node); b_node != b_ntree.nodes.end(); ++b_node) {
-		BL::ShaderNodeOutputMaterial b_output_node(*b_node);
-
-		if (b_output_node.is_a(&RNA_ShaderNodeOutputMaterial) ||
-		    b_output_node.is_a(&RNA_ShaderNodeOutputWorld) ||
-		    b_output_node.is_a(&RNA_ShaderNodeOutputLamp)) {
-			/* regular Cycles output node */
-			if(b_output_node.is_active_output()) {
-				output_node = b_output_node;
-				break;
-			}
-			else if(!output_node.ptr.data) {
-				output_node = b_output_node;
-			}
-		}
-	}
-
-	return output_node;
-}
-
 static void add_nodes(Scene *scene,
                       BL::RenderEngine& b_engine,
                       BL::BlendData& b_data,
@@ -1038,7 +1028,7 @@ static void add_nodes(Scene *scene,
 	BL::Node::outputs_iterator b_output;
 
 	/* find the node to use for output if there are multiple */
-	BL::ShaderNode output_node = find_output_node(b_ntree);
+	BL::ShaderNode output_node = b_ntree.get_output_node(BL::ShaderNodeOutputMaterial::target_CYCLES);
 
 	/* add nodes */
 	for(b_ntree.nodes.begin(b_node); b_node != b_ntree.nodes.end(); ++b_node) {
@@ -1061,7 +1051,7 @@ static void add_nodes(Scene *scene,
 			}
 		}
 		else if(b_node->is_a(&RNA_ShaderNodeGroup) || b_node->is_a(&RNA_NodeCustomGroup)) {
-			
+
 			BL::ShaderNodeTree b_group_ntree(PointerRNA_NULL);
 			if(b_node->is_a(&RNA_ShaderNodeGroup))
 				b_group_ntree = BL::ShaderNodeTree(((BL::NodeGroup)(*b_node)).node_tree());
@@ -1103,7 +1093,7 @@ static void add_nodes(Scene *scene,
 
 				output_map[b_output->ptr.data] = proxy->outputs[0];
 			}
-			
+
 			if(b_group_ntree) {
 				add_nodes(scene,
 				          b_engine,
@@ -1346,7 +1336,7 @@ void BlenderSync::sync_world(BL::Depsgraph& b_depsgraph, bool update_all)
 		}
 		else if(b_world) {
 			BackgroundNode *background = new BackgroundNode();
-			background->color = get_float3(b_world.horizon_color());
+			background->color = get_float3(b_world.color());
 			graph->add(background);
 
 			ShaderNode *out = graph->output();
@@ -1411,45 +1401,45 @@ void BlenderSync::sync_world(BL::Depsgraph& b_depsgraph, bool update_all)
 		background->tag_update(scene);
 }
 
-/* Sync Lamps */
+/* Sync Lights */
 
-void BlenderSync::sync_lamps(BL::Depsgraph& b_depsgraph, bool update_all)
+void BlenderSync::sync_lights(BL::Depsgraph& b_depsgraph, bool update_all)
 {
 	shader_map.set_default(scene->default_light);
 
 	BL::Depsgraph::ids_iterator b_id;
 	for(b_depsgraph.ids.begin(b_id); b_id != b_depsgraph.ids.end(); ++b_id) {
-		if (!b_id->is_a(&RNA_Lamp)) {
+		if (!b_id->is_a(&RNA_Light)) {
 			continue;
 		}
 
-		BL::Lamp b_lamp(*b_id);
+		BL::Light b_light(*b_id);
 		Shader *shader;
 
 		/* test if we need to sync */
-		if(shader_map.sync(&shader, b_lamp) || update_all) {
+		if(shader_map.sync(&shader, b_light) || update_all) {
 			ShaderGraph *graph = new ShaderGraph();
 
 			/* create nodes */
-			if(b_lamp.use_nodes() && b_lamp.node_tree()) {
-				shader->name = b_lamp.name().c_str();
+			if(b_light.use_nodes() && b_light.node_tree()) {
+				shader->name = b_light.name().c_str();
 
-				BL::ShaderNodeTree b_ntree(b_lamp.node_tree());
+				BL::ShaderNodeTree b_ntree(b_light.node_tree());
 
 				add_nodes(scene, b_engine, b_data, b_depsgraph, b_scene, graph, b_ntree);
 			}
 			else {
 				float strength = 1.0f;
 
-				if(b_lamp.type() == BL::Lamp::type_POINT ||
-				   b_lamp.type() == BL::Lamp::type_SPOT ||
-				   b_lamp.type() == BL::Lamp::type_AREA)
+				if(b_light.type() == BL::Light::type_POINT ||
+				   b_light.type() == BL::Light::type_SPOT ||
+				   b_light.type() == BL::Light::type_AREA)
 				{
 					strength = 100.0f;
 				}
 
 				EmissionNode *emission = new EmissionNode();
-				emission->color = get_float3(b_lamp.color());
+				emission->color = get_float3(b_light.color());
 				emission->strength = strength;
 				graph->add(emission);
 
@@ -1477,7 +1467,7 @@ void BlenderSync::sync_shaders(BL::Depsgraph& b_depsgraph)
 	shader_map.pre_sync();
 
 	sync_world(b_depsgraph, auto_refresh_update);
-	sync_lamps(b_depsgraph, auto_refresh_update);
+	sync_lights(b_depsgraph, auto_refresh_update);
 	sync_materials(b_depsgraph, auto_refresh_update);
 
 	/* false = don't delete unused shaders, not supported */
@@ -1485,4 +1475,3 @@ void BlenderSync::sync_shaders(BL::Depsgraph& b_depsgraph)
 }
 
 CCL_NAMESPACE_END
-

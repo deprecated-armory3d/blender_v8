@@ -74,7 +74,7 @@ ToolDef = namedtuple(
         "icon",
         # An optional cursor to use when this tool is active.
         "cursor",
-        # An optional manipulator group to activate when the tool is set or None for no widget.
+        # An optional gizmo group to activate when the tool is set or None for no gizmo.
         "widget",
         # Optional keymap for tool, either:
         # - A function that populates a keymaps passed in as an argument.
@@ -88,6 +88,8 @@ ToolDef = namedtuple(
         # Optional data-block assosiated with this tool.
         # (Typically brush name, usage depends on mode, we could use for non-brush ID's in other modes).
         "data_block",
+        # Optional primary operator (for introspection only).
+        "operator",
         # Optional draw settings (operator options, toolsettings).
         "draw_settings",
     )
@@ -107,6 +109,7 @@ def from_dict(kw_args):
         "widget": None,
         "keymap": None,
         "data_block": None,
+        "operator": None,
         "draw_settings": None,
     }
     kw.update(kw_args)
@@ -272,6 +275,7 @@ class ToolSelectPanelHelper:
                 mode = context.mode
             tool = context.workspace.tools.from_space_view3d_mode(mode, create)
             if tool is not None:
+                tool.refresh_from_context()
                 return tool
         elif space_type == 'IMAGE_EDITOR':
             space_data = context.space_data
@@ -279,6 +283,7 @@ class ToolSelectPanelHelper:
                 mode = space_data.mode
             tool = context.workspace.tools.from_space_image_mode(mode, create)
             if tool is not None:
+                tool.refresh_from_context()
                 return tool
         return None
 
@@ -290,7 +295,7 @@ class ToolSelectPanelHelper:
     def _km_action_simple(cls, kc, context_mode, text, keymap_fn):
         if context_mode is None:
             context_mode = "All"
-        km_idname = f"{cls.keymap_prefix} {context_mode}, {text}"
+        km_idname = f"{cls.keymap_prefix:s} {context_mode:s}, {text:s}"
         km = kc.keymaps.get(km_idname)
         if km is None:
             km = kc.keymaps.new(km_idname, space_type=cls.bl_space_type, region_type='WINDOW')
@@ -425,7 +430,7 @@ class ToolSelectPanelHelper:
         return ui_gen, show_text
 
     @classmethod
-    def draw_cls(cls, layout, context, detect_layout=True, scale_y=2.0):
+    def draw_cls(cls, layout, context, detect_layout=True, scale_y=1.75):
         # Use a classmethod so it can be called outside of a panel context.
 
         # XXX, this UI isn't very nice.
@@ -566,8 +571,9 @@ def _activate_by_item(context, space_type, item, index):
         name=item.text,
         keymap=item.keymap[0].name if item.keymap is not None else "",
         cursor=item.cursor or 'DEFAULT',
-        manipulator_group=item.widget or "",
+        gizmo_group=item.widget or "",
         data_block=item.data_block or "",
+        operator=item.operator or "",
         index=index,
     )
 
@@ -620,7 +626,20 @@ def keymap_from_context(context, space_type):
     """
     Keymap for popup toolbar, currently generated each time.
     """
+
+    def modifier_keywords_from_item(kmi):
+        return {
+            "any": kmi.any,
+            "shift": kmi.shift,
+            "ctrl": kmi.ctrl,
+            "alt": kmi.alt,
+            "oskey": kmi.oskey,
+            "key_modifier": kmi.key_modifier,
+        }
+
+    use_search = False  # allows double tap
     use_simple_keymap = False
+
     km_name = "Toolbar Popup"
     wm = context.window_manager
     keyconf = wm.keyconfigs.active
@@ -629,6 +648,10 @@ def keymap_from_context(context, space_type):
         keymap = keyconf.keymaps.new(km_name, space_type='EMPTY', region_type='TEMPORARY')
     for kmi in keymap.keymap_items:
         keymap.keymap_items.remove(kmi)
+
+    if use_search:
+        kmi_search = wm.keyconfigs.find_item_from_operator(idname="wm.toolbar")[1]
+        kmi_search_type = None if not kmi_search else kmi_search.type
 
     items = []
     cls = ToolSelectPanelHelper._tool_class_from_space_type(space_type)
@@ -643,15 +666,21 @@ def keymap_from_context(context, space_type):
                 kmi.properties.name = item.text
                 continue
 
-            if not item.keymap:
-                continue
-
             # Only check the first item in the tools key-map (a little arbitrary).
-            kmi_first = item.keymap[0].keymap_items[0]
-            kmi_found = wm.keyconfigs.find_item_from_operator(
-                idname=kmi_first.idname,
-                # properties=kmi_first.properties,  # prevents matches, don't use.
-            )[1]
+            if item.operator is not None:
+                kmi_found = wm.keyconfigs.find_item_from_operator(
+                    idname=item.operator,
+                )[1]
+            elif item.keymap is not None:
+                kmi_first = item.keymap[0].keymap_items[0]
+                kmi_found = wm.keyconfigs.find_item_from_operator(
+                    idname=kmi_first.idname,
+                    # properties=kmi_first.properties,  # prevents matches, don't use.
+                )[1]
+                del kmi_first
+            else:
+                kmi_found = None
+
             if kmi_found is not None:
                 kmi_found_type = kmi_found.type
                 # Only for single keys.
@@ -660,14 +689,29 @@ def keymap_from_context(context, space_type):
                         idname="wm.tool_set_by_name",
                         type=kmi_found_type,
                         value='PRESS',
-                        any=kmi_found.any,
-                        shift=kmi_found.shift,
-                        ctrl=kmi_found.ctrl,
-                        alt=kmi_found.alt,
-                        oskey=kmi_found.oskey,
-                        key_modifier=kmi_found.key_modifier,
+                        **modifier_keywords_from_item(kmi_found),
                     )
                     kmi.properties.name = item.text
+
+                    if use_search:
+                        # Disallow overlap
+                        if kmi_search_type == kmi_found_type:
+                            kmi_search_type = None
+
+    if use_search:
+        # Support double-tap for search.
+        if kmi_search_type:
+            keymap.keymap_items.new("wm.search_menu", type=kmi_search_type, value='PRESS')
+    else:
+        # The shortcut will show, so we better support running it.
+        kmi_search = wm.keyconfigs.find_item_from_operator(idname="wm.search_menu")[1]
+        if kmi_search:
+            keymap.keymap_items.new(
+                "wm.search_menu",
+                type=kmi_search.type,
+                value='PRESS',
+                **modifier_keywords_from_item(kmi_search),
+            )
 
     wm.keyconfigs.update()
     return keymap

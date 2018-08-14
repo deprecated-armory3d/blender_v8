@@ -216,12 +216,12 @@ help: .FORCE
 	@echo "                         which are tagged to use the stricter formatting"
 	@echo "  * test_deprecated    - checks for deprecation tags in our code which may need to be removed"
 	@echo "  * test_style_c       - checks C/C++ conforms with blenders style guide:"
-	@echo "                         http://wiki.blender.org/index.php/Dev:Doc/CodeStyle"
+	@echo "                         https://wiki.blender.org/wiki/Source/Code_Style"
 	@echo "  * test_style_c_qtc   - same as test_style but outputs QtCreator tasks format"
 	@echo "  * test_style_osl     - checks OpenShadingLanguage conforms with blenders style guide:"
-	@echo "                         http://wiki.blender.org/index.php/Dev:Doc/CodeStyle"
+	@echo "                         https://wiki.blender.org/wiki/Source/Code_Style"
 	@echo "  * test_style_osl_qtc - checks OpenShadingLanguage conforms with blenders style guide:"
-	@echo "                         http://wiki.blender.org/index.php/Dev:Doc/CodeStyle"
+	@echo "                         https://wiki.blender.org/wiki/Source/Code_Style"
 	@echo ""
 	@echo "Static Source Code Checking (not associated with building blender)"
 	@echo "  * check_cppcheck       - run blender source through cppcheck (C & C++)"
@@ -236,8 +236,12 @@ help: .FORCE
 	@echo "  * check_descriptions   - check for duplicate/invalid descriptions"
 	@echo ""
 	@echo "Utilities (not associated with building blender)"
-	@echo "  * icons      - updates PNG icons from SVG files."
-	@echo "  * icons_geom - updates Geometry icons from BLEND file."
+	@echo "  * icons    - Updates PNG icons from SVG files."
+	@echo "               Set environment variables 'BLENDER_BIN' and 'INKSCAPE_BIN'"
+	@echo "               to define your own commands."
+	@echo "  * icons_geom - Updates Geometry icons from BLEND file."
+	@echo "                 Set environment variable 'BLENDER_BIN'"
+	@echo "                 to define your own command."
 	@echo "  * tgz        - create a compressed archive of the source code."
 	@echo "  * update     - updates git and all submodules"
 	@echo ""
@@ -451,7 +455,7 @@ doc_py: .FORCE
 	"$(BUILD_DIR)/bin/blender" --background -noaudio --factory-startup \
 		--python doc/python_api/sphinx_doc_gen.py
 	cd doc/python_api ; sphinx-build -b html sphinx-in sphinx-out
-	@echo "docs written into: '$(BLENDER_DIR)/doc/python_api/sphinx-out/contents.html'"
+	@echo "docs written into: '$(BLENDER_DIR)/doc/python_api/sphinx-out/index.html'"
 
 doc_doxy: .FORCE
 	cd doc/doxygen; doxygen Doxyfile

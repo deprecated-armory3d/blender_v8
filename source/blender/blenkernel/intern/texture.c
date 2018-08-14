@@ -76,9 +76,9 @@
 TexMapping *BKE_texture_mapping_add(int type)
 {
 	TexMapping *texmap = MEM_callocN(sizeof(TexMapping), "TexMapping");
-	
+
 	BKE_texture_mapping_default(texmap, type);
-	
+
 	return texmap;
 }
 
@@ -132,7 +132,7 @@ void BKE_texture_mapping_init(TexMapping *texmap)
 			if (fabsf(size[2]) < 1e-5f)
 				size[2] = signf(size[2]) * 1e-5f;
 		}
-		
+
 		size_to_mat4(smat, texmap->size);
 
 		/* rotation */
@@ -173,9 +173,9 @@ void BKE_texture_mapping_init(TexMapping *texmap)
 ColorMapping *BKE_texture_colormapping_add(void)
 {
 	ColorMapping *colormap = MEM_callocN(sizeof(ColorMapping), "ColorMapping");
-	
+
 	BKE_texture_colormapping_default(colormap);
-	
+
 	return colormap;
 }
 
@@ -211,7 +211,7 @@ void BKE_texture_free(Tex *tex)
 	}
 
 	MEM_SAFE_FREE(tex->coba);
-	
+
 	BKE_icon_id_delete((ID *)tex);
 	BKE_previewimg_free(&tex->preview);
 }
@@ -233,7 +233,6 @@ void BKE_texture_default(Tex *tex)
 	tex->texfilter = TXF_EWA;
 	tex->afmax = 8;
 	tex->xrepeat = tex->yrepeat = 1;
-	tex->fie_ima = 2;
 	tex->sfra = 1;
 	tex->frames = 0;
 	tex->offset = 0;
@@ -267,11 +266,10 @@ void BKE_texture_default(Tex *tex)
 	tex->vn_distm = 0;
 	tex->vn_coltype = 0;
 
-	tex->iuser.fie_ima = 2;
 	tex->iuser.ok = 1;
 	tex->iuser.frames = 100;
 	tex->iuser.sfra = 1;
-	
+
 	tex->preview = NULL;
 }
 
@@ -287,9 +285,9 @@ Tex *BKE_texture_add(Main *bmain, const char *name)
 	Tex *tex;
 
 	tex = BKE_libblock_alloc(bmain, ID_TE, name, 0);
-	
+
 	BKE_texture_default(tex);
-	
+
 	return tex;
 }
 
@@ -369,11 +367,11 @@ void BKE_texture_mtex_default(MTex *mtex)
 MTex *BKE_texture_mtex_add(void)
 {
 	MTex *mtex;
-	
+
 	mtex = MEM_callocN(sizeof(MTex), "BKE_texture_mtex_add");
-	
+
 	BKE_texture_mtex_default(mtex);
-	
+
 	return mtex;
 }
 
@@ -388,7 +386,7 @@ MTex *BKE_texture_mtex_add_id(ID *id, int slot)
 	if (mtex_ar == NULL) {
 		return NULL;
 	}
-	
+
 	if (slot == -1) {
 		/* find first free */
 		int i;
@@ -474,19 +472,19 @@ Tex *BKE_texture_localize(Tex *tex)
 	 * ... Once f*** nodes are fully converted to that too :( */
 
 	Tex *texn;
-	
+
 	texn = BKE_libblock_copy_nolib(&tex->id, false);
-	
+
 	/* image texture: BKE_texture_free also doesn't decrease */
-	
+
 	if (texn->coba) texn->coba = MEM_dupallocN(texn->coba);
-	
+
 	texn->preview = NULL;
-	
+
 	if (tex->nodetree) {
 		texn->nodetree = ntreeLocalize(tex->nodetree);
 	}
-	
+
 	return texn;
 }
 
@@ -590,12 +588,12 @@ Tex *give_current_particle_texture(ParticleSettings *part)
 {
 	MTex *mtex = NULL;
 	Tex *tex = NULL;
-	
+
 	if (!part) return NULL;
-	
+
 	mtex = part->mtex[(int)(part->texact)];
 	if (mtex) tex = mtex->tex;
-	
+
 	return tex;
 }
 
@@ -612,7 +610,7 @@ void set_current_particle_texture(ParticleSettings *part, Tex *newtex)
 			part->mtex[act]->texco = TEXCO_ORCO;
 			part->mtex[act]->blendtype = MTEX_MUL;
 		}
-		
+
 		part->mtex[act]->tex = newtex;
 		id_us_plus(&newtex->id);
 	}
@@ -657,7 +655,7 @@ PointDensity *BKE_texture_pointdensity_add(void)
 	PointDensity *pd = MEM_callocN(sizeof(PointDensity), "pointdensity");
 	BKE_texture_pointdensity_init_data(pd);
 	return pd;
-} 
+}
 
 PointDensity *BKE_texture_pointdensity_copy(const PointDensity *pd, const int UNUSED(flag))
 {

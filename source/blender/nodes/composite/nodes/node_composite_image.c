@@ -150,10 +150,10 @@ static void cmp_node_image_create_outputs(bNodeTree *ntree, bNode *node, LinkNod
 
 		/* make sure ima->type is correct */
 		ibuf = BKE_image_acquire_ibuf(ima, &load_iuser, NULL);
-		
+
 		if (ima->rr) {
 			RenderLayer *rl = BLI_findlink(&ima->rr->layers, iuser->layer);
-			
+
 			if (rl) {
 				RenderPass *rpass;
 				for (rpass = rl->passes.first; rpass; rpass = rpass->next) {
@@ -251,7 +251,7 @@ static void cmp_node_image_verify_outputs(bNodeTree *ntree, bNode *node, bool rl
 	bNodeSocket *sock, *sock_next;
 	LinkNodePair available_sockets = {NULL, NULL};
 	int sock_index;
-	
+
 	/* XXX make callback */
 	if (rlayer)
 		cmp_node_rlayer_create_outputs(ntree, node, &available_sockets);
@@ -304,10 +304,9 @@ static void node_composit_init_image(bNodeTree *ntree, bNode *node)
 	node->storage = iuser;
 	iuser->frames = 1;
 	iuser->sfra = 1;
-	iuser->fie_ima = 2;
 	iuser->ok = 1;
 	iuser->flag |= IMA_ANIM_ALWAYS;
-	
+
 	/* setup initial outputs */
 	cmp_node_image_verify_outputs(ntree, node, false);
 }
@@ -315,20 +314,20 @@ static void node_composit_init_image(bNodeTree *ntree, bNode *node)
 static void node_composit_free_image(bNode *node)
 {
 	bNodeSocket *sock;
-	
+
 	/* free extra socket info */
 	for (sock = node->outputs.first; sock; sock = sock->next)
 		MEM_freeN(sock->storage);
-	
+
 	MEM_freeN(node->storage);
 }
 
 static void node_composit_copy_image(bNodeTree *UNUSED(dest_ntree), bNode *dest_node, bNode *src_node)
 {
 	bNodeSocket *sock;
-	
+
 	dest_node->storage = MEM_dupallocN(src_node->storage);
-	
+
 	/* copy extra socket info */
 	for (sock = src_node->outputs.first; sock; sock = sock->next)
 		sock->new_sock->storage = MEM_dupallocN(sock->storage);
@@ -390,11 +389,11 @@ static void node_composit_init_rlayers(const bContext *C, PointerRNA *ptr)
 	}
 }
 
-static int node_composit_poll_rlayers(bNodeType *UNUSED(ntype), bNodeTree *ntree)
+static bool node_composit_poll_rlayers(bNodeType *UNUSED(ntype), bNodeTree *ntree)
 {
 	if (STREQ(ntree->idname, "CompositorNodeTree")) {
 		Scene *scene;
-		
+
 		/* XXX ugly: check if ntree is a local scene node tree.
 		 * Render layers node can only be used in local scene->nodetree,
 		 * since it directly links to the scene.
@@ -402,7 +401,7 @@ static int node_composit_poll_rlayers(bNodeType *UNUSED(ntype), bNodeTree *ntree
 		for (scene = G.main->scene.first; scene; scene = scene->id.next)
 			if (scene->nodetree == ntree)
 				break;
-		
+
 		return (scene != NULL);
 	}
 	return false;
@@ -442,6 +441,7 @@ void register_node_type_cmp_rlayers(void)
 	node_type_storage(&ntype, NULL, node_composit_free_rlayers, node_composit_copy_rlayers);
 	node_type_update(&ntype, cmp_node_rlayers_update, NULL);
 	node_type_init(&ntype, node_cmp_rlayers_outputs);
+	node_type_size_preset(&ntype, NODE_SIZE_LARGE);
 
 	nodeRegisterType(&ntype);
 }

@@ -74,6 +74,7 @@ set(SRC
 	intern/gsqueue.c
 	intern/hash_md5.c
 	intern/hash_mm2a.c
+	intern/hash_mm3.c
 	intern/jitter_2d.c
 	intern/lasso_2d.c
 	intern/list_sort_impl.h
@@ -129,6 +130,7 @@ set(SRC
 	BLI_array_store.h
 	BLI_array_store_utils.h
 	BLI_array_utils.h
+	BLI_assert.h
 	BLI_astar.h
 	BLI_bitmap.h
 	BLI_bitmap_draw_2d.h
@@ -157,6 +159,7 @@ set(SRC
 	BLI_hash.h
 	BLI_hash_md5.h
 	BLI_hash_mm2a.h
+	BLI_hash_mm3.h
 	BLI_heap.h
 	BLI_iterator.h
 	BLI_jitter_2d.h
@@ -164,6 +167,7 @@ set(SRC
 	BLI_kdtree.h
 	BLI_lasso_2d.h
 	BLI_link_utils.h
+	BLI_linklist.h
 	BLI_linklist_lockfree.h
 	BLI_linklist_stack.h
 	BLI_listbase.h

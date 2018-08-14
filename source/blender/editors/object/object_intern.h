@@ -76,6 +76,9 @@ void OBJECT_OT_drop_named_material(struct wmOperatorType *ot);
 void OBJECT_OT_unlink_data(struct wmOperatorType *ot);
 
 /* object_edit.c */
+void OBJECT_OT_hide_view_set(struct wmOperatorType *ot);
+void OBJECT_OT_hide_view_clear(struct wmOperatorType *ot);
+void OBJECT_OT_hide_collection(struct wmOperatorType *ot);
 void OBJECT_OT_mode_set(struct wmOperatorType *ot);
 void OBJECT_OT_mode_set_or_submode(struct wmOperatorType *ot);
 void OBJECT_OT_editmode_toggle(struct wmOperatorType *ot);
@@ -112,7 +115,8 @@ void OBJECT_OT_armature_add(struct wmOperatorType *ot);
 void OBJECT_OT_empty_add(struct wmOperatorType *ot);
 void OBJECT_OT_lightprobe_add(struct wmOperatorType *ot);
 void OBJECT_OT_drop_named_image(struct wmOperatorType *ot);
-void OBJECT_OT_lamp_add(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_add(struct wmOperatorType *ot);
+void OBJECT_OT_light_add(struct wmOperatorType *ot);
 void OBJECT_OT_effector_add(struct wmOperatorType *ot);
 void OBJECT_OT_camera_add(struct wmOperatorType *ot);
 void OBJECT_OT_speaker_add(struct wmOperatorType *ot);
@@ -142,8 +146,8 @@ void COLLECTION_OT_objects_add_active(struct wmOperatorType *ot);
 void COLLECTION_OT_objects_remove_active(struct wmOperatorType *ot);
 
 /* object_modifier.c */
-int edit_modifier_poll_generic(struct bContext *C, struct StructRNA *rna_type, int obtype_flag);
-int edit_modifier_poll(struct bContext *C);
+bool edit_modifier_poll_generic(struct bContext *C, struct StructRNA *rna_type, int obtype_flag);
+bool edit_modifier_poll(struct bContext *C);
 void edit_modifier_properties(struct wmOperatorType *ot);
 int edit_modifier_invoke_properties(struct bContext *C, struct wmOperator *op);
 struct ModifierData *edit_modifier_property_get(struct wmOperator *op, struct Object *ob, int type);
@@ -171,6 +175,20 @@ void OBJECT_OT_skin_radii_equalize(struct wmOperatorType *ot);
 void OBJECT_OT_skin_armature_create(struct wmOperatorType *ot);
 void OBJECT_OT_laplaciandeform_bind(struct wmOperatorType *ot);
 void OBJECT_OT_surfacedeform_bind(struct wmOperatorType *ot);
+
+/* grease pencil modifiers */
+void OBJECT_OT_gpencil_modifier_add(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_modifier_remove(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_modifier_move_up(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_modifier_move_down(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_modifier_apply(struct wmOperatorType *ot);
+void OBJECT_OT_gpencil_modifier_copy(struct wmOperatorType *ot);
+
+/* shader fx */
+void OBJECT_OT_shaderfx_add(struct wmOperatorType *ot);
+void OBJECT_OT_shaderfx_remove(struct wmOperatorType *ot);
+void OBJECT_OT_shaderfx_move_up(struct wmOperatorType *ot);
+void OBJECT_OT_shaderfx_move_down(struct wmOperatorType *ot);
 
 /* object_constraint.c */
 void OBJECT_OT_constraint_add(struct wmOperatorType *ot);
@@ -270,4 +288,3 @@ void OBJECT_OT_data_transfer(struct wmOperatorType *ot);
 void OBJECT_OT_datalayout_transfer(struct wmOperatorType *ot);
 
 #endif /* __OBJECT_INTERN_H__ */
-

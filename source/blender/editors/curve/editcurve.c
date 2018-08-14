@@ -2896,7 +2896,7 @@ static int hide_exec(bContext *C, wmOperator *op)
 		}
 	}
 
-	DEG_id_tag_update(obedit->data, 0);
+	DEG_id_tag_update(obedit->data, DEG_TAG_COPY_ON_WRITE | DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
 	BKE_curve_nurb_vert_active_validate(obedit->data);
 
@@ -2959,7 +2959,7 @@ static int reveal_exec(bContext *C, wmOperator *op)
 		}
 	}
 
-	DEG_id_tag_update(obedit->data, 0);
+	DEG_id_tag_update(obedit->data, DEG_TAG_COPY_ON_WRITE | DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
 
 	return OPERATOR_FINISHED;
@@ -4413,6 +4413,7 @@ bool ED_curve_editnurb_select_pick(bContext *C, const int mval[2], bool extend, 
 			BKE_curve_nurb_active_set(cu, nu);
 		}
 
+		DEG_id_tag_update(obedit->data, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
 
 		return true;
@@ -5026,7 +5027,7 @@ static int add_vertex_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 			const float mval[2] = {UNPACK2(event->mval)};
 
 			struct SnapObjectContext *snap_context = ED_transform_snap_object_context_create_view3d(
-			        vc.scene, CTX_data_depsgraph(C), 0, vc.ar, vc.v3d);
+			        vc.bmain, vc.scene, vc.depsgraph, 0, vc.ar, vc.v3d);
 
 			ED_transform_snap_object_project_view3d(
 			        snap_context,
@@ -5300,6 +5301,7 @@ static int duplicate_exec(bContext *C, wmOperator *op)
 
 	if (BLI_listbase_is_empty(&newnurb) == false) {
 		BLI_movelisttolist(object_editcurve_get(obedit), &newnurb);
+		DEG_id_tag_update(obedit->data, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
 	}
 	else {
@@ -5803,7 +5805,7 @@ void CURVE_OT_delete(wmOperatorType *ot)
 	/* properties */
 	prop = RNA_def_enum(ot->srna, "type", curve_delete_type_items, 0, "Type", "Which elements to delete");
 	RNA_def_enum_funcs(prop, rna_curve_delete_type_itemf);
-
+	RNA_def_property_flag(prop, PROP_HIDDEN | PROP_SKIP_SAVE);
 	ot->prop = prop;
 }
 
@@ -6148,6 +6150,7 @@ int join_curve_exec(bContext *C, wmOperator *op)
 	DEG_relations_tag_update(bmain);   // because we removed object(s), call before editmode!
 
 	DEG_id_tag_update(&ob->id, OB_RECALC_OB | OB_RECALC_DATA);
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 
 	WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
 
@@ -6241,7 +6244,7 @@ bool ED_curve_active_center(Curve *cu, float center[3])
 
 /******************** Match texture space operator ***********************/
 
-static int match_texture_space_poll(bContext *C)
+static bool match_texture_space_poll(bContext *C)
 {
 	Object *object = CTX_data_active_object(C);
 
@@ -6257,12 +6260,12 @@ static int match_texture_space_exec(bContext *C, wmOperator *UNUSED(op))
 	float min[3], max[3], size[3], loc[3];
 	int a;
 
-	if (object->curve_cache == NULL) {
+	if (object->runtime.curve_cache == NULL) {
 		BKE_displist_make_curveTypes(depsgraph, scene, object, false);
 	}
 
 	INIT_MINMAX(min, max);
-	BKE_displist_minmax(&object->curve_cache->disp, min, max);
+	BKE_displist_minmax(&object->runtime.curve_cache->disp, min, max);
 
 	mid_v3_v3v3(loc, min, max);
 

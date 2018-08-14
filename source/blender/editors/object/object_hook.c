@@ -318,7 +318,7 @@ static bool object_hook_index_array(Main *bmain, Scene *scene, Object *obedit,
 
 			BMEditMesh *em;
 
-			EDBM_mesh_load(obedit);
+			EDBM_mesh_load(bmain, obedit);
 			EDBM_mesh_make(obedit, scene->toolsettings->selectmode, true);
 
 			DEG_id_tag_update(obedit->data, 0);
@@ -434,7 +434,7 @@ static void object_hook_select(Object *ob, HookModifierData *hmd)
 
 /* special poll operators for hook operators */
 /* TODO: check for properties window modifier context too as alternative? */
-static int hook_op_edit_poll(bContext *C)
+static bool hook_op_edit_poll(bContext *C)
 {
 	Object *obedit = CTX_data_edit_object(C);
 
@@ -619,6 +619,7 @@ static int object_add_hook_newob_exec(bContext *C, wmOperator *op)
 	Object *obedit = CTX_data_edit_object(C);
 
 	if (add_hook_object(C, bmain, scene, view_layer, obedit, NULL, OBJECT_ADDHOOK_NEWOB, op->reports)) {
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 		WM_event_add_notifier(C, NC_OBJECT | ND_MODIFIER, obedit);
 		return OPERATOR_FINISHED;
@@ -889,6 +890,7 @@ static int object_hook_select_exec(bContext *C, wmOperator *op)
 	/* select functionality */
 	object_hook_select(ob, hmd);
 
+	DEG_id_tag_update(ob->data, DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_GEOM | ND_SELECT, ob->data);
 
 	return OPERATOR_FINISHED;
@@ -915,4 +917,3 @@ void OBJECT_OT_hook_select(wmOperatorType *ot)
 	RNA_def_enum_funcs(prop, hook_mod_itemf);
 	RNA_def_property_flag(prop, PROP_ENUM_NO_TRANSLATE);
 }
-

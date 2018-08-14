@@ -72,6 +72,7 @@
 #include "DNA_speaker_types.h"
 #include "DNA_world_types.h"
 #include "DNA_gpencil_types.h"
+#include "DNA_brush_types.h"
 #include "DNA_object_types.h"
 #include "DNA_userdef_types.h"
 #include "DNA_layer_types.h"
@@ -245,6 +246,18 @@ static bool actedit_get_context(bAnimContext *ac, SpaceAction *saction)
 			/* update scene-pointer (no need to check for pinning yet, as not implemented) */
 			saction->ads.source = (ID *)ac->scene;
 
+			/* sync scene's "selected keys only" flag with our "only selected" flag
+			 * XXX: This is a workaround for T55525. We shouldn't really be syncing the flags like this,
+			 *      but it's a simpler fix for now than also figuring out how the next/prev keyframe tools
+			 *      should work in the 3D View if we allowed full access to the timeline's dopesheet filters
+			 *      (i.e. we'd have to figure out where to host those settings, to be on a scene level like
+			 *      this flag currently is, along with several other unknowns)
+			 */
+			if (ac->scene->flag & SCE_KEYS_NO_SELONLY)
+				saction->ads.filterflag &= ~ADS_FILTER_ONLYSEL;
+			else
+				saction->ads.filterflag |= ADS_FILTER_ONLYSEL;
+
 			ac->datatype = ANIMCONT_TIMELINE;
 			ac->data = &saction->ads;
 
@@ -378,6 +391,7 @@ bool ANIM_animdata_context_getdata(bAnimContext *ac)
  */
 bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 {
+	Main *bmain = CTX_data_main(C);
 	ScrArea *sa = CTX_wm_area(C);
 	ARegion *ar = CTX_wm_region(C);
 	SpaceLink *sl = CTX_wm_space_data(C);
@@ -388,6 +402,7 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 	memset(ac, 0, sizeof(bAnimContext));
 
 	/* get useful default context settings from context */
+	ac->bmain = bmain;
 	ac->scene = scene;
 	if (scene) {
 		ac->markers = ED_context_get_markers(C);
@@ -1207,7 +1222,7 @@ static FCurve *animfilter_fcurve_next(bDopeSheet *ads, FCurve *first, eAnim_Chan
 					/* only include if this curve is active */
 					if (!(filter_mode & ANIMFILTER_ACTIVE) || (fcu->flag & FCURVE_ACTIVE)) {
 						/* name based filtering... */
-						if ( ((ads) && (ads->filterflag & ADS_FILTER_BY_FCU_NAME)) && (owner_id) ) {
+						if ( ((ads) && (ads->searchstr[0] != '\0')) && (owner_id) ) {
 							if (skip_fcurve_with_name(ads, fcu, channel_type, owner, owner_id))
 								continue;
 						}
@@ -1439,7 +1454,7 @@ static size_t animfilter_nla(bAnimContext *UNUSED(ac), ListBase *anim_data, bDop
 				/* only include if this track is active */
 				if (!(filter_mode & ANIMFILTER_ACTIVE) || (nlt->flag & NLATRACK_ACTIVE)) {
 					/* name based filtering... */
-					if (((ads) && (ads->filterflag & ADS_FILTER_BY_FCU_NAME)) && (owner_id)) {
+					if (((ads) && (ads->searchstr[0] != '\0')) && (owner_id)) {
 						bool track_ok = false, strip_ok = false;
 
 						/* check if the name of the track, or the strips it has are ok... */
@@ -1619,7 +1634,7 @@ static size_t animdata_filter_gpencil_layers_data(ListBase *anim_data, bDopeShee
 				/* active... */
 				if (!(filter_mode & ANIMFILTER_ACTIVE) || (gpl->flag & GP_LAYER_ACTIVE)) {
 					/* skip layer if the name doesn't match the filter string */
-					if ((ads) && (ads->filterflag & ADS_FILTER_BY_FCU_NAME)) {
+					if ((ads) && (ads->searchstr[0] != '\0')) {
 						if (name_matches_dopesheet_filter(ads, gpl->info) == false)
 							continue;
 					}
@@ -1646,7 +1661,7 @@ static size_t animdata_filter_gpencil_data(ListBase *anim_data, bDopeSheet *ads,
 	 */
 	if (filter_mode & ANIMFILTER_ANIMDATA) {
 		/* just add GPD as a channel - this will add everything needed */
-		ANIMCHANNEL_NEW_CHANNEL(gpd, ANIMTYPE_GPDATABLOCK, NULL);
+		ANIMCHANNEL_NEW_CHANNEL(gpd, ANIMTYPE_GPDATABLOCK, gpd);
 	}
 	else {
 		ListBase tmp_data = {NULL, NULL};
@@ -1697,7 +1712,7 @@ static size_t animdata_filter_gpencil(bAnimContext *ac, ListBase *anim_data, voi
 		/* Objects in the scene */
 		for (base = view_layer->object_bases.first; base; base = base->next) {
 			/* Only consider this object if it has got some GP data (saving on all the other tests) */
-			if (base->object && base->object->gpd) {
+			if (base->object && (base->object->type == OB_GPENCIL)) {
 				Object *ob = base->object;
 
 				/* firstly, check if object can be included, by the following factors:
@@ -1711,7 +1726,7 @@ static size_t animdata_filter_gpencil(bAnimContext *ac, ListBase *anim_data, voi
 				 */
 				if ((filter_mode & ANIMFILTER_DATA_VISIBLE) && !(ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
 					/* layer visibility - we check both object and base, since these may not be in sync yet */
-					if ((base->flag & BASE_VISIBLED) == 0) continue;
+					if ((base->flag & BASE_VISIBLE) == 0) continue;
 
 					/* outliner restrict-flag */
 					if (ob->restrictflag & OB_RESTRICT_VIEW) continue;
@@ -1727,14 +1742,14 @@ static size_t animdata_filter_gpencil(bAnimContext *ac, ListBase *anim_data, voi
 				 * objects by the grouped status is on
 				 *	- used to ease the process of doing multiple-character choreographies
 				 */
-				if (ads->filterflag & ADS_FILTER_ONLYOBGROUP) {
+				if (ads->filter_grp != NULL) {
 					if (BKE_collection_has_object_recursive(ads->filter_grp, ob) == 0)
 						continue;
 				}
 
 				/* finally, include this object's grease pencil datablock */
 				/* XXX: Should we store these under expanders per item? */
-				items += animdata_filter_gpencil_data(anim_data, ads, ob->gpd, filter_mode);
+				items += animdata_filter_gpencil_data(anim_data, ads, ob->data, filter_mode);
 			}
 		}
 	}
@@ -1742,7 +1757,7 @@ static size_t animdata_filter_gpencil(bAnimContext *ac, ListBase *anim_data, voi
 		bGPdata *gpd;
 
 		/* Grab all Grease Pencil datablocks directly from main, but only those that seem to be useful somewhere */
-		for (gpd = G.main->gpencil.first; gpd; gpd = gpd->id.next) {
+		for (gpd = ac->bmain->gpencil.first; gpd; gpd = gpd->id.next) {
 			/* only show if gpd is used by something... */
 			if (ID_REAL_USERS(gpd) < 1)
 				continue;
@@ -1858,14 +1873,14 @@ static size_t animdata_filter_mask_data(ListBase *anim_data, Mask *mask, const i
 }
 
 /* Grab all mask data */
-static size_t animdata_filter_mask(ListBase *anim_data, void *UNUSED(data), int filter_mode)
+static size_t animdata_filter_mask(Main *bmain, ListBase *anim_data, void *UNUSED(data), int filter_mode)
 {
 	Mask *mask;
 	size_t items = 0;
 
 	/* for now, grab mask datablocks directly from main */
 	// XXX: this is not good...
-	for (mask = G.main->mask.first; mask; mask = mask->id.next) {
+	for (mask = bmain->mask.first; mask; mask = mask->id.next) {
 		ListBase tmp_data = {NULL, NULL};
 		size_t tmp_items = 0;
 
@@ -2599,8 +2614,10 @@ static size_t animdata_filter_dopesheet_ob(bAnimContext *ac, ListBase *anim_data
 		}
 
 		/* grease pencil */
-		if ((ob->gpd) && !(ads->filterflag & ADS_FILTER_NOGPENCIL)) {
-			tmp_items += animdata_filter_ds_gpencil(ac, &tmp_data, ads, ob->gpd, filter_mode);
+		if ((ob->type == OB_GPENCIL) &&
+		    (ob->data) && !(ads->filterflag & ADS_FILTER_NOGPENCIL))
+		{
+			tmp_items += animdata_filter_ds_gpencil(ac, &tmp_data, ads, ob->data, filter_mode);
 		}
 	}
 	END_ANIMFILTER_SUBCHANNELS;
@@ -2820,7 +2837,7 @@ static size_t animdata_filter_dopesheet_movieclips(bAnimContext *ac, ListBase *a
 {
 	size_t items = 0;
 	MovieClip *clip;
-	for (clip = G.main->movieclip.first; clip != NULL; clip = clip->id.next) {
+	for (clip = ac->bmain->movieclip.first; clip != NULL; clip = clip->id.next) {
 		/* only show if gpd is used by something... */
 		if (ID_REAL_USERS(clip) < 1) {
 			continue;
@@ -2850,7 +2867,7 @@ static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_m
 	 */
 	if ((filter_mode & ANIMFILTER_DATA_VISIBLE) && !(ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
 		/* layer visibility - we check both object and base, since these may not be in sync yet */
-		if ((base->flag & BASE_VISIBLED) == 0)
+		if ((base->flag & BASE_VISIBLE) == 0)
 			return false;
 
 		/* outliner restrict-flag */
@@ -2894,7 +2911,7 @@ static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_m
 	 * objects by the grouped status is on
 	 *	- used to ease the process of doing multiple-character choreographies
 	 */
-	if (ads->filterflag & ADS_FILTER_ONLYOBGROUP) {
+	if (ads->filter_grp != NULL) {
 		if (BKE_collection_has_object_recursive(ads->filter_grp, ob) == 0)
 			return false;
 	}
@@ -2959,7 +2976,7 @@ static size_t animdata_filter_dopesheet(bAnimContext *ac, ListBase *anim_data, b
 	}
 
 	/* Cache files level animations (frame duration and such). */
-	CacheFile *cache_file = G.main->cachefiles.first;
+	CacheFile *cache_file = ac->bmain->cachefiles.first;
 	for (; cache_file; cache_file = cache_file->id.next) {
 		items += animdata_filter_ds_cachefile(ac, anim_data, ads, cache_file, filter_mode);
 	}
@@ -3223,7 +3240,7 @@ size_t ANIM_animdata_filter(bAnimContext *ac, ListBase *anim_data, eAnimFilter_F
 			case ANIMCONT_MASK:
 			{
 				if (animdata_filter_dopesheet_summary(ac, anim_data, filter_mode, &items))
-					items = animdata_filter_mask(anim_data, data, filter_mode);
+					items = animdata_filter_mask(ac->bmain, anim_data, data, filter_mode);
 				break;
 			}
 

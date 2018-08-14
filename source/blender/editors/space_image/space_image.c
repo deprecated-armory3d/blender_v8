@@ -51,6 +51,7 @@
 #include "BKE_scene.h"
 #include "BKE_screen.h"
 #include "BKE_material.h"
+#include "BKE_workspace.h"
 
 #include "DEG_depsgraph.h"
 
@@ -79,6 +80,7 @@
 #include "UI_view2d.h"
 
 #include "image_intern.h"
+#include "GPU_framebuffer.h"
 
 /**************************** common state *****************************/
 
@@ -175,7 +177,6 @@ static SpaceLink *image_new(const ScrArea *UNUSED(area), const Scene *UNUSED(sce
 	simage->flag = SI_SHOW_GPENCIL | SI_USE_ALPHA | SI_COORDFLOATS;
 
 	simage->iuser.ok = true;
-	simage->iuser.fie_ima = 2;
 	simage->iuser.frames = 100;
 	simage->iuser.flag = IMA_SHOW_STEREO | IMA_ANIM_ALWAYS;
 
@@ -272,6 +273,9 @@ static void image_operatortypes(void)
 	WM_operatortype_append(IMAGE_OT_invert);
 
 	WM_operatortype_append(IMAGE_OT_cycle_render_slot);
+	WM_operatortype_append(IMAGE_OT_clear_render_slot);
+	WM_operatortype_append(IMAGE_OT_add_render_slot);
+	WM_operatortype_append(IMAGE_OT_remove_render_slot);
 
 	WM_operatortype_append(IMAGE_OT_sample);
 	WM_operatortype_append(IMAGE_OT_sample_line);
@@ -298,7 +302,7 @@ static void image_keymap(struct wmKeyConfig *keyconf)
 	WM_keymap_add_item(keymap, "IMAGE_OT_reload", RKEY, KM_PRESS, KM_ALT, 0);
 	WM_keymap_add_item(keymap, "IMAGE_OT_read_viewlayers", RKEY, KM_PRESS, KM_CTRL, 0);
 	WM_keymap_add_item(keymap, "IMAGE_OT_save", SKEY, KM_PRESS, KM_ALT, 0);
-	WM_keymap_add_item(keymap, "IMAGE_OT_save_as", F3KEY, KM_PRESS, 0, 0);
+	WM_keymap_add_item(keymap, "IMAGE_OT_save_as", SKEY, KM_PRESS, KM_SHIFT, 0);
 	WM_keymap_add_item(keymap, "IMAGE_OT_properties", NKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "IMAGE_OT_toolshelf", TKEY, KM_PRESS, 0, 0);
 
@@ -358,7 +362,7 @@ static void image_keymap(struct wmKeyConfig *keyconf)
 	RNA_boolean_set(kmi->ptr, "toggle", true);
 
 	/* fast switch to render slots */
-	for (i = 0; i < MIN2(IMA_MAX_RENDER_SLOT, 9); i++) {
+	for (i = 0; i < 9; i++) {
 		kmi = WM_keymap_add_item(keymap, "WM_OT_context_set_int", ONEKEY + i, KM_PRESS, 0, 0);
 		RNA_string_set(kmi->ptr, "data_path", "space_data.image.render_slots.active_index");
 		RNA_int_set(kmi->ptr, "value", i);
@@ -383,7 +387,7 @@ static void image_keymap(struct wmKeyConfig *keyconf)
 }
 
 /* dropboxes */
-static int image_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
+static bool image_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
 	if (drag->type == WM_DRAG_PATH)
 		if (ELEM(drag->icon, 0, ICON_FILE_IMAGE, ICON_FILE_MOVIE, ICON_FILE_BLANK)) /* rule might not work? */
@@ -430,8 +434,7 @@ static void image_refresh(const bContext *C, ScrArea *sa)
 	}
 }
 
-static void image_listener(bScreen *UNUSED(sc), ScrArea *sa, wmNotifier *wmn, Scene *scene,
-                           WorkSpace *workspace)
+static void image_listener(wmWindow *win, ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene))
 {
 	SpaceImage *sima = (SpaceImage *)sa->spacedata.first;
 
@@ -525,7 +528,7 @@ static void image_listener(bScreen *UNUSED(sc), ScrArea *sa, wmNotifier *wmn, Sc
 				case ND_TRANSFORM:
 				case ND_MODIFIER:
 				{
-					ViewLayer *view_layer = BKE_view_layer_from_workspace_get(scene, workspace);
+					ViewLayer *view_layer = WM_window_get_active_view_layer(win);
 					Object *ob = OBACT(view_layer);
 					if (ob && (ob == wmn->reference) && (ob->mode & OB_MODE_EDIT)) {
 						if (sima->lock && (sima->flag & SI_DRAWSHADOW)) {
@@ -578,25 +581,25 @@ static int image_context(const bContext *C, const char *member, bContextDataResu
 	return 0;
 }
 
-static void IMAGE_WGT_manipulator2d(wmManipulatorGroupType *wgt)
+static void IMAGE_GGT_gizmo2d(wmGizmoGroupType *gzgt)
 {
-	wgt->name = "UV Transform Manipulator";
-	wgt->idname = "IMAGE_WGT_manipulator2d";
+	gzgt->name = "UV Transform Gizmo";
+	gzgt->idname = "IMAGE_GGT_gizmo2d";
 
-	wgt->flag |= WM_MANIPULATORGROUPTYPE_PERSISTENT;
+	gzgt->flag |= WM_GIZMOGROUPTYPE_PERSISTENT;
 
-	wgt->poll = ED_widgetgroup_manipulator2d_poll;
-	wgt->setup = ED_widgetgroup_manipulator2d_setup;
-	wgt->refresh = ED_widgetgroup_manipulator2d_refresh;
-	wgt->draw_prepare = ED_widgetgroup_manipulator2d_draw_prepare;
+	gzgt->poll = ED_widgetgroup_gizmo2d_poll;
+	gzgt->setup = ED_widgetgroup_gizmo2d_setup;
+	gzgt->refresh = ED_widgetgroup_gizmo2d_refresh;
+	gzgt->draw_prepare = ED_widgetgroup_gizmo2d_draw_prepare;
 }
 
 static void image_widgets(void)
 {
-	wmManipulatorMapType *mmap_type = WM_manipulatormaptype_ensure(
-	        &(const struct wmManipulatorMapType_Params){SPACE_IMAGE, RGN_TYPE_WINDOW});
+	wmGizmoMapType *gzmap_type = WM_gizmomaptype_ensure(
+	        &(const struct wmGizmoMapType_Params){SPACE_IMAGE, RGN_TYPE_WINDOW});
 
-	WM_manipulatorgrouptype_append_and_link(mmap_type, IMAGE_WGT_manipulator2d);
+	WM_gizmogrouptype_append_and_link(gzmap_type, IMAGE_GGT_gizmo2d);
 }
 
 /************************** main region ***************************/
@@ -662,15 +665,15 @@ static void image_main_region_init(wmWindowManager *wm, ARegion *ar)
 	// image space manages own v2d
 	// UI_view2d_region_reinit(&ar->v2d, V2D_COMMONVIEW_STANDARD, ar->winx, ar->winy);
 
-	/* manipulators */
-	if (ar->manipulator_map == NULL) {
-		const struct wmManipulatorMapType_Params wmap_params = {
+	/* gizmos */
+	if (ar->gizmo_map == NULL) {
+		const struct wmGizmoMapType_Params wmap_params = {
 			.spaceid = SPACE_IMAGE,
 			.regionid = RGN_TYPE_WINDOW,
 		};
-		ar->manipulator_map = WM_manipulatormap_new_from_type(&wmap_params);
+		ar->gizmo_map = WM_gizmomap_new_from_type(&wmap_params);
 	}
-	WM_manipulatormap_add_handlers(ar, ar->manipulator_map);
+	WM_gizmomap_add_handlers(ar, ar->gizmo_map);
 
 	/* mask polls mode */
 	keymap = WM_keymap_find(wm->defaultconf, "Mask Editing", 0, 0);
@@ -719,8 +722,8 @@ static void image_main_region_draw(const bContext *C, ARegion *ar)
 
 	/* clear and setup matrix */
 	UI_GetThemeColor3fv(TH_BACK, col);
-	glClearColor(col[0], col[1], col[2], 0.0);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear_color(col[0], col[1], col[2], 0.0);
+	GPU_clear(GPU_COLOR_BIT);
 
 	image_user_refresh_scene(C, sima);
 
@@ -804,7 +807,7 @@ static void image_main_region_draw(const bContext *C, ARegion *ar)
 		UI_view2d_view_restore(C);
 	}
 
-	WM_manipulatormap_draw(ar->manipulator_map, C, WM_MANIPULATORMAP_DRAWSTEP_2D);
+	WM_gizmomap_draw(ar->gizmo_map, C, WM_GIZMOMAP_DRAWSTEP_2D);
 
 	draw_image_cache(C, ar);
 
@@ -817,14 +820,14 @@ static void image_main_region_draw(const bContext *C, ARegion *ar)
 }
 
 static void image_main_region_listener(
-        bScreen *UNUSED(sc), ScrArea *sa, ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *sa, ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
 	switch (wmn->category) {
 		case NC_GEOM:
 			if (ELEM(wmn->data, ND_DATA, ND_SELECT))
-				WM_manipulatormap_tag_refresh(ar->manipulator_map);
+				WM_gizmomap_tag_refresh(ar->gizmo_map);
 			break;
 		case NC_GPENCIL:
 			if (ELEM(wmn->action, NA_EDITED, NA_SELECTED))
@@ -835,7 +838,7 @@ static void image_main_region_listener(
 		case NC_IMAGE:
 			if (wmn->action == NA_PAINTING)
 				ED_region_tag_redraw(ar);
-			WM_manipulatormap_tag_refresh(ar->manipulator_map);
+			WM_gizmomap_tag_refresh(ar->gizmo_map);
 			break;
 		case NC_MATERIAL:
 			if (wmn->data == ND_SHADING_LINKS) {
@@ -869,11 +872,11 @@ static void image_buttons_region_init(wmWindowManager *wm, ARegion *ar)
 
 static void image_buttons_region_draw(const bContext *C, ARegion *ar)
 {
-	ED_region_panels(C, ar, NULL, -1, true);
+	ED_region_panels(C, ar);
 }
 
 static void image_buttons_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -944,11 +947,11 @@ static void image_tools_region_draw(const bContext *C, ARegion *ar)
 	}
 	ED_space_image_release_buffer(sima, ibuf, lock);
 
-	ED_region_panels(C, ar, NULL, -1, true);
+	ED_region_panels(C, ar);
 }
 
 static void image_tools_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -1016,7 +1019,7 @@ static void image_header_region_draw(const bContext *C, ARegion *ar)
 }
 
 static void image_header_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -1086,7 +1089,7 @@ void ED_spacetype_image(void)
 	st->refresh = image_refresh;
 	st->listener = image_listener;
 	st->context = image_context;
-	st->manipulators = image_widgets;
+	st->gizmos = image_widgets;
 	st->id_remap = image_id_remap;
 
 	/* regions: main window */
@@ -1096,7 +1099,6 @@ void ED_spacetype_image(void)
 	art->init = image_main_region_init;
 	art->draw = image_main_region_draw;
 	art->listener = image_main_region_listener;
-
 	BLI_addhead(&st->regiontypes, art);
 
 	/* regions: listview/buttons */
@@ -1132,6 +1134,10 @@ void ED_spacetype_image(void)
 	art->init = image_header_region_init;
 	art->draw = image_header_region_draw;
 
+	BLI_addhead(&st->regiontypes, art);
+
+	/* regions: hud */
+	art = ED_area_type_hud(st->spaceid);
 	BLI_addhead(&st->regiontypes, art);
 
 	BKE_spacetype_register(st);

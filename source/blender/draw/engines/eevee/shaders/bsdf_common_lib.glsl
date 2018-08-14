@@ -548,6 +548,14 @@ float F_eta(float eta, float cos_theta)
 	return result;
 }
 
+/* Fresnel color blend base on fresnel factor */
+vec3 F_color_blend(float eta, float fresnel, vec3 f0_color)
+{
+	float f0 = F_eta(eta, 1.0);
+	float fac = saturate((fresnel - f0) / max(1e-8, 1.0 - f0));
+	return mix(f0_color, vec3(1.0), fac);
+}
+
 /* Fresnel */
 vec3 F_schlick(vec3 f0, float cos_theta)
 {
@@ -666,6 +674,13 @@ Closure closure_add(Closure cl1, Closure cl2)
 	return cl;
 }
 
+Closure closure_emission(vec3 rgb)
+{
+	Closure cl = CLOSURE_DEFAULT;
+	cl.emission = rgb;
+	return cl;
+}
+
 #else /* VOLUMETRICS */
 
 struct Closure {
@@ -764,6 +779,13 @@ Closure closure_add(Closure cl1, Closure cl2)
 #  endif
 	cl.radiance = cl1.radiance + cl2.radiance;
 	cl.opacity = saturate(cl1.opacity + cl2.opacity);
+	return cl;
+}
+
+Closure closure_emission(vec3 rgb)
+{
+	Closure cl = CLOSURE_DEFAULT;
+	cl.radiance = rgb;
 	return cl;
 }
 

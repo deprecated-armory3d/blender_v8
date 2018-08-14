@@ -54,10 +54,11 @@
 
 #include "BLT_translation.h"
 
+#include "BKE_context.h"
 #include "BKE_fcurve.h"
 #include "BKE_global.h"
+#include "BKE_main.h"
 #include "BKE_nla.h"
-#include "BKE_context.h"
 #include "BKE_report.h"
 
 #include "DEG_depsgraph_build.h"
@@ -609,7 +610,8 @@ static void insert_graph_keys(bAnimContext *ac, eGraphKeys_InsertKey_Types mode)
 			 *                        up adding the keyframes on a new F-Curve in the action data instead.
 			 */
 			if (ale->id && !ale->owner && !fcu->driver) {
-				insert_keyframe(depsgraph, reports, ale->id, NULL, ((fcu->grp) ? (fcu->grp->name) : (NULL)), fcu->rna_path, fcu->array_index, cfra, ts->keyframe_type, flag);
+				insert_keyframe(ac->bmain, depsgraph, reports, ale->id, NULL, ((fcu->grp) ? (fcu->grp->name) : (NULL)),
+				                fcu->rna_path, fcu->array_index, cfra, ts->keyframe_type, flag);
 			}
 			else {
 				const float curval = evaluate_fcurve(fcu, cfra);
@@ -1971,7 +1973,7 @@ void GRAPH_OT_euler_filter(wmOperatorType *ot)
 
 /* ***************** Jump to Selected Frames Operator *********************** */
 
-static int graphkeys_framejump_poll(bContext *C)
+static bool graphkeys_framejump_poll(bContext *C)
 {
 	/* prevent changes during render */
 	if (G.is_rendering)
@@ -2806,7 +2808,7 @@ static int graph_driver_delete_invalid_exec(bContext *C, wmOperator *op)
 	return OPERATOR_FINISHED;
 }
 
-static int graph_driver_delete_invalid_poll(bContext *C)
+static bool graph_driver_delete_invalid_poll(bContext *C)
 {
 	bAnimContext ac;
 	ScrArea *sa = CTX_wm_area(C);

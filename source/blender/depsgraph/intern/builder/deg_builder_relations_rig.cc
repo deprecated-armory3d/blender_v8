@@ -307,9 +307,11 @@ void DepsgraphRelationBuilder::build_rig(Object *object)
 	bArmature *armature = (bArmature *)object->data;
 	// TODO: selection status?
 	/* Attach links between pose operations. */
+	ComponentKey local_transform(&object->id, DEG_NODE_TYPE_TRANSFORM);
 	OperationKey init_key(&object->id, DEG_NODE_TYPE_EVAL_POSE, DEG_OPCODE_POSE_INIT);
 	OperationKey init_ik_key(&object->id, DEG_NODE_TYPE_EVAL_POSE, DEG_OPCODE_POSE_INIT_IK);
 	OperationKey flush_key(&object->id, DEG_NODE_TYPE_EVAL_POSE, DEG_OPCODE_POSE_DONE);
+	add_relation(local_transform, init_key, "Local Transform -> Pose Init");
 	add_relation(init_key, init_ik_key, "Pose Init -> Pose Init IK");
 	add_relation(init_ik_key, flush_key, "Pose Init IK -> Pose Cleanup");
 	/* Make sure pose is up-to-date with armature updates. */
@@ -467,10 +469,19 @@ void DepsgraphRelationBuilder::build_proxy_rig(Object *object)
 		                           DEG_NODE_TYPE_BONE,
 		                           pchan->name,
 		                           DEG_OPCODE_BONE_DONE);
+		OperationKey from_bone_done_key(&proxy_from->id,
+		                                DEG_NODE_TYPE_BONE,
+		                                pchan->name,
+		                                DEG_OPCODE_BONE_DONE);
 		add_relation(pose_init_key, bone_local_key, "Pose Init -> Bone Local");
 		add_relation(bone_local_key, bone_ready_key, "Local -> Ready");
 		add_relation(bone_ready_key, bone_done_key, "Ready -> Done");
 		add_relation(bone_done_key, pose_done_key, "Bone Done -> Pose Done");
+
+		/* Make sure bone in the proxy is not done before it's FROM is done. */
+		add_relation(from_bone_done_key,
+		             bone_done_key,
+		             "From Bone Done -> Pose Done");
 
 		if (pchan->prop != NULL) {
 			OperationKey bone_parameters(&object->id,

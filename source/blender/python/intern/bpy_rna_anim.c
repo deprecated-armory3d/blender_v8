@@ -40,11 +40,13 @@
 #include "ED_keyframing.h"
 #include "ED_keyframes_edit.h"
 
-#include "BKE_report.h"
-#include "BKE_context.h"
 #include "BKE_animsys.h"
+#include "BKE_context.h"
 #include "BKE_fcurve.h"
+#include "BKE_global.h"
 #include "BKE_idcode.h"
+#include "BKE_library.h"
+#include "BKE_report.h"
 
 #include "RNA_access.h"
 #include "RNA_enum_types.h"
@@ -266,13 +268,15 @@ PyObject *pyrna_struct_keyframe_insert(BPy_StructRNA *self, PyObject *args, PyOb
 		return PyBool_FromLong(result);
 	}
 	else {
+		ID *id = self->ptr.id.data;
 		struct Depsgraph *depsgraph = CTX_data_depsgraph(BPy_GetContext());
 		ReportList reports;
 		short result;
 
 		BKE_reports_init(&reports, RPT_STORE);
 
-		result = insert_keyframe(depsgraph, &reports, (ID *)self->ptr.id.data, NULL, group_name, path_full, index, cfra, keytype, options);
+		BLI_assert(BKE_id_is_in_gobal_main(id));
+		result = insert_keyframe(G_MAIN, depsgraph, &reports, id, NULL, group_name, path_full, index, cfra, keytype, options);
 		MEM_freeN((void *)path_full);
 
 		if (BPy_reports_to_error(&reports, PyExc_RuntimeError, true) == -1)

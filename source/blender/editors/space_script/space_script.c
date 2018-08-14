@@ -55,6 +55,7 @@
 #endif
 
 #include "script_intern.h"  // own include
+#include "GPU_framebuffer.h"
 
 
 //static script_run_python(char *funcname, )
@@ -144,7 +145,7 @@ static void script_main_region_draw(const bContext *C, ARegion *ar)
 
 	/* clear and setup matrix */
 	UI_ThemeClearColor(TH_BACK);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear(GPU_COLOR_BIT);
 
 	UI_view2d_view_ortho(v2d);
 
@@ -177,7 +178,7 @@ static void script_header_region_draw(const bContext *C, ARegion *ar)
 }
 
 static void script_main_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *UNUSED(ar),
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *UNUSED(ar),
         wmNotifier *UNUSED(wmn), const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -225,4 +226,3 @@ void ED_spacetype_script(void)
 
 	BKE_spacetype_register(st);
 }
-

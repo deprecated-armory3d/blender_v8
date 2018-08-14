@@ -455,10 +455,10 @@ static bool sound_mixdown_check(bContext *UNUSED(C), wmOperator *op)
 		prop = RNA_struct_find_property(op->ptr, "filepath");
 		RNA_property_string_get(op->ptr, prop, filepath);
 
-		if (BLI_testextensie_array(filepath, snd_ext_sound))
-			check = BLI_replace_extension(filepath, FILE_MAX, extension);
+		if (BLI_path_extension_check_array(filepath, snd_ext_sound))
+			check = BLI_path_extension_replace(filepath, FILE_MAX, extension);
 		else
-			check = BLI_ensure_extension(filepath, FILE_MAX, extension);
+			check = BLI_path_extension_ensure(filepath, FILE_MAX, extension);
 
 		if (!check)
 			return check;
@@ -482,7 +482,7 @@ static int sound_mixdown_invoke(bContext *C, wmOperator *op, const wmEvent *even
 
 #ifdef WITH_AUDASPACE
 
-static bool sound_mixdown_draw_check_prop(PointerRNA *UNUSED(ptr), PropertyRNA *prop)
+static bool sound_mixdown_draw_check_prop(PointerRNA *UNUSED(ptr), PropertyRNA *prop, void *UNUSED(user_data))
 {
 	const char *prop_id = RNA_property_identifier(prop);
 	return !(STREQ(prop_id, "filepath") ||
@@ -635,7 +635,7 @@ static void sound_mixdown_draw(bContext *C, wmOperator *op)
 	RNA_pointer_create(&wm->id, op->type->srna, op->properties, &ptr);
 
 	/* main draw call */
-	uiDefAutoButsRNA(layout, &ptr, sound_mixdown_draw_check_prop, UI_BUT_LABEL_ALIGN_NONE, false);
+	uiDefAutoButsRNA(layout, &ptr, sound_mixdown_draw_check_prop, NULL, UI_BUT_LABEL_ALIGN_NONE, false);
 }
 #endif // WITH_AUDASPACE
 
@@ -703,7 +703,7 @@ static void SOUND_OT_mixdown(wmOperatorType *ot)
 
 /* ******************************************************* */
 
-static int sound_poll(bContext *C)
+static bool sound_poll(bContext *C)
 {
 	Editing *ed = CTX_data_scene(C)->ed;
 

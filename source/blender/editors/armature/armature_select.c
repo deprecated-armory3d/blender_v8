@@ -254,7 +254,9 @@ void *get_nearest_bone(
 	rect.xmin = rect.xmax = xy[0];
 	rect.ymin = rect.ymax = xy[1];
 
-	hits = view3d_opengl_select(&vc, buffer, MAXPICKBUF, &rect, VIEW3D_SELECT_PICK_NEAREST);
+	hits = view3d_opengl_select(
+	        &vc, buffer, MAXPICKBUF, &rect,
+	        VIEW3D_SELECT_PICK_NEAREST, VIEW3D_SELECT_FILTER_NOP);
 
 	*r_base = NULL;
 
@@ -347,7 +349,7 @@ static int armature_select_linked_invoke(bContext *C, wmOperator *op, const wmEv
 	return OPERATOR_FINISHED;
 }
 
-static int armature_select_linked_poll(bContext *C)
+static bool armature_select_linked_poll(bContext *C)
 {
 	return (ED_operator_view3d_active(C) && ED_operator_editarmature(C));
 }
@@ -424,7 +426,7 @@ static EditBone *get_nearest_editbonepoint(
 	if (use_cycle) {
 		static int last_mval[2] = {-100, -100};
 
-		if (vc->v3d->drawtype > OB_WIRE) {
+		if (vc->v3d->shading.type > OB_WIRE) {
 			do_nearest = true;
 			if (len_manhattan_v2v2_int(vc->mval, last_mval) < 3) {
 				do_nearest = false;
@@ -433,7 +435,7 @@ static EditBone *get_nearest_editbonepoint(
 		copy_v2_v2_int(last_mval, vc->mval);
 	}
 	else {
-		if (vc->v3d->drawtype > OB_WIRE) {
+		if (vc->v3d->shading.type > OB_WIRE) {
 			do_nearest = true;
 		}
 	}
@@ -446,9 +448,11 @@ static EditBone *get_nearest_editbonepoint(
 
 	{
 		const int select_mode = (do_nearest ? VIEW3D_SELECT_PICK_NEAREST : VIEW3D_SELECT_PICK_ALL);
+		const eV3DSelectObjectFilter select_filter = VIEW3D_SELECT_FILTER_NOP;
+
 		rcti rect;
 		BLI_rcti_init_pt_radius(&rect, vc->mval, 12);
-		const int hits12 = view3d_opengl_select(vc, buffer, MAXPICKBUF, &rect, select_mode);
+		const int hits12 = view3d_opengl_select(vc, buffer, MAXPICKBUF, &rect, select_mode, select_filter);
 		if (hits12 == 1) {
 			hits = selectbuffer_ret_hits_12(buffer, hits12);
 			goto cache_end;
@@ -458,7 +462,9 @@ static EditBone *get_nearest_editbonepoint(
 
 			offs = 4 * hits12;
 			BLI_rcti_init_pt_radius(&rect, vc->mval, 5);
-			const int hits5 = view3d_opengl_select(vc, buffer + offs, MAXPICKBUF - offs, &rect, select_mode);
+			const int hits5 = view3d_opengl_select(
+			        vc, buffer + offs, MAXPICKBUF - offs, &rect,
+			        select_mode, select_filter);
 
 			if (hits5 == 1) {
 				hits = selectbuffer_ret_hits_5(buffer, hits12, hits5);
@@ -717,6 +723,7 @@ bool ED_armature_edit_select_pick(bContext *C, const int mval[2], bool extend, b
 
 			if (vc.view_layer->basact != basact) {
 				vc.view_layer->basact = basact;
+				DEG_id_tag_update(&vc.scene->id, DEG_TAG_SELECT_UPDATE);
 				WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, vc.scene);
 			}
 		}

@@ -48,6 +48,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "UI_interface.h"
 
@@ -105,25 +106,23 @@ typedef struct RingSelOpData {
 } RingSelOpData;
 
 /* modal loop selection drawing callback */
-static void ringsel_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
+static void ringsel_draw(const bContext *UNUSED(C), ARegion *UNUSED(ar), void *arg)
 {
-	View3D *v3d = CTX_wm_view3d(C);
 	RingSelOpData *lcd = arg;
 
 	if ((lcd->totedge > 0) || (lcd->totpoint > 0)) {
-		if (v3d && v3d->zbuf)
-			glDisable(GL_DEPTH_TEST);
+		GPU_depth_test(false);
 
-		gpuPushMatrix();
-		gpuMultMatrix(lcd->ob->obmat);
+		GPU_matrix_push();
+		GPU_matrix_mul(lcd->ob->obmat);
 
-		unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+		uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 		immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 		immUniformColor3ub(255, 0, 255);
 
 		if (lcd->totedge > 0) {
-			immBegin(GWN_PRIM_LINES, lcd->totedge * 2);
+			immBegin(GPU_PRIM_LINES, lcd->totedge * 2);
 
 			for (int i = 0; i < lcd->totedge; i++) {
 				immVertex3fv(pos, lcd->edges[i][0]);
@@ -134,9 +133,9 @@ static void ringsel_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 		}
 
 		if (lcd->totpoint > 0) {
-			glPointSize(3.0f);
+			GPU_point_size(3.0f);
 
-			immBegin(GWN_PRIM_POINTS, lcd->totpoint);
+			immBegin(GPU_PRIM_POINTS, lcd->totpoint);
 
 			for (int i = 0; i < lcd->totpoint; i++) {
 				immVertex3fv(pos, lcd->points[i]);
@@ -147,10 +146,10 @@ static void ringsel_draw(const bContext *C, ARegion *UNUSED(ar), void *arg)
 
 		immUnbindProgram();
 
-		gpuPopMatrix();
+		GPU_matrix_pop();
 
-		if (v3d && v3d->zbuf)
-			glEnable(GL_DEPTH_TEST);
+		/* Reset default */
+		GPU_depth_test(true);
 	}
 }
 
@@ -400,6 +399,7 @@ static void edgering_select(RingSelOpData *lcd)
 			Object *ob_iter = lcd->objects[ob_index];
 			BMEditMesh *em = BKE_editmesh_from_object(ob_iter);
 			EDBM_flag_disable_all(em, BM_ELEM_SELECT);
+			DEG_id_tag_update(ob_iter->data, DEG_TAG_SELECT_UPDATE);
 			WM_main_add_notifier(NC_GEOM | ND_SELECT, ob_iter->data);
 		}
 	}
@@ -496,6 +496,7 @@ static void ringsel_finish(bContext *C, wmOperator *op)
 				BM_select_history_store(em->bm, lcd->eed);
 
 			EDBM_selectmode_flush(lcd->em);
+			DEG_id_tag_update(lcd->ob->data, DEG_TAG_SELECT_UPDATE);
 			WM_event_add_notifier(C, NC_GEOM | ND_SELECT, lcd->ob->data);
 		}
 	}
@@ -690,7 +691,7 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
 	{
 		Scene *scene = CTX_data_scene(C);
 		ToolSettings *settings = scene->toolsettings;
-		const int mesh_select_mode[3] = {
+		const bool mesh_select_mode[3] = {
 		    (settings->selectmode & SCE_SELECT_VERTEX) != 0,
 		    (settings->selectmode & SCE_SELECT_EDGE)   != 0,
 		    (settings->selectmode & SCE_SELECT_FACE)   != 0,
@@ -701,8 +702,7 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
 #endif
 
 	if (is_interactive) {
-		ScrArea *sa = CTX_wm_area(C);
-		ED_area_headerprint(sa, IFACE_("Select a ring to be cut, use mouse-wheel or page-up/down for number of cuts, "
+		ED_workspace_status_text(C, IFACE_("Select a ring to be cut, use mouse-wheel or page-up/down for number of cuts, "
 		                               "hold Alt for smooth"));
 		return OPERATOR_RUNNING_MODAL;
 	}
@@ -727,7 +727,7 @@ static int loopcut_finish(RingSelOpData *lcd, bContext *C, wmOperator *op)
 {
 	/* finish */
 	ED_region_tag_redraw(lcd->ar);
-	ED_area_headerprint(CTX_wm_area(C), NULL);
+	ED_workspace_status_text(C, NULL);
 
 	if (lcd->eed) {
 		/* set for redo */
@@ -783,14 +783,14 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 			case RIGHTMOUSE: /* abort */ // XXX hardcoded
 				ED_region_tag_redraw(lcd->ar);
 				ringsel_exit(C, op);
-				ED_area_headerprint(CTX_wm_area(C), NULL);
+				ED_workspace_status_text(C, NULL);
 
 				return OPERATOR_CANCELLED;
 			case ESCKEY:
 				if (event->val == KM_RELEASE) {
 					/* cancel */
 					ED_region_tag_redraw(lcd->ar);
-					ED_area_headerprint(CTX_wm_area(C), NULL);
+					ED_workspace_status_text(C, NULL);
 
 					ringcut_cancel(C, op);
 					return OPERATOR_CANCELLED;
@@ -868,7 +868,7 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 	if (cuts != lcd->cuts) {
 		/* allow zero so you can backspace and type in a value
 		 * otherwise 1 as minimum would make more sense */
-		lcd->cuts = CLAMPIS(cuts, 0, SUBD_CUTS_MAX);
+		lcd->cuts = clamp_i(cuts, 0, SUBD_CUTS_MAX);
 		RNA_int_set(op->ptr, "number_cuts", (int)lcd->cuts);
 		ringsel_find_edge(lcd, (int)lcd->cuts);
 		show_cuts = true;
@@ -876,7 +876,7 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 	}
 
 	if (smoothness != lcd->smoothness) {
-		lcd->smoothness = CLAMPIS(smoothness, -SUBD_SMOOTH_MAX, SUBD_SMOOTH_MAX);
+		lcd->smoothness = clamp_f(smoothness, -SUBD_SMOOTH_MAX, SUBD_SMOOTH_MAX);
 		RNA_float_set(op->ptr, "smoothness", lcd->smoothness);
 		show_cuts = true;
 		ED_region_tag_redraw(lcd->ar);
@@ -895,7 +895,7 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 		}
 		BLI_snprintf(buf, sizeof(buf), IFACE_("Number of Cuts: %s, Smooth: %s (Alt)"),
 		             str_rep, str_rep + NUM_STR_REP_LEN);
-		ED_area_headerprint(CTX_wm_area(C), buf);
+		ED_workspace_status_text(C, buf);
 	}
 
 	/* keep going until the user confirms */

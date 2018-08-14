@@ -32,6 +32,7 @@
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_gpencil_types.h"
+#include "DNA_gpencil_modifier_types.h"
 #include "DNA_group_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_lightprobe_types.h"
@@ -50,7 +51,9 @@
 #include "BKE_context.h"
 #include "BKE_deform.h"
 #include "BKE_fcurve.h"
+#include "BKE_gpencil.h"
 #include "BKE_global.h"
+#include "BKE_idcode.h"
 #include "BKE_layer.h"
 #include "BKE_library.h"
 #include "BKE_main.h"
@@ -71,6 +74,7 @@
 #include "WM_types.h"
 
 #include "GPU_immediate.h"
+#include "GPU_state.h"
 
 #include "UI_interface.h"
 #include "UI_interface_icons.h"
@@ -92,8 +96,9 @@ static void outliner_height(SpaceOops *soops, ListBase *lb, int *h)
 	TreeElement *te = lb->first;
 	while (te) {
 		TreeStoreElem *tselem = TREESTORE(te);
-		if (TSELEM_OPEN(tselem, soops))
+		if (TSELEM_OPEN(tselem, soops)) {
 			outliner_height(soops, &te->subtree, h);
+		}
 		(*h) += UI_UNIT_Y;
 		te = te->next;
 	}
@@ -132,8 +137,9 @@ static void outliner_rna_width(SpaceOops *soops, ListBase *lb, int *w, int start
 		if (startx + 100 > *w)
 			*w = startx + 100;
 
-		if (TSELEM_OPEN(tselem, soops))
+		if (TSELEM_OPEN(tselem, soops)) {
 			outliner_rna_width(soops, &te->subtree, w, startx + UI_UNIT_X);
+		}
 		te = te->next;
 	}
 }
@@ -276,6 +282,44 @@ static void restrictbutton_id_user_toggle(bContext *UNUSED(C), void *poin, void 
 	}
 }
 
+static void hidebutton_base_flag_cb(bContext *C, void *poin, void *poin2)
+{
+	Scene *scene = CTX_data_scene(C);
+	ViewLayer *view_layer = poin;
+	Base *base = poin2;
+	bool extend = (CTX_wm_window(C)->eventstate->ctrl == 0);
+
+	/* Undo button toggle, let function do it. */
+	base->flag ^= BASE_HIDDEN;
+
+	BKE_base_set_visible(scene, view_layer, base, extend);
+
+	if (!extend && (base->flag & BASE_VISIBLE)) {
+		/* Auto select solo-ed object. */
+		ED_object_base_select(base, BA_SELECT);
+		view_layer->basact = base;
+	}
+
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+}
+
+static void hidebutton_layer_collection_flag_cb(bContext *C, void *poin, void *poin2)
+{
+	Scene *scene = CTX_data_scene(C);
+	ViewLayer *view_layer = poin;
+	LayerCollection *lc = poin2;
+	bool extend = (CTX_wm_window(C)->eventstate->ctrl == 0);
+
+	/* Undo button toggle, let function do it. */
+	lc->runtime_flag ^= LAYER_COLLECTION_HAS_VISIBLE_OBJECTS;
+
+	BKE_layer_collection_set_visible(scene, view_layer, lc, extend);
+
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
+}
+
 static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 {
 	Main *bmain = CTX_data_main(C);
@@ -340,7 +384,7 @@ static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 						/* restore bone name */
 						BLI_strncpy(newname, ebone->name, sizeof(ebone->name));
 						BLI_strncpy(ebone->name, oldname, sizeof(ebone->name));
-						ED_armature_bone_rename(obedit->data, oldname, newname);
+						ED_armature_bone_rename(bmain, obedit->data, oldname, newname);
 						WM_event_add_notifier(C, NC_OBJECT | ND_POSE, NULL);
 					}
 					break;
@@ -360,7 +404,7 @@ static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 					/* restore bone name */
 					BLI_strncpy(newname, bone->name, sizeof(bone->name));
 					BLI_strncpy(bone->name, oldname, sizeof(bone->name));
-					ED_armature_bone_rename(arm, oldname, newname);
+					ED_armature_bone_rename(bmain, arm, oldname, newname);
 					WM_event_add_notifier(C, NC_OBJECT | ND_POSE, NULL);
 					break;
 				}
@@ -380,7 +424,7 @@ static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 					/* restore bone name */
 					BLI_strncpy(newname, pchan->name, sizeof(pchan->name));
 					BLI_strncpy(pchan->name, oldname, sizeof(pchan->name));
-					ED_armature_bone_rename(ob->data, oldname, newname);
+					ED_armature_bone_rename(bmain, ob->data, oldname, newname);
 					WM_event_add_notifier(C, NC_OBJECT | ND_POSE, NULL);
 					break;
 				}
@@ -396,12 +440,16 @@ static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 				}
 				case TSE_GP_LAYER:
 				{
-					bGPdata *gpd = (bGPdata *)tselem->id; // id = GP Datablock
+					bGPdata *gpd = (bGPdata *)tselem->id; /* id = GP Datablock */
 					bGPDlayer *gpl = te->directdata;
+
+					/* always make layer active */
+					BKE_gpencil_layer_setactive(gpd, gpl);
 
 					// XXX: name needs translation stuff
 					BLI_uniquename(&gpd->layers, gpl, "GP Layer", '.',
 					               offsetof(bGPDlayer, info), sizeof(gpl->info));
+
 					WM_event_add_notifier(C, NC_GPENCIL | ND_DATA, gpd);
 					break;
 				}
@@ -432,172 +480,214 @@ static void namebutton_cb(bContext *C, void *tsep, char *oldname)
 	}
 }
 
-static void outliner_draw_restrictbuts(uiBlock *block, Scene *scene, ARegion *ar, SpaceOops *soops, ListBase *lb)
+static void outliner_draw_restrictbuts(
+        uiBlock *block, Scene *scene, ViewLayer *view_layer, ARegion *ar, SpaceOops *soops, ListBase *lb)
 {
 	uiBut *bt;
-	TreeElement *te;
-	TreeStoreElem *tselem;
-	Object *ob = NULL;
 
 	/* get RNA properties (once for speed) */
-	PropertyRNA *collection_prop_hide_viewport;
-	PropertyRNA *collection_prop_hide_select;
-	PropertyRNA *collection_prop_hide_render;
+	PropertyRNA *object_prop_hide_viewport, *object_prop_hide_select, *object_prop_hide_render;
+	PropertyRNA *collection_prop_hide_viewport, *collection_prop_hide_select, *collection_prop_hide_render;
+
+	object_prop_hide_viewport = RNA_struct_type_find_property(&RNA_Object, "hide_viewport");
+	object_prop_hide_select = RNA_struct_type_find_property(&RNA_Object, "hide_select");
+	object_prop_hide_render = RNA_struct_type_find_property(&RNA_Object, "hide_render");
 	collection_prop_hide_select = RNA_struct_type_find_property(&RNA_Collection, "hide_select");
 	collection_prop_hide_viewport = RNA_struct_type_find_property(&RNA_Collection, "hide_viewport");
 	collection_prop_hide_render = RNA_struct_type_find_property(&RNA_Collection, "hide_render");
-	BLI_assert(collection_prop_hide_viewport &&
+
+	BLI_assert(object_prop_hide_viewport &&
+	           object_prop_hide_select &&
+	           object_prop_hide_render &&
+	           collection_prop_hide_viewport &&
 	           collection_prop_hide_select &&
 	           collection_prop_hide_render);
 
-	for (te = lb->first; te; te = te->next) {
-		tselem = TREESTORE(te);
+	for (TreeElement *te = lb->first; te; te = te->next) {
+		TreeStoreElem *tselem = TREESTORE(te);
 		if (te->ys + 2 * UI_UNIT_Y >= ar->v2d.cur.ymin && te->ys <= ar->v2d.cur.ymax) {
 			if (tselem->type == TSE_R_LAYER && (soops->outlinevis == SO_SCENES)) {
 				/* View layer render toggle. */
-				ViewLayer *view_layer = te->directdata;
+				ViewLayer *layer = te->directdata;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-
-				bt = uiDefIconButBitS(block, UI_BTYPE_ICON_TOGGLE_N, VIEW_LAYER_RENDER, 0, ICON_RESTRICT_RENDER_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &view_layer->flag, 0, 0, 0, 0, TIP_("Use view layer for rendering"));
+				bt = uiDefIconButBitS(
+				        block, UI_BTYPE_ICON_TOGGLE_N, VIEW_LAYER_RENDER, 0, ICON_RESTRICT_RENDER_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &layer->flag, 0, 0, 0, 0, TIP_("Use view layer for rendering"));
 				UI_but_func_set(bt, restrictbutton_r_lay_cb, tselem->id, NULL);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+			}
+			else if (tselem->type == 0 && te->idcode == ID_OB) {
+				Object *ob = (Object *)tselem->id;
+				Base *base = BKE_view_layer_base_find(view_layer, ob);
 
-				UI_block_emboss_set(block, UI_EMBOSS);
+				if (base) {
+					bt = uiDefIconButBitS(
+					        block, UI_BTYPE_ICON_TOGGLE, BASE_HIDDEN, 0, ICON_HIDE_OFF,
+					        (int)(ar->v2d.cur.xmax - OL_TOG_HIDEX), te->ys, UI_UNIT_X,
+					        UI_UNIT_Y, &base->flag, 0, 0, 0, 0,
+					        TIP_("Hide object in viewport (Ctrl to isolate)"));
+					UI_but_func_set(bt, hidebutton_base_flag_cb, view_layer, base);
+					UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+				}
+
+				PointerRNA ptr;
+				RNA_pointer_create((ID *)ob, &RNA_Object, ob, &ptr);
+
+				bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_VIEW_OFF,
+				                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X, UI_UNIT_Y,
+				                        &ptr, object_prop_hide_viewport, -1, 0, 0, -1, -1,
+				                        TIP_("Restrict viewport visibility"));
+				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+
+				bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_SELECT_OFF,
+				                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X, UI_UNIT_Y,
+				                        &ptr, object_prop_hide_select, -1, 0, 0, -1, -1,
+				                        TIP_("Restrict viewport selection"));
+				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+
+				bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_RENDER_OFF,
+				                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X, UI_UNIT_Y,
+				                        &ptr, object_prop_hide_render, -1, 0, 0, -1, -1,
+				                        TIP_("Restrict render visibility"));
+				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+
 			}
 			else if (tselem->type == TSE_MODIFIER) {
 				ModifierData *md = (ModifierData *)te->directdata;
-				ob = (Object *)tselem->id;
+				Object *ob = (Object *)tselem->id;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE_N, eModifierMode_Realtime, 0, ICON_RESTRICT_VIEW_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(md->mode), 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow visibility in the 3D View"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE_N, eModifierMode_Realtime, 0, ICON_RESTRICT_VIEW_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(md->mode), 0, 0, 0, 0,
+				        TIP_("Restrict/Allow visibility in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_modifier_cb, scene, ob);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE_N, eModifierMode_Render, 0, ICON_RESTRICT_RENDER_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(md->mode), 0, 0, 0, 0, TIP_("Restrict/Allow renderability"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE_N, eModifierMode_Render, 0, ICON_RESTRICT_RENDER_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(md->mode), 0, 0, 0, 0, TIP_("Restrict/Allow renderability"));
 				UI_but_func_set(bt, restrictbutton_modifier_cb, scene, ob);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 			else if (tselem->type == TSE_POSE_CHANNEL) {
 				bPoseChannel *pchan = (bPoseChannel *)te->directdata;
 				Bone *bone = pchan->bone;
-				ob = (Object *)tselem->id;
+				Object *ob = (Object *)tselem->id;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE, BONE_HIDDEN_P, 0, ICON_RESTRICT_VIEW_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(bone->flag), 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow visibility in the 3D View"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE, BONE_HIDDEN_P, 0, ICON_HIDE_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(bone->flag), 0, 0, 0, 0,
+				        TIP_("Restrict/Allow visibility in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_bone_visibility_cb, ob->data, bone);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE, BONE_UNSELECTABLE, 0, ICON_RESTRICT_SELECT_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(bone->flag), 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow selection in the 3D View"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE, BONE_UNSELECTABLE, 0, ICON_RESTRICT_SELECT_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(bone->flag), 0, 0, 0, 0,
+				        TIP_("Restrict/Allow selection in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_bone_select_cb, ob->data, bone);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 			else if (tselem->type == TSE_EBONE) {
 				EditBone *ebone = (EditBone *)te->directdata;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE, BONE_HIDDEN_A, 0, ICON_RESTRICT_VIEW_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(ebone->flag), 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow visibility in the 3D View"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE, BONE_HIDDEN_A, 0, ICON_RESTRICT_VIEW_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(ebone->flag), 0, 0, 0, 0,
+				        TIP_("Restrict/Allow visibility in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_ebone_visibility_cb, NULL, ebone);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-				bt = uiDefIconButBitI(block, UI_BTYPE_ICON_TOGGLE, BONE_UNSELECTABLE, 0, ICON_RESTRICT_SELECT_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &(ebone->flag), 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow selection in the 3D View"));
+				bt = uiDefIconButBitI(
+				        block, UI_BTYPE_ICON_TOGGLE, BONE_UNSELECTABLE, 0, ICON_RESTRICT_SELECT_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &(ebone->flag), 0, 0, 0, 0,
+				        TIP_("Restrict/Allow selection in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_ebone_select_cb, NULL, ebone);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 			else if (tselem->type == TSE_GP_LAYER) {
 				bGPDlayer *gpl = (bGPDlayer *)te->directdata;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-
-				bt = uiDefIconButBitS(block, UI_BTYPE_ICON_TOGGLE, GP_LAYER_HIDE, 0, ICON_RESTRICT_VIEW_OFF,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &gpl->flag, 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow visibility in the 3D View"));
+				bt = uiDefIconButBitS(
+				        block, UI_BTYPE_ICON_TOGGLE, GP_LAYER_HIDE, 0, ICON_HIDE_OFF,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &gpl->flag, 0, 0, 0, 0,
+				        TIP_("Restrict/Allow visibility in the 3D View"));
 				UI_but_func_set(bt, restrictbutton_gp_layer_flag_cb, NULL, gpl);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-				bt = uiDefIconButBitS(block, UI_BTYPE_ICON_TOGGLE, GP_LAYER_LOCKED, 0, ICON_UNLOCKED,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
-				                      UI_UNIT_Y, &gpl->flag, 0, 0, 0, 0,
-				                      TIP_("Restrict/Allow editing of strokes and keyframes in this layer"));
+				bt = uiDefIconButBitS(
+				        block, UI_BTYPE_ICON_TOGGLE, GP_LAYER_LOCKED, 0, ICON_UNLOCKED,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
+				        UI_UNIT_Y, &gpl->flag, 0, 0, 0, 0,
+				        TIP_("Restrict/Allow editing of strokes and keyframes in this layer"));
 				UI_but_func_set(bt, restrictbutton_gp_layer_flag_cb, NULL, gpl);
 				UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
 				/* TODO: visibility in renders */
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 			else if (outliner_is_collection_tree_element(te)) {
 				LayerCollection *lc = (tselem->type == TSE_LAYER_COLLECTION) ? te->directdata : NULL;
 				Collection *collection = outliner_collection_from_tree_element(te);
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-
 				if ((!lc || !(lc->flag & LAYER_COLLECTION_EXCLUDE)) &&
 				    !(collection->flag & COLLECTION_IS_MASTER))
 				{
+					if (lc && (lc->runtime_flag & LAYER_COLLECTION_HAS_ENABLED_OBJECTS)) {
+						bt = uiDefIconButBitS(
+						        block, UI_BTYPE_ICON_TOGGLE_N, LAYER_COLLECTION_HAS_VISIBLE_OBJECTS, 0, ICON_HIDE_OFF,
+						        (int)(ar->v2d.cur.xmax - OL_TOG_HIDEX), te->ys, UI_UNIT_X,
+						        UI_UNIT_Y, &lc->runtime_flag, 0, 0, 0, 0,
+						        TIP_("Hide collection in viewport (Ctrl to isolate)"));
+						UI_but_func_set(bt, hidebutton_layer_collection_flag_cb, view_layer, lc);
+						UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
+					}
+
 					PointerRNA collection_ptr;
 					RNA_id_pointer_create(&collection->id, &collection_ptr);
 
-					bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_VIEW_OFF,
-					                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
-					                        UI_UNIT_Y, &collection_ptr, collection_prop_hide_viewport, -1, 0, 0, 0, 0, NULL);
+					bt = uiDefIconButR_prop(
+					        block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_VIEW_OFF,
+					        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X,
+					        UI_UNIT_Y, &collection_ptr, collection_prop_hide_viewport, -1, 0, 0, 0, 0, NULL);
 					UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-					bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_RENDER_OFF,
-					                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
-					                        UI_UNIT_Y, &collection_ptr, collection_prop_hide_render, -1, 0, 0, 0, 0, NULL);
+					bt = uiDefIconButR_prop(
+					        block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_RENDER_OFF,
+					        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X,
+					        UI_UNIT_Y, &collection_ptr, collection_prop_hide_render, -1, 0, 0, 0, 0, NULL);
 					UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 
-					bt = uiDefIconButR_prop(block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_SELECT_OFF,
-					                        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
-					                        UI_UNIT_Y, &collection_ptr, collection_prop_hide_select, -1, 0, 0, 0, 0, NULL);
+					bt = uiDefIconButR_prop(
+					        block, UI_BTYPE_ICON_TOGGLE, 0, ICON_RESTRICT_SELECT_OFF,
+					        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys, UI_UNIT_X,
+					        UI_UNIT_Y, &collection_ptr, collection_prop_hide_select, -1, 0, 0, 0, 0, NULL);
 					UI_but_flag_enable(bt, UI_BUT_DRAG_LOCK);
 				}
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 		}
 
-		if (TSELEM_OPEN(tselem, soops)) outliner_draw_restrictbuts(block, scene, ar, soops, &te->subtree);
+		if (TSELEM_OPEN(tselem, soops)) {
+			outliner_draw_restrictbuts(block, scene, view_layer, ar, soops, &te->subtree);
+		}
 	}
 }
 
 static void outliner_draw_userbuts(uiBlock *block, ARegion *ar, SpaceOops *soops, ListBase *lb)
 {
-	uiBut *bt;
-	TreeElement *te;
-	TreeStoreElem *tselem;
 
-	for (te = lb->first; te; te = te->next) {
-		tselem = TREESTORE(te);
+	for (TreeElement *te = lb->first; te; te = te->next) {
+		TreeStoreElem *tselem = TREESTORE(te);
 		if (te->ys + 2 * UI_UNIT_Y >= ar->v2d.cur.ymin && te->ys <= ar->v2d.cur.ymax) {
 			if (tselem->type == 0) {
+				uiBut *bt;
 				ID *id = tselem->id;
 				const char *tip = NULL;
 				int icon = ICON_NONE;
@@ -607,8 +697,6 @@ static void outliner_draw_userbuts(uiBlock *block, ARegion *ar, SpaceOops *soops
 				if (ID_IS_LINKED(id))
 					but_flag |= UI_BUT_DISABLED;
 
-				UI_block_emboss_set(block, UI_EMBOSS_NONE);
-
 				if (id->flag & LIB_FAKEUSER) {
 					icon = ICON_FILE_TICK;
 					tip  = TIP_("Data-block will be retained using a fake user");
@@ -617,34 +705,37 @@ static void outliner_draw_userbuts(uiBlock *block, ARegion *ar, SpaceOops *soops
 					icon = ICON_X;
 					tip  = TIP_("Data-block has no users and will be deleted");
 				}
-				bt = uiDefIconButBitS(block, UI_BTYPE_TOGGLE, LIB_FAKEUSER, 1, icon,
-				                      (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X, UI_UNIT_Y,
-				                      &id->flag, 0, 0, 0, 0, tip);
+				bt = uiDefIconButBitS(
+				        block, UI_BTYPE_TOGGLE, LIB_FAKEUSER, 1, icon,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), te->ys, UI_UNIT_X, UI_UNIT_Y,
+				        &id->flag, 0, 0, 0, 0, tip);
 				UI_but_func_set(bt, restrictbutton_id_user_toggle, id, NULL);
 				UI_but_flag_enable(bt, but_flag);
 
 
 				BLI_str_format_int_grouped(buf, id->us);
-				bt = uiDefBut(block, UI_BTYPE_BUT, 1, buf,
-				              (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys,
-				              UI_UNIT_X, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0,
-				              TIP_("Number of users of this data-block"));
+				bt = uiDefBut(
+				        block, UI_BTYPE_BUT, 1, buf,
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_SELECTX), te->ys,
+				        UI_UNIT_X, UI_UNIT_Y, NULL, 0.0, 0.0, 0, 0,
+				        TIP_("Number of users of this data-block"));
 				UI_but_flag_enable(bt, but_flag);
 
 
-				bt = uiDefButBitS(block, UI_BTYPE_TOGGLE, LIB_FAKEUSER, 1, (id->flag & LIB_FAKEUSER) ? "F" : " ",
-				                  (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X, UI_UNIT_Y,
-				                  &id->flag, 0, 0, 0, 0,
-				                  TIP_("Data-block has a 'fake' user which will keep it in the file "
-				                       "even if nothing else uses it"));
+				bt = uiDefButBitS(
+				        block, UI_BTYPE_TOGGLE, LIB_FAKEUSER, 1, (id->flag & LIB_FAKEUSER) ? "F" : " ",
+				        (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_RENDERX), te->ys, UI_UNIT_X, UI_UNIT_Y,
+				        &id->flag, 0, 0, 0, 0,
+				        TIP_("Data-block has a 'fake' user which will keep it in the file "
+				             "even if nothing else uses it"));
 				UI_but_func_set(bt, restrictbutton_id_user_toggle, id, NULL);
 				UI_but_flag_enable(bt, but_flag);
-
-				UI_block_emboss_set(block, UI_EMBOSS);
 			}
 		}
 
-		if (TSELEM_OPEN(tselem, soops)) outliner_draw_userbuts(block, ar, soops, &te->subtree);
+		if (TSELEM_OPEN(tselem, soops)) {
+			outliner_draw_userbuts(block, ar, soops, &te->subtree);
+		}
 	}
 }
 
@@ -655,13 +746,13 @@ static void outliner_draw_rnacols(ARegion *ar, int sizex)
 	float miny = v2d->cur.ymin;
 	if (miny < v2d->tot.ymin) miny = v2d->tot.ymin;
 
-	glLineWidth(1.0f);
+	GPU_line_width(1.0f);
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	immUniformThemeColorShadeAlpha(TH_BACK, -15, -200);
 
-	immBegin(GWN_PRIM_LINES, 4);
+	immBegin(GPU_PRIM_LINES, 4);
 
 	immVertex2f(pos, sizex, v2d->cur.ymax);
 	immVertex2f(pos, sizex, miny);
@@ -676,13 +767,11 @@ static void outliner_draw_rnacols(ARegion *ar, int sizex)
 
 static void outliner_draw_rnabuts(uiBlock *block, ARegion *ar, SpaceOops *soops, int sizex, ListBase *lb)
 {
-	TreeElement *te;
-	TreeStoreElem *tselem;
 	PointerRNA *ptr;
 	PropertyRNA *prop;
 
-	for (te = lb->first; te; te = te->next) {
-		tselem = TREESTORE(te);
+	for (TreeElement *te = lb->first; te; te = te->next) {
+		TreeStoreElem *tselem = TREESTORE(te);
 		if (te->ys + 2 * UI_UNIT_Y >= ar->v2d.cur.ymin && te->ys <= ar->v2d.cur.ymax) {
 			if (tselem->type == TSE_RNA_PROPERTY) {
 				ptr = &te->rnaptr;
@@ -690,17 +779,20 @@ static void outliner_draw_rnabuts(uiBlock *block, ARegion *ar, SpaceOops *soops,
 
 				if (!TSELEM_OPEN(tselem, soops)) {
 					if (RNA_property_type(prop) == PROP_POINTER) {
-						uiBut *but = uiDefAutoButR(block, ptr, prop, -1, "", ICON_NONE, sizex, te->ys,
-						                           OL_RNA_COL_SIZEX, UI_UNIT_Y - 1);
+						uiBut *but = uiDefAutoButR(
+						        block, ptr, prop, -1, "", ICON_NONE, sizex, te->ys,
+						        OL_RNA_COL_SIZEX, UI_UNIT_Y - 1);
 						UI_but_flag_enable(but, UI_BUT_DISABLED);
 					}
 					else if (RNA_property_type(prop) == PROP_ENUM) {
-						uiDefAutoButR(block, ptr, prop, -1, NULL, ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
-						              UI_UNIT_Y - 1);
+						uiDefAutoButR(
+						        block, ptr, prop, -1, NULL, ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
+						        UI_UNIT_Y - 1);
 					}
 					else {
-						uiDefAutoButR(block, ptr, prop, -1, "", ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
-						              UI_UNIT_Y - 1);
+						uiDefAutoButR(
+						        block, ptr, prop, -1, "", ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
+						        UI_UNIT_Y - 1);
 					}
 				}
 			}
@@ -708,15 +800,16 @@ static void outliner_draw_rnabuts(uiBlock *block, ARegion *ar, SpaceOops *soops,
 				ptr = &te->rnaptr;
 				prop = te->directdata;
 
-				uiDefAutoButR(block, ptr, prop, te->index, "", ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
-				              UI_UNIT_Y - 1);
+				uiDefAutoButR(
+				        block, ptr, prop, te->index, "", ICON_NONE, sizex, te->ys, OL_RNA_COL_SIZEX,
+				        UI_UNIT_Y - 1);
 			}
 		}
 
-		if (TSELEM_OPEN(tselem, soops)) outliner_draw_rnabuts(block, ar, soops, sizex, &te->subtree);
+		if (TSELEM_OPEN(tselem, soops)) {
+			outliner_draw_rnabuts(block, ar, soops, sizex, &te->subtree);
+		}
 	}
-
-	UI_block_emboss_set(block, UI_EMBOSS);
 }
 
 static void outliner_buttons(const bContext *C, uiBlock *block, ARegion *ar, TreeElement *te)
@@ -740,8 +833,9 @@ static void outliner_buttons(const bContext *C, uiBlock *block, ARegion *ar, Tre
 	spx = te->xs + 1.8f * UI_UNIT_X;
 	dx = ar->v2d.cur.xmax - (spx + 3.2f * UI_UNIT_X);
 
-	bt = uiDefBut(block, UI_BTYPE_TEXT, OL_NAMEBUTTON, "", spx, te->ys, dx, UI_UNIT_Y - 1, (void *)te->name,
-	              1.0, (float)len, 0, 0, "");
+	bt = uiDefBut(
+	        block, UI_BTYPE_TEXT, OL_NAMEBUTTON, "", spx, te->ys, dx, UI_UNIT_Y - 1, (void *)te->name,
+	        1.0, (float)len, 0, 0, "");
 	UI_but_func_rename_set(bt, namebutton_cb, tselem);
 
 	/* returns false if button got removed */
@@ -756,387 +850,385 @@ static void outliner_buttons(const bContext *C, uiBlock *block, ARegion *ar, Tre
 /* ****************************************************** */
 /* Normal Drawing... */
 
-/* make function calls a bit compacter */
-struct DrawIconArg {
-	uiBlock *block;
-	ID *id;
-	float xmax, x, y, xb, yb;
-	float alpha;
-};
-
-static void tselem_draw_icon_uibut(struct DrawIconArg *arg, int icon)
+TreeElementIcon tree_element_get_icon(TreeStoreElem *tselem, TreeElement *te)
 {
-	/* restrict column clip... it has been coded by simply overdrawing, doesnt work for buttons */
-	if (arg->x >= arg->xmax) {
-		glEnable(GL_BLEND);
-		UI_icon_draw_alpha(arg->x, arg->y, icon, arg->alpha);
-		glDisable(GL_BLEND);
-	}
-	else {
-		uiBut *but = uiDefIconBut(arg->block, UI_BTYPE_LABEL, 0, icon, arg->xb, arg->yb, UI_UNIT_X, UI_UNIT_Y, NULL,
-		                          0.0, 0.0, 1.0, arg->alpha,
-		                          (arg->id && ID_IS_LINKED(arg->id)) ? arg->id->lib->name : "");
-
-		if (arg->id)
-			UI_but_drag_set_id(but, arg->id);
-	}
-
-}
-
-static void UNUSED_FUNCTION(tselem_draw_gp_icon_uibut)(struct DrawIconArg *arg, ID *id, bGPDlayer *gpl)
-{
-	/* restrict column clip - skip it for now... */
-	if (arg->x >= arg->xmax) {
-		/* pass */
-	}
-	else {
-		PointerRNA ptr;
-		const float eps = 0.001f;
-		const bool is_stroke_visible = (gpl->color[3] > eps);
-		const bool is_fill_visible = (gpl->fill[3] > eps);
-		float w = 0.5f  * UI_UNIT_X;
-		float h = 0.85f * UI_UNIT_Y;
-
-		RNA_pointer_create(id, &RNA_GPencilLayer, gpl, &ptr);
-
-		UI_block_align_begin(arg->block);
-
-		UI_block_emboss_set(arg->block, is_stroke_visible ? UI_EMBOSS : UI_EMBOSS_NONE);
-		uiDefButR(arg->block, UI_BTYPE_COLOR, 1, "", arg->xb, arg->yb, w, h,
-		          &ptr, "color", -1,
-		          0, 0, 0, 0, NULL);
-
-		UI_block_emboss_set(arg->block, is_fill_visible ? UI_EMBOSS : UI_EMBOSS_NONE);
-		uiDefButR(arg->block, UI_BTYPE_COLOR, 1, "", arg->xb + w, arg->yb, w, h,
-		          &ptr, "fill_color", -1,
-		          0, 0, 0, 0, NULL);
-
-		UI_block_emboss_set(arg->block, UI_EMBOSS_NONE);
-		UI_block_align_end(arg->block);
-	}
-}
-
-static void tselem_draw_icon(uiBlock *block, int xmax, float x, float y, TreeStoreElem *tselem, TreeElement *te,
-                             float alpha)
-{
-	struct DrawIconArg arg;
-	float aspect;
-
-	/* make function calls a bit compacter */
-	arg.block = block;
-	arg.id = tselem->id;
-	arg.xmax = xmax;
-	arg.xb = x;	/* for ui buttons */
-	arg.yb = y;
-	arg.alpha = alpha;
-
-	/* placement of icons, copied from interface_widgets.c */
-	aspect = (0.8f * UI_UNIT_Y) / ICON_DEFAULT_HEIGHT;
-	x += 2.0f * aspect;
-	y += 2.0f * aspect;
-	arg.x = x;
-	arg.y = y;
-
-#define ICON_DRAW(_icon) UI_icon_draw_alpha(x, y, _icon, alpha)
+	TreeElementIcon data = {0};
 
 	if (tselem->type) {
 		switch (tselem->type) {
 			case TSE_ANIM_DATA:
-				ICON_DRAW(ICON_ANIM_DATA); /* XXX */
+				data.icon = ICON_ANIM_DATA; /* XXX */
 				break;
 			case TSE_NLA:
-				ICON_DRAW(ICON_NLA);
+				data.icon = ICON_NLA;
 				break;
 			case TSE_NLA_TRACK:
-				ICON_DRAW(ICON_NLA); /* XXX */
+				data.icon = ICON_NLA; /* XXX */
 				break;
 			case TSE_NLA_ACTION:
-				ICON_DRAW(ICON_ACTION);
+				data.icon = ICON_ACTION;
 				break;
 			case TSE_DRIVER_BASE:
-				ICON_DRAW(ICON_DRIVER);
+				data.icon = ICON_DRIVER;
 				break;
 			case TSE_DEFGROUP_BASE:
-				ICON_DRAW(ICON_GROUP_VERTEX);
+				data.icon = ICON_GROUP_VERTEX;
 				break;
 			case TSE_BONE:
 			case TSE_EBONE:
-				ICON_DRAW(ICON_BONE_DATA);
+				data.icon = ICON_BONE_DATA;
 				break;
 			case TSE_CONSTRAINT_BASE:
-				ICON_DRAW(ICON_CONSTRAINT);
+				data.icon = ICON_CONSTRAINT;
 				break;
 			case TSE_MODIFIER_BASE:
-				ICON_DRAW(ICON_MODIFIER);
+				data.icon = ICON_MODIFIER;
 				break;
 			case TSE_LINKED_OB:
-				ICON_DRAW(ICON_OBJECT_DATA);
+				data.icon = ICON_OBJECT_DATA;
 				break;
 			case TSE_LINKED_PSYS:
-				ICON_DRAW(ICON_PARTICLES);
+				data.icon = ICON_PARTICLES;
 				break;
 			case TSE_MODIFIER:
 			{
 				Object *ob = (Object *)tselem->id;
-				ModifierData *md = BLI_findlink(&ob->modifiers, tselem->nr);
-				switch ((ModifierType)md->type) {
-					case eModifierType_Subsurf:
-						ICON_DRAW(ICON_MOD_SUBSURF);
-						break;
-					case eModifierType_Armature:
-						ICON_DRAW(ICON_MOD_ARMATURE);
-						break;
-					case eModifierType_Lattice:
-						ICON_DRAW(ICON_MOD_LATTICE);
-						break;
-					case eModifierType_Curve:
-						ICON_DRAW(ICON_MOD_CURVE);
-						break;
-					case eModifierType_Build:
-						ICON_DRAW(ICON_MOD_BUILD);
-						break;
-					case eModifierType_Mirror:
-						ICON_DRAW(ICON_MOD_MIRROR);
-						break;
-					case eModifierType_Decimate:
-						ICON_DRAW(ICON_MOD_DECIM);
-						break;
-					case eModifierType_Wave:
-						ICON_DRAW(ICON_MOD_WAVE);
-						break;
-					case eModifierType_Hook:
-						ICON_DRAW(ICON_HOOK);
-						break;
-					case eModifierType_Softbody:
-						ICON_DRAW(ICON_MOD_SOFT);
-						break;
-					case eModifierType_Boolean:
-						ICON_DRAW(ICON_MOD_BOOLEAN);
-						break;
-					case eModifierType_ParticleSystem:
-						ICON_DRAW(ICON_MOD_PARTICLES);
-						break;
-					case eModifierType_ParticleInstance:
-						ICON_DRAW(ICON_MOD_PARTICLES);
-						break;
-					case eModifierType_EdgeSplit:
-						ICON_DRAW(ICON_MOD_EDGESPLIT);
-						break;
-					case eModifierType_Array:
-						ICON_DRAW(ICON_MOD_ARRAY);
-						break;
-					case eModifierType_UVProject:
-					case eModifierType_UVWarp:  /* TODO, get own icon */
-						ICON_DRAW(ICON_MOD_UVPROJECT);
-						break;
-					case eModifierType_Displace:
-						ICON_DRAW(ICON_MOD_DISPLACE);
-						break;
-					case eModifierType_Shrinkwrap:
-						ICON_DRAW(ICON_MOD_SHRINKWRAP);
-						break;
-					case eModifierType_Cast:
-						ICON_DRAW(ICON_MOD_CAST);
-						break;
-					case eModifierType_MeshDeform:
-					case eModifierType_SurfaceDeform:
-						ICON_DRAW(ICON_MOD_MESHDEFORM);
-						break;
-					case eModifierType_Bevel:
-						ICON_DRAW(ICON_MOD_BEVEL);
-						break;
-					case eModifierType_Smooth:
-					case eModifierType_LaplacianSmooth:
-					case eModifierType_CorrectiveSmooth:
-						ICON_DRAW(ICON_MOD_SMOOTH);
-						break;
-					case eModifierType_SimpleDeform:
-						ICON_DRAW(ICON_MOD_SIMPLEDEFORM);
-						break;
-					case eModifierType_Mask:
-						ICON_DRAW(ICON_MOD_MASK);
-						break;
-					case eModifierType_Cloth:
-						ICON_DRAW(ICON_MOD_CLOTH);
-						break;
-					case eModifierType_Explode:
-						ICON_DRAW(ICON_MOD_EXPLODE);
-						break;
-					case eModifierType_Collision:
-					case eModifierType_Surface:
-						ICON_DRAW(ICON_MOD_PHYSICS);
-						break;
-					case eModifierType_Fluidsim:
-						ICON_DRAW(ICON_MOD_FLUIDSIM);
-						break;
-					case eModifierType_Multires:
-						ICON_DRAW(ICON_MOD_MULTIRES);
-						break;
-					case eModifierType_Smoke:
-						ICON_DRAW(ICON_MOD_SMOKE);
-						break;
-					case eModifierType_Solidify:
-						ICON_DRAW(ICON_MOD_SOLIDIFY);
-						break;
-					case eModifierType_Screw:
-						ICON_DRAW(ICON_MOD_SCREW);
-						break;
-					case eModifierType_Remesh:
-						ICON_DRAW(ICON_MOD_REMESH);
-						break;
-					case eModifierType_WeightVGEdit:
-					case eModifierType_WeightVGMix:
-					case eModifierType_WeightVGProximity:
-						ICON_DRAW(ICON_MOD_VERTEX_WEIGHT);
-						break;
-					case eModifierType_DynamicPaint:
-						ICON_DRAW(ICON_MOD_DYNAMICPAINT);
-						break;
-					case eModifierType_Ocean:
-						ICON_DRAW(ICON_MOD_OCEAN);
-						break;
-					case eModifierType_Warp:
-						ICON_DRAW(ICON_MOD_WARP);
-						break;
-					case eModifierType_Skin:
-						ICON_DRAW(ICON_MOD_SKIN);
-						break;
-					case eModifierType_Triangulate:
-						ICON_DRAW(ICON_MOD_TRIANGULATE);
-						break;
-					case eModifierType_MeshCache:
-						ICON_DRAW(ICON_MOD_MESHDEFORM); /* XXX, needs own icon */
-						break;
-					case eModifierType_MeshSequenceCache:
-						ICON_DRAW(ICON_MOD_MESHDEFORM); /* XXX, needs own icon */
-						break;
-					case eModifierType_Wireframe:
-						ICON_DRAW(ICON_MOD_WIREFRAME);
-						break;
-					case eModifierType_LaplacianDeform:
-						ICON_DRAW(ICON_MOD_MESHDEFORM); /* XXX, needs own icon */
-						break;
-					case eModifierType_DataTransfer:
-						ICON_DRAW(ICON_MOD_DATA_TRANSFER);
-						break;
-					case eModifierType_NormalEdit:
-						ICON_DRAW(ICON_MOD_NORMALEDIT);
-						break;
-					/* Default */
-					case eModifierType_None:
-					case eModifierType_ShapeKey:
-					case NUM_MODIFIER_TYPES:
-						ICON_DRAW(ICON_DOT);
-						break;
+				if (ob->type != OB_GPENCIL) {
+					ModifierData *md = BLI_findlink(&ob->modifiers, tselem->nr);
+					switch ((ModifierType)md->type) {
+						case eModifierType_Subsurf:
+							data.icon = ICON_MOD_SUBSURF;
+							break;
+						case eModifierType_Armature:
+							data.icon = ICON_MOD_ARMATURE;
+							break;
+						case eModifierType_Lattice:
+							data.icon = ICON_MOD_LATTICE;
+							break;
+						case eModifierType_Curve:
+							data.icon = ICON_MOD_CURVE;
+							break;
+						case eModifierType_Build:
+							data.icon = ICON_MOD_BUILD;
+							break;
+						case eModifierType_Mirror:
+							data.icon = ICON_MOD_MIRROR;
+							break;
+						case eModifierType_Decimate:
+							data.icon = ICON_MOD_DECIM;
+							break;
+						case eModifierType_Wave:
+							data.icon = ICON_MOD_WAVE;
+							break;
+						case eModifierType_Hook:
+							data.icon = ICON_HOOK;
+							break;
+						case eModifierType_Softbody:
+							data.icon = ICON_MOD_SOFT;
+							break;
+						case eModifierType_Boolean:
+							data.icon = ICON_MOD_BOOLEAN;
+							break;
+						case eModifierType_ParticleSystem:
+							data.icon = ICON_MOD_PARTICLES;
+							break;
+						case eModifierType_ParticleInstance:
+							data.icon = ICON_MOD_PARTICLES;
+							break;
+						case eModifierType_EdgeSplit:
+							data.icon = ICON_MOD_EDGESPLIT;
+							break;
+						case eModifierType_Array:
+							data.icon = ICON_MOD_ARRAY;
+							break;
+						case eModifierType_UVProject:
+						case eModifierType_UVWarp:  /* TODO, get own icon */
+							data.icon = ICON_MOD_UVPROJECT;
+							break;
+						case eModifierType_Displace:
+							data.icon = ICON_MOD_DISPLACE;
+							break;
+						case eModifierType_Shrinkwrap:
+							data.icon = ICON_MOD_SHRINKWRAP;
+							break;
+						case eModifierType_Cast:
+							data.icon = ICON_MOD_CAST;
+							break;
+						case eModifierType_MeshDeform:
+						case eModifierType_SurfaceDeform:
+							data.icon = ICON_MOD_MESHDEFORM;
+							break;
+						case eModifierType_Bevel:
+							data.icon = ICON_MOD_BEVEL;
+							break;
+						case eModifierType_Smooth:
+						case eModifierType_LaplacianSmooth:
+						case eModifierType_CorrectiveSmooth:
+							data.icon = ICON_MOD_SMOOTH;
+							break;
+						case eModifierType_SimpleDeform:
+							data.icon = ICON_MOD_SIMPLEDEFORM;
+							break;
+						case eModifierType_Mask:
+							data.icon = ICON_MOD_MASK;
+							break;
+						case eModifierType_Cloth:
+							data.icon = ICON_MOD_CLOTH;
+							break;
+						case eModifierType_Explode:
+							data.icon = ICON_MOD_EXPLODE;
+							break;
+						case eModifierType_Collision:
+						case eModifierType_Surface:
+							data.icon = ICON_MOD_PHYSICS;
+							break;
+						case eModifierType_Fluidsim:
+							data.icon = ICON_MOD_FLUIDSIM;
+							break;
+						case eModifierType_Multires:
+							data.icon = ICON_MOD_MULTIRES;
+							break;
+						case eModifierType_Smoke:
+							data.icon = ICON_MOD_SMOKE;
+							break;
+						case eModifierType_Solidify:
+							data.icon = ICON_MOD_SOLIDIFY;
+							break;
+						case eModifierType_Screw:
+							data.icon = ICON_MOD_SCREW;
+							break;
+						case eModifierType_Remesh:
+							data.icon = ICON_MOD_REMESH;
+							break;
+						case eModifierType_WeightVGEdit:
+						case eModifierType_WeightVGMix:
+						case eModifierType_WeightVGProximity:
+							data.icon = ICON_MOD_VERTEX_WEIGHT;
+							break;
+						case eModifierType_DynamicPaint:
+							data.icon = ICON_MOD_DYNAMICPAINT;
+							break;
+						case eModifierType_Ocean:
+							data.icon = ICON_MOD_OCEAN;
+							break;
+						case eModifierType_Warp:
+							data.icon = ICON_MOD_WARP;
+							break;
+						case eModifierType_Skin:
+							data.icon = ICON_MOD_SKIN;
+							break;
+						case eModifierType_Triangulate:
+							data.icon = ICON_MOD_TRIANGULATE;
+							break;
+						case eModifierType_MeshCache:
+							data.icon = ICON_MOD_MESHDEFORM; /* XXX, needs own icon */
+							break;
+						case eModifierType_MeshSequenceCache:
+							data.icon = ICON_MOD_MESHDEFORM; /* XXX, needs own icon */
+							break;
+						case eModifierType_Wireframe:
+							data.icon = ICON_MOD_WIREFRAME;
+							break;
+						case eModifierType_LaplacianDeform:
+							data.icon = ICON_MOD_MESHDEFORM; /* XXX, needs own icon */
+							break;
+						case eModifierType_DataTransfer:
+							data.icon = ICON_MOD_DATA_TRANSFER;
+							break;
+						case eModifierType_NormalEdit:
+						case eModifierType_WeightedNormal:
+							data.icon = ICON_MOD_NORMALEDIT;
+							break;
+							/* Default */
+						case eModifierType_None:
+						case eModifierType_ShapeKey:
+
+						case NUM_MODIFIER_TYPES:
+							data.icon = ICON_DOT;
+							break;
+					}
+				}
+				else {
+					/* grease pencil modifiers */
+					GpencilModifierData *md = BLI_findlink(&ob->greasepencil_modifiers, tselem->nr);
+					switch ((GpencilModifierType)md->type) {
+						case eGpencilModifierType_Noise:
+							data.icon = ICON_RNDCURVE;
+							break;
+						case eGpencilModifierType_Subdiv:
+							data.icon = ICON_MOD_SUBSURF;
+							break;
+						case eGpencilModifierType_Thick:
+							data.icon = ICON_MAN_ROT;
+							break;
+						case eGpencilModifierType_Tint:
+							data.icon = ICON_COLOR;
+							break;
+						case eGpencilModifierType_Instance:
+							data.icon = ICON_MOD_ARRAY;
+							break;
+						case eGpencilModifierType_Build:
+							data.icon = ICON_MOD_BUILD;
+							break;
+						case eGpencilModifierType_Opacity:
+							data.icon = ICON_MOD_MASK;
+							break;
+						case eGpencilModifierType_Color:
+							data.icon = ICON_GROUP_VCOL;
+							break;
+						case eGpencilModifierType_Lattice:
+							data.icon = ICON_MOD_LATTICE;
+							break;
+						case eGpencilModifierType_Mirror:
+							data.icon = ICON_MOD_MIRROR;
+							break;
+						case eGpencilModifierType_Simplify:
+							data.icon = ICON_MOD_DECIM;
+							break;
+						case eGpencilModifierType_Smooth:
+							data.icon = ICON_MOD_SMOOTH;
+							break;
+						case eGpencilModifierType_Hook:
+							data.icon = ICON_HOOK;
+							break;
+						case eGpencilModifierType_Offset:
+							data.icon = ICON_MOD_DISPLACE;
+							break;
+
+							/* Default */
+						default:
+							data.icon = ICON_DOT;
+							break;
+					}
 				}
 				break;
 			}
 			case TSE_POSE_BASE:
-				ICON_DRAW(ICON_ARMATURE_DATA);
+				data.icon = ICON_ARMATURE_DATA;
 				break;
 			case TSE_POSE_CHANNEL:
-				ICON_DRAW(ICON_BONE_DATA);
+				data.icon = ICON_BONE_DATA;
 				break;
 			case TSE_PROXY:
-				ICON_DRAW(ICON_GHOST);
+				data.icon = ICON_GHOST;
 				break;
 			case TSE_R_LAYER_BASE:
-				ICON_DRAW(ICON_RENDERLAYERS);
+				data.icon = ICON_RENDERLAYERS;
 				break;
 			case TSE_SCENE_OBJECTS_BASE:
-				ICON_DRAW(ICON_OUTLINER_OB_GROUP_INSTANCE);
+				data.icon = ICON_OUTLINER_OB_GROUP_INSTANCE;
 				break;
 			case TSE_R_LAYER:
-				ICON_DRAW(ICON_RENDER_RESULT);
+				data.icon = ICON_RENDER_RESULT;
 				break;
 			case TSE_LINKED_LAMP:
-				ICON_DRAW(ICON_LAMP_DATA);
+				data.icon = ICON_LIGHT_DATA;
 				break;
 			case TSE_LINKED_MAT:
-				ICON_DRAW(ICON_MATERIAL_DATA);
+				data.icon = ICON_MATERIAL_DATA;
 				break;
 			case TSE_POSEGRP_BASE:
-				ICON_DRAW(ICON_GROUP_BONE);
+				data.icon = ICON_GROUP_BONE;
 				break;
 			case TSE_SEQUENCE:
 				if (te->idcode == SEQ_TYPE_MOVIE)
-					ICON_DRAW(ICON_SEQUENCE);
+					data.icon = ICON_SEQUENCE;
 				else if (te->idcode == SEQ_TYPE_META)
-					ICON_DRAW(ICON_DOT);
+					data.icon = ICON_DOT;
 				else if (te->idcode == SEQ_TYPE_SCENE)
-					ICON_DRAW(ICON_SCENE);
+					data.icon = ICON_SCENE;
 				else if (te->idcode == SEQ_TYPE_SOUND_RAM)
-					ICON_DRAW(ICON_SOUND);
+					data.icon = ICON_SOUND;
 				else if (te->idcode == SEQ_TYPE_IMAGE)
-					ICON_DRAW(ICON_IMAGE_COL);
+					data.icon = ICON_IMAGE_COL;
 				else
-					ICON_DRAW(ICON_PARTICLES);
+					data.icon = ICON_PARTICLES;
 				break;
 			case TSE_SEQ_STRIP:
-				ICON_DRAW(ICON_LIBRARY_DATA_DIRECT);
+				data.icon = ICON_LIBRARY_DATA_DIRECT;
 				break;
 			case TSE_SEQUENCE_DUP:
-				ICON_DRAW(ICON_OBJECT_DATA);
+				data.icon = ICON_OBJECT_DATA;
 				break;
 			case TSE_RNA_STRUCT:
 				if (RNA_struct_is_ID(te->rnaptr.type)) {
-					arg.id = (ID *)te->rnaptr.data;
-					tselem_draw_icon_uibut(&arg, RNA_struct_ui_icon(te->rnaptr.type));
+					data.drag_id = (ID *)te->rnaptr.data;
+					data.icon = RNA_struct_ui_icon(te->rnaptr.type);
 				}
 				else {
-					int icon = RNA_struct_ui_icon(te->rnaptr.type);
-					ICON_DRAW(icon);
+					data.icon = RNA_struct_ui_icon(te->rnaptr.type);
 				}
 				break;
 			case TSE_LAYER_COLLECTION:
 			case TSE_SCENE_COLLECTION_BASE:
 			case TSE_VIEW_COLLECTION_BASE:
-				ICON_DRAW(ICON_GROUP);
+			{
+				Collection *collection = outliner_collection_from_tree_element(te);
+				if (collection && !(collection->flag & COLLECTION_IS_MASTER)) {
+					data.drag_id = tselem->id;
+					data.drag_parent = (data.drag_id && te->parent) ? TREESTORE(te->parent)->id : NULL;
+				}
+
+				data.icon = ICON_GROUP;
 				break;
+			}
 			/* Removed the icons from outliner. Need a better structure with Layers, Palettes and Colors */
-#if 0
 			case TSE_GP_LAYER:
-				tselem_draw_gp_icon_uibut(&arg, tselem->id, te->directdata);
+			{
+				/* indicate whether layer is active */
+				bGPDlayer *gpl = te->directdata;
+				if (gpl->flag & GP_LAYER_ACTIVE) {
+					data.icon = ICON_GREASEPENCIL;
+				}
+				else {
+					data.icon = ICON_DOT;
+				}
 				break;
-#endif
+			}
 			default:
-				ICON_DRAW(ICON_DOT);
+				data.icon = ICON_DOT;
 				break;
 		}
 	}
 	else if (tselem->id) {
+		data.drag_id = tselem->id;
+		data.drag_parent = (data.drag_id && te->parent) ? TREESTORE(te->parent)->id : NULL;
+
 		if (GS(tselem->id->name) == ID_OB) {
 			Object *ob = (Object *)tselem->id;
 			switch (ob->type) {
 				case OB_LAMP:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_LAMP); break;
+					data.icon = ICON_OUTLINER_OB_LIGHT; break;
 				case OB_MESH:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_MESH); break;
+					data.icon = ICON_OUTLINER_OB_MESH; break;
 				case OB_CAMERA:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_CAMERA); break;
+					data.icon = ICON_OUTLINER_OB_CAMERA; break;
 				case OB_CURVE:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_CURVE); break;
+					data.icon = ICON_OUTLINER_OB_CURVE; break;
 				case OB_MBALL:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_META); break;
+					data.icon = ICON_OUTLINER_OB_META; break;
 				case OB_LATTICE:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_LATTICE); break;
+					data.icon = ICON_OUTLINER_OB_LATTICE; break;
 				case OB_ARMATURE:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_ARMATURE); break;
+					data.icon = ICON_OUTLINER_OB_ARMATURE; break;
 				case OB_FONT:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_FONT); break;
+					data.icon = ICON_OUTLINER_OB_FONT; break;
 				case OB_SURF:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_SURFACE); break;
+					data.icon = ICON_OUTLINER_OB_SURFACE; break;
 				case OB_SPEAKER:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_SPEAKER); break;
+					data.icon = ICON_OUTLINER_OB_SPEAKER; break;
 				case OB_LIGHTPROBE:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_LIGHTPROBE); break;
+					data.icon = ICON_OUTLINER_OB_LIGHTPROBE; break;
 				case OB_EMPTY:
 					if (ob->dup_group) {
-						tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_GROUP_INSTANCE);
+						data.icon = ICON_OUTLINER_OB_GROUP_INSTANCE;
 					}
 					else {
-						tselem_draw_icon_uibut(&arg, ICON_OUTLINER_OB_EMPTY);
+						data.icon = ICON_OUTLINER_OB_EMPTY;
 					}
+					break;
+				case OB_GPENCIL:
+					data.icon = ICON_OUTLINER_OB_GREASEPENCIL; break;
 					break;
 			}
 		}
@@ -1146,118 +1238,257 @@ static void tselem_draw_icon(uiBlock *block, int xmax, float x, float y, TreeSto
 			 */
 			switch ((short)GS(tselem->id->name)) {
 				case ID_SCE:
-					tselem_draw_icon_uibut(&arg, ICON_SCENE_DATA); break;
+					data.icon = ICON_SCENE_DATA; break;
 				case ID_ME:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_MESH); break;
+					data.icon = ICON_OUTLINER_DATA_MESH; break;
 				case ID_CU:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_CURVE); break;
+					data.icon = ICON_OUTLINER_DATA_CURVE; break;
 				case ID_MB:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_META); break;
+					data.icon = ICON_OUTLINER_DATA_META; break;
 				case ID_LT:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_LATTICE); break;
+					data.icon = ICON_OUTLINER_DATA_LATTICE; break;
 				case ID_LA:
 				{
 					Lamp *la = (Lamp *)tselem->id;
 					switch (la->type) {
 						case LA_LOCAL:
-							tselem_draw_icon_uibut(&arg, ICON_LAMP_POINT); break;
+							data.icon = ICON_LIGHT_POINT; break;
 						case LA_SUN:
-							tselem_draw_icon_uibut(&arg, ICON_LAMP_SUN); break;
+							data.icon = ICON_LIGHT_SUN; break;
 						case LA_SPOT:
-							tselem_draw_icon_uibut(&arg, ICON_LAMP_SPOT); break;
+							data.icon = ICON_LIGHT_SPOT; break;
 						case LA_HEMI:
-							tselem_draw_icon_uibut(&arg, ICON_LAMP_HEMI); break;
+							data.icon = ICON_LIGHT_HEMI; break;
 						case LA_AREA:
-							tselem_draw_icon_uibut(&arg, ICON_LAMP_AREA); break;
+							data.icon = ICON_LIGHT_AREA; break;
 						default:
-							tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_LAMP); break;
+							data.icon = ICON_OUTLINER_DATA_LIGHT; break;
 					}
 					break;
 				}
 				case ID_MA:
-					tselem_draw_icon_uibut(&arg, ICON_MATERIAL_DATA); break;
+					data.icon = ICON_MATERIAL_DATA; break;
 				case ID_TE:
-					tselem_draw_icon_uibut(&arg, ICON_TEXTURE_DATA); break;
+					data.icon = ICON_TEXTURE_DATA; break;
 				case ID_IM:
-					tselem_draw_icon_uibut(&arg, ICON_IMAGE_DATA); break;
+					data.icon = ICON_IMAGE_DATA; break;
 				case ID_SPK:
 				case ID_SO:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_SPEAKER); break;
+					data.icon = ICON_OUTLINER_DATA_SPEAKER; break;
 				case ID_AR:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_ARMATURE); break;
+					data.icon = ICON_OUTLINER_DATA_ARMATURE; break;
 				case ID_CA:
-					tselem_draw_icon_uibut(&arg, ICON_OUTLINER_DATA_CAMERA); break;
+					data.icon = ICON_OUTLINER_DATA_CAMERA; break;
 				case ID_KE:
-					tselem_draw_icon_uibut(&arg, ICON_SHAPEKEY_DATA); break;
+					data.icon = ICON_SHAPEKEY_DATA; break;
 				case ID_WO:
-					tselem_draw_icon_uibut(&arg, ICON_WORLD_DATA); break;
+					data.icon = ICON_WORLD_DATA; break;
 				case ID_AC:
-					tselem_draw_icon_uibut(&arg, ICON_ACTION); break;
+					data.icon = ICON_ACTION; break;
 				case ID_NLA:
-					tselem_draw_icon_uibut(&arg, ICON_NLA); break;
+					data.icon = ICON_NLA; break;
 				case ID_TXT:
-					tselem_draw_icon_uibut(&arg, ICON_SCRIPT); break;
+					data.icon = ICON_SCRIPT; break;
 				case ID_GR:
-					tselem_draw_icon_uibut(&arg, ICON_GROUP); break;
+					data.icon = ICON_GROUP; break;
 				case ID_LI:
 					if (tselem->id->tag & LIB_TAG_MISSING) {
-						tselem_draw_icon_uibut(&arg, ICON_LIBRARY_DATA_BROKEN);
+						data.icon = ICON_LIBRARY_DATA_BROKEN;
 					}
 					else if (((Library *)tselem->id)->parent) {
-						tselem_draw_icon_uibut(&arg, ICON_LIBRARY_DATA_INDIRECT);
+						data.icon = ICON_LIBRARY_DATA_INDIRECT;
 					}
 					else {
-						tselem_draw_icon_uibut(&arg, ICON_LIBRARY_DATA_DIRECT);
+						data.icon = ICON_LIBRARY_DATA_DIRECT;
 					}
 					break;
 				case ID_LS:
-					tselem_draw_icon_uibut(&arg, ICON_LINE_DATA); break;
+					data.icon = ICON_LINE_DATA; break;
 				case ID_GD:
-					tselem_draw_icon_uibut(&arg, ICON_GREASEPENCIL); break;
+					data.icon = ICON_OUTLINER_DATA_GREASEPENCIL; break;
 				case ID_LP:
 				{
 					LightProbe * lp = (LightProbe *)tselem->id;
 					switch (lp->type) {
 						case LIGHTPROBE_TYPE_CUBE:
-							tselem_draw_icon_uibut(&arg, ICON_LIGHTPROBE_CUBEMAP); break;
+							data.icon = ICON_LIGHTPROBE_CUBEMAP; break;
 						case LIGHTPROBE_TYPE_PLANAR:
-							tselem_draw_icon_uibut(&arg, ICON_LIGHTPROBE_PLANAR); break;
+							data.icon = ICON_LIGHTPROBE_PLANAR; break;
 						case LIGHTPROBE_TYPE_GRID:
-							tselem_draw_icon_uibut(&arg, ICON_LIGHTPROBE_GRID); break;
+							data.icon = ICON_LIGHTPROBE_GRID; break;
 						default:
-							tselem_draw_icon_uibut(&arg, ICON_LIGHTPROBE_CUBEMAP); break;
+							data.icon = ICON_LIGHTPROBE_CUBEMAP; break;
 					}
 					break;
 				}
 				case ID_BR:
-					tselem_draw_icon_uibut(&arg, ICON_BRUSH_DATA); break;
+					data.icon = ICON_BRUSH_DATA; break;
 				case ID_SCR:
 				case ID_WS:
-					tselem_draw_icon_uibut(&arg, ICON_SPLITSCREEN); break;
+					data.icon = ICON_SPLITSCREEN; break;
 				default:
 					break;
 			}
 		}
 	}
 
-#undef ICON_DRAW
+	return data;
 }
 
-static void outliner_draw_iconrow(
-        bContext *C, uiBlock *block, Scene *scene, ViewLayer *view_layer, SpaceOops *soops,
-        ListBase *lb, int level, int xmax, int *offsx, int ys, float alpha_fac)
+static void tselem_draw_icon(
+        uiBlock *block, int xmax, float x, float y, TreeStoreElem *tselem, TreeElement *te,
+        float alpha, const bool is_clickable)
 {
-	TreeElement *te;
-	TreeStoreElem *tselem;
+	TreeElementIcon data = tree_element_get_icon(tselem, te);
+
+	if (data.icon == 0) {
+		return;
+	}
+
+	if (!is_clickable || x >= xmax) {
+		/* placement of icons, copied from interface_widgets.c */
+		float aspect = (0.8f * UI_UNIT_Y) / ICON_DEFAULT_HEIGHT;
+		x += 2.0f * aspect;
+		y += 2.0f * aspect;
+
+		/* restrict column clip... it has been coded by simply overdrawing,
+		 * doesnt work for buttons */
+		UI_icon_draw_alpha(x, y, data.icon, alpha);
+	}
+	else {
+		uiDefIconBut(
+		        block, UI_BTYPE_LABEL, 0, data.icon, x, y, UI_UNIT_X, UI_UNIT_Y, NULL,
+		        0.0, 0.0, 1.0, alpha,
+		        (data.drag_id && ID_IS_LINKED(data.drag_id)) ? data.drag_id->lib->name : "");
+	}
+}
+
+/**
+ * For icon-only children of a collapsed tree,
+ * Draw small number over the icon to show how many items of this type are displayed.
+ */
+static void outliner_draw_iconrow_number(
+        const uiFontStyle *fstyle,
+        int offsx, int ys,
+        const int num_elements)
+{
+	float color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+	float ufac = 0.25f * UI_UNIT_X;
+	float offset_x = (float) offsx + UI_UNIT_X * 0.35f;
+
+	UI_draw_roundbox_corner_set(UI_CNR_ALL);
+	UI_draw_roundbox_aa(true,
+	                    offset_x + ufac,
+	                    (float)ys - UI_UNIT_Y * 0.2f + ufac,
+	                    offset_x + UI_UNIT_X - ufac,
+	                    (float)ys - UI_UNIT_Y * 0.2f + UI_UNIT_Y - ufac,
+	                    (float)UI_UNIT_Y / 2.0f - ufac,
+	                    color);
+
+	/* Now the numbers. */
+	unsigned char text_col[4];
+
+	UI_GetThemeColor4ubv(TH_TEXT_HI, text_col);
+	text_col[3] = 255;
+
+	uiFontStyle fstyle_small = *fstyle;
+	fstyle_small.points *= 0.8f;
+
+	/* We treat +99 as 4 digits to make sure the (eyeballed) alignment looks nice. */
+	int num_digits = 4;
+	char number_text[4] = "+99\0";
+	if (num_elements < 100) {
+		BLI_snprintf(number_text, sizeof(number_text), "%d", num_elements);
+		num_digits = num_elements < 10 ? 1 : 2;
+	}
+	UI_fontstyle_draw_simple(&fstyle_small,
+	                         (offset_x + ufac + UI_UNIT_X * (2 - num_digits) * 0.12f),
+	                         (float)ys - UI_UNIT_Y * 0.095f + ufac,
+	                         number_text, text_col);
+	UI_fontstyle_set(fstyle);
+	GPU_blend(true); /* Roundbox and text drawing disables. */
+}
+
+static void outliner_draw_iconrow_doit(
+        uiBlock *block, TreeElement *te,
+        const uiFontStyle *fstyle,
+        int xmax, int *offsx, int ys, float alpha_fac,
+        const eOLDrawState active,
+        const int num_elements)
+{
+	TreeStoreElem *tselem = TREESTORE(te);
+
+	if (active != OL_DRAWSEL_NONE) {
+		float ufac = UI_UNIT_X / 20.0f;
+		float color[4] = {1.0f, 1.0f, 1.0f, 0.4f};
+
+		UI_draw_roundbox_corner_set(UI_CNR_ALL);
+		color[3] *= alpha_fac;
+
+		UI_draw_roundbox_aa(true,
+		                    (float) *offsx + 1.0f * ufac,
+		                    (float)ys + 1.0f * ufac,
+		                    (float)*offsx + UI_UNIT_X - 1.0f * ufac,
+		                    (float)ys + UI_UNIT_Y - ufac,
+		                    (float)UI_UNIT_Y / 2.0f - ufac,
+		                    color);
+		GPU_blend(true); /* Roundbox disables. */
+	}
+
+	/* No inlined icon should be clickable. */
+	tselem_draw_icon(block, xmax, (float)*offsx, (float)ys, tselem, te, 0.8f * alpha_fac, false);
+	te->xs = *offsx;
+	te->ys = ys;
+	te->xend = (short)*offsx + UI_UNIT_X;
+
+	if (num_elements > 1) {
+		outliner_draw_iconrow_number(fstyle, *offsx, ys, num_elements);
+	}
+	(*offsx) += UI_UNIT_X;
+}
+
+/**
+ * Return the index to use based on the TreeElement ID and object type
+ *
+ * We use a continuum of indeces until we get to the object datablocks
+ * and we then make room for the object types.
+ */
+static int tree_element_id_type_to_index(TreeElement *te)
+{
+	TreeStoreElem *tselem = TREESTORE(te);
+
+	const int id_index = tselem->type == 0 ? BKE_idcode_to_index(te->idcode) : INDEX_ID_GR;
+	if (id_index < INDEX_ID_OB) {
+		return id_index;
+	}
+	else if (id_index == INDEX_ID_OB) {
+		const Object *ob = (Object *)tselem->id;
+		return INDEX_ID_OB + ob->type;
+	}
+	else {
+		return id_index + OB_TYPE_MAX;
+	}
+}
+
+typedef struct MergedIconRow {
+	eOLDrawState active[INDEX_ID_MAX + OB_TYPE_MAX];
+	int num_elements[INDEX_ID_MAX + OB_TYPE_MAX];
+	TreeElement *tree_element[INDEX_ID_MAX + OB_TYPE_MAX];
+} MergedIconRow;
+
+static void outliner_draw_iconrow(
+        bContext *C, uiBlock *block, const uiFontStyle *fstyle, Scene *scene, ViewLayer *view_layer, SpaceOops *soops,
+        ListBase *lb, int level, int xmax, int *offsx, int ys, float alpha_fac, MergedIconRow *merged)
+{
 	eOLDrawState active;
 	const Object *obact = OBACT(view_layer);
 
-	for (te = lb->first; te; te = te->next) {
+	for (TreeElement *te = lb->first; te; te = te->next) {
 		/* exit drawing early */
 		if ((*offsx) - UI_UNIT_X > xmax)
 			break;
 
-		tselem = TREESTORE(te);
+		TreeStoreElem *tselem = TREESTORE(te);
 
 		/* object hierarchy always, further constrained on level */
 		if (level < 1 || (tselem->type == 0 && te->idcode == ID_OB)) {
@@ -1277,41 +1508,50 @@ static void outliner_draw_iconrow(
 				active = tree_element_type_active(C, scene, view_layer, soops, te, tselem, OL_SETSEL_NONE, false);
 			}
 
-			if (active != OL_DRAWSEL_NONE) {
-				float ufac = UI_UNIT_X / 20.0f;
-				float color[4] = {1.0f, 1.0f, 1.0f, 0.4f};
-
-				UI_draw_roundbox_corner_set(UI_CNR_ALL);
-				color[3] *= alpha_fac;
-
-				UI_draw_roundbox_aa(
-				        true,
-				        (float) *offsx + 1.0f * ufac,
-				        (float)ys + 1.0f * ufac,
-				        (float)*offsx + UI_UNIT_X - 1.0f * ufac,
-				        (float)ys + UI_UNIT_Y - ufac,
-				        (float)UI_UNIT_Y / 2.0f - ufac,
-				        color);
-				glEnable(GL_BLEND); /* roundbox disables */
+			if (!ELEM(tselem->type, 0, TSE_LAYER_COLLECTION)) {
+				outliner_draw_iconrow_doit(block, te, fstyle, xmax, offsx, ys, alpha_fac, active, 1);
 			}
-
-			tselem_draw_icon(block, xmax, (float)*offsx, (float)ys, tselem, te, 0.5f * alpha_fac);
-			te->xs = *offsx;
-			te->ys = ys;
-			te->xend = (short)*offsx + UI_UNIT_X;
-			te->flag |= TE_ICONROW; // for click
-
-			(*offsx) += UI_UNIT_X;
+			else {
+				const int index = tree_element_id_type_to_index(te);
+				merged->num_elements[index]++;
+				if ((merged->tree_element[index] == NULL) ||
+				    (active > merged->active[index]))
+				{
+					merged->tree_element[index] = te;
+				}
+				merged->active[index] = MAX2(active, merged->active[index]);
+			}
 		}
 
 		/* this tree element always has same amount of branches, so don't draw */
 		if (tselem->type != TSE_R_LAYER) {
 			outliner_draw_iconrow(
-			        C, block, scene, view_layer, soops,
-			        &te->subtree, level + 1, xmax, offsx, ys, alpha_fac);
+			        C, block, fstyle, scene, view_layer, soops,
+			        &te->subtree, level + 1, xmax, offsx, ys, alpha_fac, merged);
 		}
 	}
 
+	if (level == 0) {
+		for (int i = 0; i < INDEX_ID_MAX; i++) {
+			const int num_subtypes = (i == INDEX_ID_OB) ? OB_TYPE_MAX : 1;
+			/* See tree_element_id_type_to_index for the index logic. */
+			int index_base = i;
+			if (i > INDEX_ID_OB) {
+				index_base += OB_TYPE_MAX;
+			}
+			for (int j = 0; j < num_subtypes; j++) {
+				const int index = index_base + j;
+				if (merged->num_elements[index] != 0) {
+					outliner_draw_iconrow_doit(block,
+					                           merged->tree_element[index],
+					                           fstyle,
+					                           xmax, offsx, ys, alpha_fac,
+					                           merged->active[index],
+					                           merged->num_elements[index]);
+				}
+			}
+		}
+	}
 }
 
 /* closed tree element */
@@ -1335,7 +1575,7 @@ static void outliner_set_coord_tree_element(TreeElement *te, int startx, int sta
 static void outliner_draw_tree_element(
         bContext *C, uiBlock *block, const uiFontStyle *fstyle, Scene *scene, ViewLayer *view_layer,
         ARegion *ar, SpaceOops *soops, TreeElement *te, bool draw_grayed_out,
-        int startx, int *starty, TreeElement **te_edit, TreeElement **te_floating)
+        int startx, int *starty, TreeElement **te_edit)
 {
 	TreeStoreElem *tselem;
 	float ufac = UI_UNIT_X / 20.0f;
@@ -1352,15 +1592,12 @@ static void outliner_draw_tree_element(
 		if ((tselem->flag & TSE_TEXTBUT) && (*te_edit == NULL)) {
 			*te_edit = te;
 		}
-		if ((te->drag_data != NULL) && (*te_floating == NULL)) {
-			*te_floating = te;
-		}
 
 		/* icons can be ui buts, we don't want it to overlap with restrict */
 		if ((soops->flag & SO_HIDE_RESTRICTCOLS) == 0)
 			xmax -= OL_TOGW + UI_UNIT_X;
 
-		glEnable(GL_BLEND);
+		GPU_blend(true);
 
 		/* colors for active/selected data */
 		if (tselem->type == 0) {
@@ -1423,7 +1660,7 @@ static void outliner_draw_tree_element(
 			        (float)startx + 2.0f * UI_UNIT_X - 1.0f * ufac,
 			        (float)*starty + UI_UNIT_Y - 1.0f * ufac,
 			        UI_UNIT_Y / 2.0f - 1.0f * ufac, color);
-			glEnable(GL_BLEND); /* roundbox disables it */
+			GPU_blend(true); /* roundbox disables it */
 
 			te->flag |= TE_ACTIVE; // for lookup in display hierarchies
 		}
@@ -1436,19 +1673,23 @@ static void outliner_draw_tree_element(
 			int icon_x = startx;
 
 			// icons a bit higher
-			if (TSELEM_OPEN(tselem, soops))
-				UI_icon_draw_alpha((float)icon_x + 2 * ufac, (float)*starty + 1 * ufac, ICON_DISCLOSURE_TRI_DOWN,
-				                   alpha_fac);
-			else
-				UI_icon_draw_alpha((float)icon_x + 2 * ufac, (float)*starty + 1 * ufac, ICON_DISCLOSURE_TRI_RIGHT,
-				                   alpha_fac);
+			if (TSELEM_OPEN(tselem, soops)) {
+				UI_icon_draw_alpha(
+				        (float)icon_x + 2 * ufac, (float)*starty + 1 * ufac, ICON_DISCLOSURE_TRI_DOWN,
+				        alpha_fac);
+			}
+			else {
+				UI_icon_draw_alpha(
+				        (float)icon_x + 2 * ufac, (float)*starty + 1 * ufac, ICON_DISCLOSURE_TRI_RIGHT,
+				        alpha_fac);
+			}
 		}
 		offsx += UI_UNIT_X;
 
 		/* datatype icon */
 
 		if (!(ELEM(tselem->type, TSE_RNA_PROPERTY, TSE_RNA_ARRAY_ELEM, TSE_ID_BASE))) {
-			tselem_draw_icon(block, xmax, (float)startx + offsx, (float)*starty, tselem, te, alpha_fac);
+			tselem_draw_icon(block, xmax, (float)startx + offsx, (float)*starty, tselem, te, alpha_fac, true);
 			offsx += UI_UNIT_X + 2 * ufac;
 		}
 		else
@@ -1456,25 +1697,29 @@ static void outliner_draw_tree_element(
 
 		if (ELEM(tselem->type, 0, TSE_LAYER_COLLECTION) && ID_IS_LINKED(tselem->id)) {
 			if (tselem->id->tag & LIB_TAG_MISSING) {
-				UI_icon_draw_alpha((float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_BROKEN,
-				                   alpha_fac);
+				UI_icon_draw_alpha(
+				        (float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_BROKEN,
+				        alpha_fac);
 			}
 			else if (tselem->id->tag & LIB_TAG_INDIRECT) {
-				UI_icon_draw_alpha((float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_INDIRECT,
-				                   alpha_fac);
+				UI_icon_draw_alpha(
+				        (float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_INDIRECT,
+				        alpha_fac);
 			}
 			else {
-				UI_icon_draw_alpha((float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_DIRECT,
-				                   alpha_fac);
+				UI_icon_draw_alpha(
+				        (float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_DIRECT,
+				        alpha_fac);
 			}
 			offsx += UI_UNIT_X + 2 * ufac;
 		}
 		else if (ELEM(tselem->type, 0, TSE_LAYER_COLLECTION) && ID_IS_STATIC_OVERRIDE(tselem->id)) {
-			UI_icon_draw_alpha((float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_OVERRIDE,
-			                   alpha_fac);
+			UI_icon_draw_alpha(
+			        (float)startx + offsx + 2 * ufac, (float)*starty + 2 * ufac, ICON_LIBRARY_DATA_OVERRIDE,
+			        alpha_fac);
 			offsx += UI_UNIT_X + 2 * ufac;
 		}
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 
 		/* name */
 		if ((tselem->flag & TSE_TEXTBUT) == 0) {
@@ -1507,12 +1752,12 @@ static void outliner_draw_tree_element(
 				else if (tselem->type != TSE_R_LAYER) {
 					int tempx = startx + offsx;
 
-					glEnable(GL_BLEND);
+					GPU_blend(true);
 
 					/* divider */
 					{
-						Gwn_VertFormat *format = immVertexFormat();
-						unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+						GPUVertFormat *format = immVertexFormat();
+						uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 						unsigned char col[4];
 
 						immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
@@ -1527,11 +1772,12 @@ static void outliner_draw_tree_element(
 						immUnbindProgram();
 					}
 
+					MergedIconRow merged = {{0}};
 					outliner_draw_iconrow(
-					        C, block, scene, view_layer, soops, &te->subtree, 0, xmax, &tempx,
-					        *starty, alpha_fac);
+					        C, block, fstyle, scene, view_layer, soops, &te->subtree, 0, xmax, &tempx,
+					        *starty, alpha_fac, &merged);
 
-					glDisable(GL_BLEND);
+					GPU_blend(false);
 				}
 			}
 		}
@@ -1547,11 +1793,11 @@ static void outliner_draw_tree_element(
 		for (TreeElement *ten = te->subtree.first; ten; ten = ten->next) {
 			/* check if element needs to be drawn grayed out, but also gray out
 			 * childs of a grayed out parent (pass on draw_grayed_out to childs) */
-			bool draw_childs_grayed_out = draw_grayed_out || (ten->drag_data != NULL);
+			bool draw_childs_grayed_out = draw_grayed_out || (ten->flag & TE_DRAGGING);
 			outliner_draw_tree_element(
 			        C, block, fstyle, scene, view_layer,
 			        ar, soops, ten, draw_childs_grayed_out,
-			        startx + UI_UNIT_X, starty, te_edit, te_floating);
+			        startx + UI_UNIT_X, starty, te_edit);
 		}
 	}
 	else {
@@ -1563,60 +1809,12 @@ static void outliner_draw_tree_element(
 	}
 }
 
-static void outliner_draw_tree_element_floating(
-        const ARegion *ar, const TreeElement *te_floating)
-{
-	const TreeElement *te_insert = te_floating->drag_data->insert_handle;
-	const int line_width = 2;
-
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
-	int coord_y = te_insert->ys;
-	int coord_x = te_insert->xs;
-	float col[4];
-
-	if (te_insert == te_floating) {
-		/* don't draw anything */
-		return;
-	}
-
-	UI_GetThemeColorShade4fv(TH_BACK, -40, col);
-	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
-	glEnable(GL_BLEND);
-
-	if (ELEM(te_floating->drag_data->insert_type, TE_INSERT_BEFORE, TE_INSERT_AFTER)) {
-		if (te_floating->drag_data->insert_type == TE_INSERT_BEFORE) {
-			coord_y += UI_UNIT_Y;
-		}
-		immUniformColor4fv(col);
-		glLineWidth(line_width);
-
-		immBegin(GWN_PRIM_LINE_STRIP, 2);
-		immVertex2f(pos, coord_x, coord_y);
-		immVertex2f(pos, ar->v2d.cur.xmax, coord_y);
-		immEnd();
-	}
-	else {
-		BLI_assert(te_floating->drag_data->insert_type == TE_INSERT_INTO);
-		immUniformColor3fvAlpha(col, col[3] * 0.5f);
-
-		immBegin(GWN_PRIM_TRI_STRIP, 4);
-		immVertex2f(pos, coord_x, coord_y + UI_UNIT_Y);
-		immVertex2f(pos, coord_x, coord_y);
-		immVertex2f(pos, ar->v2d.cur.xmax, coord_y + UI_UNIT_Y);
-		immVertex2f(pos, ar->v2d.cur.xmax, coord_y);
-		immEnd();
-	}
-
-	glDisable(GL_BLEND);
-	immUnbindProgram();
-}
-
-static void outliner_draw_hierarchy_lines_recursive(unsigned pos, SpaceOops *soops, ListBase *lb, int startx,
-                                                    const unsigned char col[4], bool draw_grayed_out,
-                                                    int *starty)
+static void outliner_draw_hierarchy_lines_recursive(
+        unsigned pos, SpaceOops *soops, ListBase *lb, int startx,
+        const unsigned char col[4], bool draw_grayed_out,
+        int *starty)
 {
 	TreeElement *te, *te_vertical_line_last = NULL;
-	TreeStoreElem *tselem;
 	int y1, y2;
 
 	if (BLI_listbase_is_empty(lb)) {
@@ -1628,8 +1826,8 @@ static void outliner_draw_hierarchy_lines_recursive(unsigned pos, SpaceOops *soo
 	/* For vertical lines between objects. */
 	y1 = y2 = *starty;
 	for (te = lb->first; te; te = te->next) {
-		bool draw_childs_grayed_out = draw_grayed_out || (te->drag_data != NULL);
-		tselem = TREESTORE(te);
+		bool draw_childs_grayed_out = draw_grayed_out || (te->flag & TE_DRAGGING);
+		TreeStoreElem *tselem = TREESTORE(te);
 
 		if (draw_childs_grayed_out) {
 			immUniformColor3ubvAlpha(col, grayed_alpha);
@@ -1652,8 +1850,9 @@ static void outliner_draw_hierarchy_lines_recursive(unsigned pos, SpaceOops *soo
 		*starty -= UI_UNIT_Y;
 
 		if (TSELEM_OPEN(tselem, soops))
-			outliner_draw_hierarchy_lines_recursive(pos, soops, &te->subtree, startx + UI_UNIT_X,
-			                                        col, draw_childs_grayed_out, starty);
+			outliner_draw_hierarchy_lines_recursive(
+			        pos, soops, &te->subtree, startx + UI_UNIT_X,
+			        col, draw_childs_grayed_out, starty);
 	}
 
 	if (draw_grayed_out) {
@@ -1672,50 +1871,48 @@ static void outliner_draw_hierarchy_lines_recursive(unsigned pos, SpaceOops *soo
 
 static void outliner_draw_hierarchy_lines(SpaceOops *soops, ListBase *lb, int startx, int *starty)
 {
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 	unsigned char col[4];
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	UI_GetThemeColorBlend3ubv(TH_BACK, TH_TEXT, 0.4f, col);
 	col[3] = 255;
 
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 	outliner_draw_hierarchy_lines_recursive(pos, soops, lb, startx, col, false, starty);
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	immUnbindProgram();
 }
 
 static void outliner_draw_struct_marks(ARegion *ar, SpaceOops *soops, ListBase *lb, int *starty)
 {
-	TreeElement *te;
-	TreeStoreElem *tselem;
-
-	for (te = lb->first; te; te = te->next) {
-		tselem = TREESTORE(te);
+	for (TreeElement *te = lb->first; te; te = te->next) {
+		TreeStoreElem *tselem = TREESTORE(te);
 
 		/* selection status */
-		if (TSELEM_OPEN(tselem, soops))
+		if (TSELEM_OPEN(tselem, soops)) {
 			if (tselem->type == TSE_RNA_STRUCT) {
-				Gwn_VertFormat *format = immVertexFormat();
-				unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+				GPUVertFormat *format = immVertexFormat();
+				uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 				immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 				immThemeColorShadeAlpha(TH_BACK, -15, -200);
 				immRecti(pos, 0, *starty + 1, (int)ar->v2d.cur.xmax, *starty + UI_UNIT_Y - 1);
 				immUnbindProgram();
 			}
+		}
 
 		*starty -= UI_UNIT_Y;
 		if (TSELEM_OPEN(tselem, soops)) {
 			outliner_draw_struct_marks(ar, soops, &te->subtree, starty);
 			if (tselem->type == TSE_RNA_STRUCT) {
-				Gwn_VertFormat *format = immVertexFormat();
-				unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+				GPUVertFormat *format = immVertexFormat();
+				uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 				immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 				immThemeColorShadeAlpha(TH_BACK, -15, -200);
 
-				immBegin(GWN_PRIM_LINES, 2);
+				immBegin(GPU_PRIM_LINES, 2);
 				immVertex2f(pos, 0, (float)*starty + UI_UNIT_Y);
 				immVertex2f(pos, ar->v2d.cur.xmax, (float)*starty + UI_UNIT_Y);
 				immEnd();
@@ -1731,10 +1928,10 @@ static void outliner_draw_highlights_recursive(
         const float col_selection[4], const float col_highlight[4], const float col_searchmatch[4],
         int start_x, int *io_start_y)
 {
-	const bool is_searching = SEARCHING_OUTLINER(soops) ||
-	                          (soops->outlinevis == SO_DATA_API &&
-	                           (soops->filter & SO_FILTER_SEARCH) &&
-	                           soops->search_string[0] != 0);
+	const bool is_searching = (
+	        SEARCHING_OUTLINER(soops) ||
+	        (soops->outlinevis == SO_DATA_API &&
+	         soops->search_string[0] != 0));
 
 	for (TreeElement *te = lb->first; te; te = te->next) {
 		const TreeStoreElem *tselem = TREESTORE(te);
@@ -1746,18 +1943,42 @@ static void outliner_draw_highlights_recursive(
 			immRecti(pos, 0, start_y + 1, (int)ar->v2d.cur.xmax, start_y + UI_UNIT_Y - 1);
 		}
 
-		/* search match highlights
-		 *   we don't expand items when searching in the datablocks but we
-		 *   still want to highlight any filter matches. */
-		if (is_searching && (tselem->flag & TSE_SEARCHMATCH)) {
-			immUniformColor4fv(col_searchmatch);
-			immRecti(pos, start_x, start_y + 1, ar->v2d.cur.xmax, start_y + UI_UNIT_Y - 1);
-		}
+		/* highlights */
+		if (tselem->flag & (TSE_DRAG_ANY | TSE_HIGHLIGHTED | TSE_SEARCHMATCH)) {
+			const int end_x = (int)ar->v2d.cur.xmax;
 
-		/* mouse hover highlights */
-		if ((tselem->flag & TSE_HIGHLIGHTED) || (te->drag_data != NULL)) {
-			immUniformColor4fv(col_highlight);
-			immRecti(pos, 0, start_y + 1, (int)ar->v2d.cur.xmax, start_y + UI_UNIT_Y - 1);
+			if (tselem->flag & TSE_DRAG_ANY) {
+				/* drag and drop highlight */
+				float col[4];
+				UI_GetThemeColorShade4fv(TH_BACK, -40, col);
+
+				if (tselem->flag & TSE_DRAG_BEFORE) {
+					immUniformColor4fv(col);
+					immRecti(pos, start_x, start_y + UI_UNIT_Y - 1, end_x, start_y + UI_UNIT_Y + 1);
+				}
+				else if (tselem->flag & TSE_DRAG_AFTER) {
+					immUniformColor4fv(col);
+					immRecti(pos, start_x, start_y - 1, end_x, start_y + 1);
+				}
+				else {
+					immUniformColor3fvAlpha(col, col[3] * 0.5f);
+					immRecti(pos, start_x, start_y + 1, end_x, start_y + UI_UNIT_Y - 1);
+				}
+			}
+			else {
+				if (is_searching && (tselem->flag & TSE_SEARCHMATCH)) {
+					/* search match highlights
+					 *   we don't expand items when searching in the datablocks but we
+					 *   still want to highlight any filter matches. */
+					immUniformColor4fv(col_searchmatch);
+					immRecti(pos, start_x, start_y + 1, end_x, start_y + UI_UNIT_Y - 1);
+				}
+				else if (tselem->flag & TSE_HIGHLIGHTED) {
+					/* mouse hover highlight */
+					immUniformColor4fv(col_highlight);
+					immRecti(pos, 0, start_y + 1, end_x, start_y + UI_UNIT_Y - 1);
+				}
+			}
 		}
 
 		*io_start_y -= UI_UNIT_Y;
@@ -1779,14 +2000,15 @@ static void outliner_draw_highlights(ARegion *ar, SpaceOops *soops, int startx, 
 	UI_GetThemeColor4fv(TH_MATCH, col_searchmatch);
 	col_searchmatch[3] = 0.5f;
 
-	glEnable(GL_BLEND);
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+	GPU_blend(true);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
-	outliner_draw_highlights_recursive(pos, ar, soops, &soops->tree, col_selection, col_highlight, col_searchmatch,
-	                                   startx, starty);
+	outliner_draw_highlights_recursive(
+	        pos, ar, soops, &soops->tree, col_selection, col_highlight, col_searchmatch,
+	        startx, starty);
 	immUnbindProgram();
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 }
 
 static void outliner_draw_tree(
@@ -1795,10 +2017,9 @@ static void outliner_draw_tree(
         TreeElement **te_edit)
 {
 	const uiFontStyle *fstyle = UI_FSTYLE_WIDGET;
-	TreeElement *te_floating = NULL;
 	int starty, startx;
 
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // only once
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA); // only once
 
 	if (soops->outlinevis == SO_DATA_API) {
 		/* struct marks */
@@ -1812,13 +2033,13 @@ static void outliner_draw_tree(
 	outliner_draw_highlights(ar, soops, startx, &starty);
 
 	/* set scissor so tree elements or lines can't overlap restriction icons */
-	GLfloat scissor[4] = {0};
+	float scissor[4] = {0};
 	if (has_restrict_icons) {
 		int mask_x = BLI_rcti_size_x(&ar->v2d.mask) - (int)OL_TOGW + 1;
 		CLAMP_MIN(mask_x, 0);
 
-		glGetFloatv(GL_SCISSOR_BOX, scissor);
-		glScissor(0, 0, mask_x, ar->winy);
+		GPU_scissor_get_f(scissor);
+		GPU_scissor(0, 0, mask_x, ar->winy);
 	}
 
 	// gray hierarchy lines
@@ -1833,16 +2054,13 @@ static void outliner_draw_tree(
 	for (TreeElement *te = soops->tree.first; te; te = te->next) {
 		outliner_draw_tree_element(
 		        C, block, fstyle, scene, view_layer,
-		        ar, soops, te, te->drag_data != NULL,
-		        startx, &starty, te_edit, &te_floating);
-	}
-	if (te_floating && te_floating->drag_data->insert_handle) {
-		outliner_draw_tree_element_floating(ar, te_floating);
+		        ar, soops, te, (te->flag & TE_DRAGGING) != 0,
+		        startx, &starty, te_edit);
 	}
 
 	if (has_restrict_icons) {
 		/* reset scissor */
-		glScissor(UNPACK4(scissor));
+		GPU_scissor(UNPACK4(scissor));
 	}
 }
 
@@ -1854,8 +2072,8 @@ static void outliner_back(ARegion *ar)
 	ystart = (int)ar->v2d.tot.ymax;
 	ystart = UI_UNIT_Y * (ystart / (UI_UNIT_Y)) - OL_Y_OFFSET;
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	immUniformThemeColorShade(TH_BACK, 6);
@@ -1865,7 +2083,7 @@ static void outliner_back(ARegion *ar)
 	int tot = (int)floor(ystart - ar->v2d.cur.ymin + 2 * UI_UNIT_Y) / (2 * UI_UNIT_Y);
 
 	if (tot > 0) {
-		immBegin(GWN_PRIM_TRIS, 6 * tot);
+		immBegin(GPU_PRIM_TRIS, 6 * tot);
 		while (tot--) {
 			y1 -= 2 * UI_UNIT_Y;
 			y2 = y1 + UI_UNIT_Y;
@@ -1884,12 +2102,15 @@ static void outliner_back(ARegion *ar)
 
 static void outliner_draw_restrictcols(ARegion *ar)
 {
-	glLineWidth(1.0f);
+	GPU_line_width(1.0f);
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	immUniformThemeColorShadeAlpha(TH_BACK, -15, -200);
-	immBegin(GWN_PRIM_LINES, 6);
+	immBegin(GPU_PRIM_LINES, 8);
+
+	immVertex2i(pos, (int)(ar->v2d.cur.xmax - OL_TOG_HIDEX), (int)ar->v2d.cur.ymax);
+	immVertex2i(pos, (int)(ar->v2d.cur.xmax - OL_TOG_HIDEX), (int)ar->v2d.cur.ymin);
 
 	immVertex2i(pos, (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), (int)ar->v2d.cur.ymax);
 	immVertex2i(pos, (int)(ar->v2d.cur.xmax - OL_TOG_RESTRICT_VIEWX), (int)ar->v2d.cur.ymin);
@@ -1975,10 +2196,16 @@ void draw_outliner(const bContext *C)
 	        (bContext *)C, block, scene, view_layer,
 	        ar, soops, has_restrict_icons, &te_edit);
 
+	/* Default to no emboss for outliner UI. */
+	UI_block_emboss_set(block, UI_EMBOSS_NONE);
+
 	if (soops->outlinevis == SO_DATA_API) {
 		/* draw rna buttons */
 		outliner_draw_rnacols(ar, sizex_rna);
+
+		UI_block_emboss_set(block, UI_EMBOSS);
 		outliner_draw_rnabuts(block, ar, soops, sizex_rna, &soops->tree);
+		UI_block_emboss_set(block, UI_EMBOSS_NONE);
 	}
 	else if ((soops->outlinevis == SO_ID_ORPHANS) && has_restrict_icons) {
 		/* draw user toggle columns */
@@ -1988,8 +2215,11 @@ void draw_outliner(const bContext *C)
 	else if (has_restrict_icons) {
 		/* draw restriction columns */
 		outliner_draw_restrictcols(ar);
-		outliner_draw_restrictbuts(block, scene, ar, soops, &soops->tree);
+
+		outliner_draw_restrictbuts(block, scene, view_layer, ar, soops, &soops->tree);
 	}
+
+	UI_block_emboss_set(block, UI_EMBOSS);
 
 	/* draw edit buttons if nessecery */
 	if (te_edit) {

@@ -37,6 +37,8 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "DNA_brush_types.h"
+#include "DNA_gpencil_types.h"
 #include "DNA_group_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_material_types.h"
@@ -45,7 +47,6 @@
 #include "DNA_screen_types.h"
 #include "DNA_texture_types.h"
 #include "DNA_world_types.h"
-#include "DNA_brush_types.h"
 
 #include "BLI_utildefines.h"
 #include "BLI_ghash.h"
@@ -119,7 +120,7 @@ static void icon_free(void *val)
 	}
 }
 
-static void icon_free_data(Icon *icon)
+static void icon_free_data(int icon_id, Icon *icon)
 {
 	if (icon->obj_type == ICON_DATA_ID) {
 		((ID *)(icon->obj))->icon_id = 0;
@@ -127,8 +128,17 @@ static void icon_free_data(Icon *icon)
 	else if (icon->obj_type == ICON_DATA_PREVIEW) {
 		((PreviewImage *)(icon->obj))->icon_id = 0;
 	}
+	else if (icon->obj_type == ICON_DATA_GPLAYER) {
+		((bGPDlayer *)(icon->obj))->runtime.icon_id = 0;
+	}
 	else if (icon->obj_type == ICON_DATA_GEOM) {
 		((struct Icon_Geom *)(icon->obj))->icon_id = 0;
+	}
+	else if (icon->obj_type == ICON_DATA_STUDIOLIGHT) {
+		StudioLight *sl = icon->obj;
+		if (sl != NULL) {
+			BKE_studiolight_unset_icon_id(sl, icon_id);
+		}
 	}
 	else {
 		BLI_assert(0);
@@ -145,7 +155,7 @@ static int get_next_free_id(void)
 	/* if we haven't used up the int number range, we just return the next int */
 	if (gNextIconId >= gFirstIconId)
 		return gNextIconId++;
-	
+
 	/* now we try to find the smallest icon id not stored in the gIcons hash */
 	while (BLI_ghash_lookup(gIcons, SET_INT_IN_POINTER(startId)) && startId >= gFirstIconId)
 		startId++;
@@ -243,7 +253,7 @@ void BKE_previewimg_freefunc(void *link)
 			if (prv->gputexture[i])
 				GPU_texture_free(prv->gputexture[i]);
 		}
-		
+
 		MEM_freeN(prv);
 	}
 }
@@ -509,11 +519,11 @@ void BKE_icon_changed(const int icon_id)
 	BLI_assert(BLI_thread_is_main());
 
 	Icon *icon = NULL;
-	
+
 	if (!icon_id || G.background) return;
 
 	icon = BLI_ghash_lookup(gIcons, SET_INT_IN_POINTER(icon_id));
-	
+
 	if (icon) {
 		/* We *only* expect ID-tied icons here, not non-ID icon/preview! */
 		BLI_assert(icon->id_type != 0);
@@ -592,6 +602,44 @@ int BKE_icon_id_ensure(struct ID *id)
 	return icon_id_ensure_create_icon(id);
 }
 
+
+static int icon_gplayer_color_ensure_create_icon(bGPDlayer *gpl)
+{
+	BLI_assert(BLI_thread_is_main());
+
+	/* NOTE: The color previews for GP Layers don't really need
+	 * to be "rendered" to image per se (as it will just be a plain
+	 * colored rectangle), we need to define icon data here so that
+	 * we can store a pointer to the layer data in icon->obj.
+	 */
+	Icon *icon = icon_create(gpl->runtime.icon_id, ICON_DATA_GPLAYER, gpl);
+	icon->flag = ICON_FLAG_MANAGED;
+
+	return gpl->runtime.icon_id;
+}
+
+int BKE_icon_gplayer_color_ensure(bGPDlayer *gpl)
+{
+	/* Never handle icons in non-main thread! */
+	BLI_assert(BLI_thread_is_main());
+
+	if (!gpl || G.background) {
+		return 0;
+	}
+
+	if (gpl->runtime.icon_id)
+		return gpl->runtime.icon_id;
+
+	gpl->runtime.icon_id = get_next_free_id();
+
+	if (!gpl->runtime.icon_id) {
+		printf("%s: Internal error - not enough IDs\n", __func__);
+		return 0;
+	}
+
+	return icon_gplayer_color_ensure_create_icon(gpl);
+}
+
 /**
  * Return icon id of given preview, or create new icon if not found.
  */
@@ -640,7 +688,7 @@ Icon *BKE_icon_get(const int icon_id)
 	Icon *icon = NULL;
 
 	icon = BLI_ghash_lookup(gIcons, SET_INT_IN_POINTER(icon_id));
-	
+
 	if (!icon) {
 		printf("%s: Internal error, no icon for icon ID: %d\n", __func__, icon_id);
 		return NULL;
@@ -699,7 +747,7 @@ bool BKE_icon_delete(const int icon_id)
 
 	Icon *icon = BLI_ghash_popkey(gIcons, SET_INT_IN_POINTER(icon_id), NULL);
 	if (icon) {
-		icon_free_data(icon);
+		icon_free_data(icon_id, icon);
 		icon_free(icon);
 		return true;
 	}
@@ -722,7 +770,7 @@ bool BKE_icon_delete_unmanaged(const int icon_id)
 			return false;
 		}
 		else {
-			icon_free_data(icon);
+			icon_free_data(icon_id, icon);
 			icon_free(icon);
 			return true;
 		}
@@ -814,4 +862,3 @@ int BKE_icon_ensure_studio_light(struct StudioLight *sl, int id_type)
 	return icon_id;
 }
 /** \} */
-

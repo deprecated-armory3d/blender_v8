@@ -72,7 +72,7 @@ static ARegion *text_has_properties_region(ScrArea *sa)
 	return arnew;
 }
 
-static int text_properties_poll(bContext *C)
+static bool text_properties_poll(bContext *C)
 {
 	return (CTX_wm_space_text(C) != NULL);
 }
@@ -91,7 +91,7 @@ static int text_properties_exec(bContext *C, wmOperator *UNUSED(op))
 void TEXT_OT_properties(wmOperatorType *ot)
 {
 	/* identifiers */
-	ot->name = "Properties";
+	ot->name = "Toggle Sidebar";
 	ot->description = "Toggle the properties region visibility";
 	ot->idname = "TEXT_OT_properties";
 
@@ -212,4 +212,3 @@ void TEXT_OT_start_find(wmOperatorType *ot)
 	UI_popup_menu_end(C, pup);
 }
 #endif
-

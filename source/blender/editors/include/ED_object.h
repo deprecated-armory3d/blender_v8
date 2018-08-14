@@ -40,7 +40,9 @@ struct Base;
 struct EnumPropertyItem;
 struct ID;
 struct Main;
+struct Menu;
 struct ModifierData;
+struct ShaderFxData;
 struct Object;
 struct ReportList;
 struct Scene;
@@ -58,12 +60,15 @@ struct PointerRNA;
 struct PropertyRNA;
 struct EnumPropertyItem;
 struct Depsgraph;
+struct uiLayout;
 
 #include "DNA_object_enums.h"
+#include "BLI_compiler_attrs.h"
 
 /* object_edit.c */
 struct Object *ED_object_context(struct bContext *C);               /* context.object */
 struct Object *ED_object_active_context(struct bContext *C); /* context.object or context.active_object */
+void ED_hide_collections_menu_draw(const struct bContext *C, struct uiLayout *layout);
 
 /* object_ops.c */
 void ED_operatortypes_object(void);
@@ -108,6 +113,7 @@ void ED_keymap_proportional_obmode(struct wmKeyConfig *keyconf, struct wmKeyMap 
 void ED_keymap_proportional_maskmode(struct wmKeyConfig *keyconf, struct wmKeyMap *keymap);
 void ED_keymap_proportional_editmode(struct wmKeyConfig *keyconf, struct wmKeyMap *keymap,
                                      const bool do_connected);
+void ED_keymap_editmesh_elem_mode(struct wmKeyConfig *keyconf, struct wmKeyMap *keymap);
 
 void ED_object_base_select(struct Base *base, eObjectSelect_Mode mode);
 void ED_object_base_activate(struct bContext *C, struct Base *base);
@@ -137,11 +143,11 @@ bool ED_object_editmode_calc_active_center(struct Object *obedit, const bool sel
 
 
 void ED_object_vpaintmode_enter_ex(
-        struct Depsgraph *depsgraph, struct wmWindowManager *wm,
+        struct Main *bmain, struct Depsgraph *depsgraph, struct wmWindowManager *wm,
         struct Scene *scene, struct Object *ob);
 void ED_object_vpaintmode_enter(struct bContext *C);
 void ED_object_wpaintmode_enter_ex(
-        struct Depsgraph *depsgraph, struct wmWindowManager *wm,
+        struct Main *bmain, struct Depsgraph *depsgraph, struct wmWindowManager *wm,
         struct Scene *scene, struct Object *ob);
 void ED_object_wpaintmode_enter(struct bContext *C);
 
@@ -151,7 +157,7 @@ void ED_object_wpaintmode_exit_ex(struct Object *ob);
 void ED_object_wpaintmode_exit(struct bContext *C);
 
 void ED_object_sculptmode_enter_ex(
-        struct Depsgraph *depsgraph,
+        struct Main *bmain, struct Depsgraph *depsgraph,
         struct Scene *scene, struct Object *ob,
         struct ReportList *reports);
 void ED_object_sculptmode_enter(struct bContext *C, struct ReportList *reports);
@@ -245,7 +251,7 @@ int ED_object_modifier_convert(
         struct ReportList *reports, struct Main *bmain, struct Scene *scene,
         struct ViewLayer *view_layer, struct Object *ob, struct ModifierData *md);
 int ED_object_modifier_apply(
-        struct ReportList *reports, struct Depsgraph *depsgraph, struct Scene *scene,
+        struct Main *bmain, struct ReportList *reports, struct Depsgraph *depsgraph, struct Scene *scene,
         struct Object *ob, struct ModifierData *md, int mode);
 int ED_object_modifier_copy(struct ReportList *reports, struct Object *ob, struct ModifierData *md);
 
@@ -255,6 +261,40 @@ bool ED_object_iter_other(
         void *callback_data);
 
 bool ED_object_multires_update_totlevels_cb(struct Object *ob, void *totlevel_v);
+
+
+/* object_greasepencil_modifier.c */
+struct GpencilModifierData *ED_object_gpencil_modifier_add(
+        struct ReportList *reports, struct Main *bmain, struct Scene *scene,
+        struct Object *ob, const char *name, int type);
+bool ED_object_gpencil_modifier_remove(
+        struct ReportList *reports, struct Main *bmain,
+        struct Object *ob, struct GpencilModifierData *md);
+void ED_object_gpencil_modifier_clear(
+        struct Main *bmain, struct Object *ob);
+int ED_object_gpencil_modifier_move_down(
+        struct ReportList *reports, struct Object *ob, struct GpencilModifierData *md);
+int ED_object_gpencil_modifier_move_up(
+        struct ReportList *reports, struct Object *ob, struct GpencilModifierData *md);
+int ED_object_gpencil_modifier_apply(
+        struct Main *bmain, struct ReportList *reports, struct Depsgraph *depsgraph,
+        struct Object *ob, struct GpencilModifierData *md, int mode);
+int ED_object_gpencil_modifier_copy(
+        struct ReportList *reports, struct Object *ob, struct GpencilModifierData *md);
+
+/* object_shader_fx.c */
+struct ShaderFxData *ED_object_shaderfx_add(
+	struct ReportList *reports, struct Main *bmain, struct Scene *scene,
+	struct Object *ob, const char *name, int type);
+bool ED_object_shaderfx_remove(
+	struct ReportList *reports, struct Main *bmain,
+	struct Object *ob, struct ShaderFxData *fx);
+void ED_object_shaderfx_clear(
+	struct Main *bmain, struct Object *ob);
+int ED_object_shaderfx_move_down(
+	struct ReportList *reports, struct Object *ob, struct ShaderFxData *fx);
+int ED_object_shaderfx_move_up(
+	struct ReportList *reports, struct Object *ob, struct ShaderFxData *fx);
 
 /* object_select.c */
 void ED_object_select_linked_by_id(struct bContext *C, struct ID *id);
@@ -276,8 +316,5 @@ void ED_object_facemap_face_remove(struct Object *ob, struct bFaceMap *fmap, int
 #ifdef __cplusplus
 }
 #endif
-
-/* Don't allow switching object-modes when selecting objects. */
-#define USE_OBJECT_MODE_STRICT
 
 #endif /* __ED_OBJECT_H__ */

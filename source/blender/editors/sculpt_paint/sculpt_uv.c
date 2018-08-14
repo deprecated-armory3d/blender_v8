@@ -43,12 +43,13 @@
 #include "DNA_meshdata_types.h"
 
 #include "BKE_brush.h"
-#include "BKE_paint.h"
 #include "BKE_colortools.h"
 #include "BKE_context.h"
-#include "BKE_mesh_mapping.h"
 #include "BKE_customdata.h"
 #include "BKE_editmesh.h"
+#include "BKE_main.h"
+#include "BKE_mesh_mapping.h"
+#include "BKE_paint.h"
 
 #include "DEG_depsgraph.h"
 
@@ -58,6 +59,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_immediate_util.h"
+#include "GPU_state.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -158,7 +160,7 @@ static Brush *uv_sculpt_brush(bContext *C)
 }
 
 
-static int uv_sculpt_brush_poll_do(bContext *C, const bool check_region)
+static bool uv_sculpt_brush_poll_do(bContext *C, const bool check_region)
 {
 	BMEditMesh *em;
 	int ret;
@@ -186,7 +188,7 @@ static int uv_sculpt_brush_poll_do(bContext *C, const bool check_region)
 	return ret;
 }
 
-static int uv_sculpt_brush_poll(bContext *C)
+static bool uv_sculpt_brush_poll(bContext *C)
 {
 	return uv_sculpt_brush_poll_do(C, true);
 }
@@ -213,15 +215,15 @@ static void brush_drawcursor_uvsculpt(bContext *C, int x, int y, void *UNUSED(cu
 			alpha *= (size - PX_SIZE_FADE_MIN) / (PX_SIZE_FADE_MAX - PX_SIZE_FADE_MIN);
 		}
 
-		unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+		uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 		immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 		immUniformColor3fvAlpha(brush->add_col, alpha);
 
-		glEnable(GL_LINE_SMOOTH);
-		glEnable(GL_BLEND);
+		GPU_line_smooth(true);
+		GPU_blend(true);
 		imm_draw_circle_wire_2d(pos, (float)x, (float)y, size, 40);
-		glDisable(GL_BLEND);
-		glDisable(GL_LINE_SMOOTH);
+		GPU_blend(false);
+		GPU_line_smooth(false);
 
 		immUnbindProgram();
 	}
@@ -230,7 +232,7 @@ static void brush_drawcursor_uvsculpt(bContext *C, int x, int y, void *UNUSED(cu
 }
 
 
-void ED_space_image_uv_sculpt_update(wmWindowManager *wm, Scene *scene)
+void ED_space_image_uv_sculpt_update(Main *bmain, wmWindowManager *wm, Scene *scene)
 {
 	ToolSettings *settings = scene->toolsettings;
 	if (settings->use_uv_sculpt) {
@@ -243,10 +245,11 @@ void ED_space_image_uv_sculpt_update(wmWindowManager *wm, Scene *scene)
 			settings->uvsculpt->paint.flags |= PAINT_SHOW_BRUSH;
 		}
 
-		BKE_paint_init(scene, ePaintSculptUV, PAINT_CURSOR_SCULPT);
+		BKE_paint_init(bmain, scene, ePaintSculptUV, PAINT_CURSOR_SCULPT);
 
-		settings->uvsculpt->paint.paint_cursor = WM_paint_cursor_activate(wm, uv_sculpt_brush_poll,
-		                                                                  brush_drawcursor_uvsculpt, NULL);
+		settings->uvsculpt->paint.paint_cursor = WM_paint_cursor_activate(
+		        wm, uv_sculpt_brush_poll,
+		        brush_drawcursor_uvsculpt, NULL);
 	}
 	else {
 		if (settings->uvsculpt) {
@@ -256,12 +259,12 @@ void ED_space_image_uv_sculpt_update(wmWindowManager *wm, Scene *scene)
 	}
 }
 
-int uv_sculpt_poll(bContext *C)
+bool uv_sculpt_poll(bContext *C)
 {
 	return uv_sculpt_brush_poll_do(C, true);
 }
 
-int uv_sculpt_keymap_poll(bContext *C)
+bool uv_sculpt_keymap_poll(bContext *C)
 {
 	return uv_sculpt_brush_poll_do(C, false);
 }

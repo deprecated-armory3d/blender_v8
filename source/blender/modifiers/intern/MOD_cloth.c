@@ -42,6 +42,7 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 
 #include "BKE_cloth.h"
@@ -54,20 +55,23 @@
 #include "BKE_modifier.h"
 #include "BKE_pointcache.h"
 
+#include "DEG_depsgraph_physics.h"
+#include "DEG_depsgraph_query.h"
+
 #include "MOD_util.h"
 
-static void initData(ModifierData *md) 
+static void initData(ModifierData *md)
 {
 	ClothModifierData *clmd = (ClothModifierData *) md;
-	
+
 	clmd->sim_parms = MEM_callocN(sizeof(ClothSimSettings), "cloth sim parms");
 	clmd->coll_parms = MEM_callocN(sizeof(ClothCollSettings), "cloth coll parms");
 	clmd->point_cache = BKE_ptcache_add(&clmd->ptcaches);
-	
+
 	/* check for alloc failing */
 	if (!clmd->sim_parms || !clmd->coll_parms || !clmd->point_cache)
 		return;
-	
+
 	cloth_init(clmd);
 }
 
@@ -78,7 +82,8 @@ static void deformVerts(
 {
 	Mesh *mesh_src;
 	ClothModifierData *clmd = (ClothModifierData *) md;
-	
+	Scene *scene = DEG_get_evaluated_scene(ctx->depsgraph);
+
 	/* check for alloc failing */
 	if (!clmd->sim_parms || !clmd->coll_parms) {
 		initData(md);
@@ -88,7 +93,7 @@ static void deformVerts(
 	}
 
 	if (mesh == NULL) {
-		mesh_src = get_mesh(ctx->object, NULL, NULL, NULL, false, false);
+		mesh_src = MOD_get_mesh_eval(ctx->object, NULL, NULL, NULL, false, false);
 	}
 	else {
 		/* Not possible to use get_mesh() in this case as we'll modify its vertices
@@ -123,7 +128,7 @@ static void deformVerts(
 
 	BKE_mesh_apply_vert_coords(mesh_src, vertexCos);
 
-	clothModifier_do(clmd, ctx->depsgraph, md->scene, ctx->object, mesh_src, vertexCos);
+	clothModifier_do(clmd, ctx->depsgraph, scene, ctx->object, mesh_src, vertexCos);
 
 	BKE_id_free(NULL, mesh_src);
 }
@@ -132,10 +137,8 @@ static void updateDepsgraph(ModifierData *md, const ModifierUpdateDepsgraphConte
 {
 	ClothModifierData *clmd = (ClothModifierData *)md;
 	if (clmd != NULL) {
-		/* Actual code uses get_collisionobjects */
-		DEG_add_collision_relations(ctx->node, ctx->scene, ctx->object, clmd->coll_parms->group, eModifierType_Collision, NULL, true, "Cloth Collision");
-
-		DEG_add_forcefield_relations(ctx->node, ctx->scene, ctx->object, clmd->sim_parms->effector_weights, true, 0, "Cloth Field");
+		DEG_add_collision_relations(ctx->node, ctx->object, clmd->coll_parms->group, eModifierType_Collision, NULL, "Cloth Collision");
+		DEG_add_forcefield_relations(ctx->node, ctx->object, clmd->sim_parms->effector_weights, true, 0, "Cloth Field");
 	}
 }
 
@@ -153,7 +156,7 @@ static CustomDataMask requiredDataMask(Object *UNUSED(ob), ModifierData *md)
 	return dataMask;
 }
 
-static void copyData(const ModifierData *md, ModifierData *target)
+static void copyData(const ModifierData *md, ModifierData *target, const int flag)
 {
 	const ClothModifierData *clmd = (const ClothModifierData *) md;
 	ClothModifierData *tclmd = (ClothModifierData *) target;
@@ -166,16 +169,23 @@ static void copyData(const ModifierData *md, ModifierData *target)
 
 	if (tclmd->coll_parms)
 		MEM_freeN(tclmd->coll_parms);
-	
+
 	BKE_ptcache_free_list(&tclmd->ptcaches);
-	tclmd->point_cache = NULL;
+	if (flag & LIB_ID_CREATE_NO_MAIN) {
+		/* Share the cache with the original object's modifier. */
+		tclmd->modifier.flag |= eModifierFlag_SharedCaches;
+		tclmd->ptcaches = clmd->ptcaches;
+		tclmd->point_cache = clmd->point_cache;
+	}
+	else {
+		tclmd->point_cache = BKE_ptcache_add(&tclmd->ptcaches);
+		tclmd->point_cache->step = 1;
+	}
 
 	tclmd->sim_parms = MEM_dupallocN(clmd->sim_parms);
 	if (clmd->sim_parms->effector_weights)
 		tclmd->sim_parms->effector_weights = MEM_dupallocN(clmd->sim_parms->effector_weights);
 	tclmd->coll_parms = MEM_dupallocN(clmd->coll_parms);
-	tclmd->point_cache = BKE_ptcache_add(&tclmd->ptcaches);
-	tclmd->point_cache->step = 1;
 	tclmd->clothObject = NULL;
 	tclmd->hairdata = NULL;
 	tclmd->solver_result = NULL;
@@ -189,13 +199,13 @@ static bool dependsOnTime(ModifierData *UNUSED(md))
 static void freeData(ModifierData *md)
 {
 	ClothModifierData *clmd = (ClothModifierData *) md;
-	
+
 	if (clmd) {
 		if (G.debug_value > 0)
 			printf("clothModifier_freeData\n");
-		
+
 		cloth_free_modifier_extern(clmd);
-		
+
 		if (clmd->sim_parms) {
 			if (clmd->sim_parms->effector_weights)
 				MEM_freeN(clmd->sim_parms->effector_weights);
@@ -203,13 +213,18 @@ static void freeData(ModifierData *md)
 		}
 		if (clmd->coll_parms)
 			MEM_freeN(clmd->coll_parms);
-		
-		BKE_ptcache_free_list(&clmd->ptcaches);
+
+		if (md->flag & eModifierFlag_SharedCaches) {
+			BLI_listbase_clear(&clmd->ptcaches);
+		}
+		else {
+			BKE_ptcache_free_list(&clmd->ptcaches);
+		}
 		clmd->point_cache = NULL;
-		
+
 		if (clmd->hairdata)
 			MEM_freeN(clmd->hairdata);
-		
+
 		if (clmd->solver_result)
 			MEM_freeN(clmd->solver_result);
 	}

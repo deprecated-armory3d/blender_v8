@@ -49,7 +49,6 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
-#include "BKE_DerivedMesh.h"
 #include "BKE_icons.h"
 #include "BKE_layer.h"
 #include "BKE_main.h"
@@ -145,7 +144,7 @@ void ED_render_scene_update(const DEGEditorUpdateContext *update_ctx, int update
 				}
 				else {
 					RenderEngineType *engine_type =
-					        ED_view3d_engine_type(scene, v3d->drawtype);
+					        ED_view3d_engine_type(scene, v3d->shading.type);
 					if (updated) {
 						DRW_notify_view_update(
 						        (&(DRWUpdateContext){
@@ -295,9 +294,6 @@ static void world_changed(Main *UNUSED(bmain), World *wo)
 	/* icons */
 	BKE_icon_changed(BKE_icon_id_ensure(&wo->id));
 
-	/* XXX temporary flag waiting for depsgraph proper tagging */
-	wo->update_flag = 1;
-
 	/* glsl */
 	if (wo->id.recalc & ID_RECALC) {
 		if (!BLI_listbase_is_empty(&defmaterial.gpumaterial)) {
@@ -371,4 +367,3 @@ void ED_render_id_flush_update(const DEGEditorUpdateContext *update_ctx, ID *id)
 			break;
 	}
 }
-

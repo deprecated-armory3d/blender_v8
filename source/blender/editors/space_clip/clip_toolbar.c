@@ -87,7 +87,7 @@ ARegion *ED_clip_has_properties_region(ScrArea *sa)
 	return arnew;
 }
 
-static int properties_poll(bContext *C)
+static bool properties_poll(bContext *C)
 {
 	return (CTX_wm_space_clip(C) != NULL);
 }
@@ -106,7 +106,7 @@ static int properties_exec(bContext *C, wmOperator *UNUSED(op))
 void CLIP_OT_properties(wmOperatorType *ot)
 {
 	/* identifiers */
-	ot->name = "Properties";
+	ot->name = "Toggle Sidebar";
 	ot->description = "Toggle the properties region visibility";
 	ot->idname = "CLIP_OT_properties";
 
@@ -151,7 +151,7 @@ static ARegion *clip_has_tools_region(ScrArea *sa)
 	return artool;
 }
 
-static int tools_poll(bContext *C)
+static bool tools_poll(bContext *C)
 {
 	return (CTX_wm_space_clip(C) != NULL);
 }
@@ -170,7 +170,7 @@ static int tools_exec(bContext *C, wmOperator *UNUSED(op))
 void CLIP_OT_tools(wmOperatorType *ot)
 {
 	/* identifiers */
-	ot->name = "Tools";
+	ot->name = "Toggle Toolbar";
 	ot->description = "Toggle clip tools panel";
 	ot->idname = "CLIP_OT_tools";
 

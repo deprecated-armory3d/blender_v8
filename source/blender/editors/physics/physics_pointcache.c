@@ -57,12 +57,12 @@
 
 #include "physics_intern.h"
 
-static int ptcache_bake_all_poll(bContext *C)
+static bool ptcache_bake_all_poll(bContext *C)
 {
 	return CTX_data_scene(C) != NULL;
 }
 
-static int ptcache_poll(bContext *C)
+static bool ptcache_poll(bContext *C)
 {
 	PointerRNA ptr= CTX_data_pointer_get_type(C, "point_cache", &RNA_PointCache);
 	return (ptr.data && ptr.id.data);
@@ -140,7 +140,7 @@ static void ptcache_job_endjob(void *customdata)
 	G.is_rendering = false;
 	BKE_spacedata_draw_locks(false);
 
-	WM_set_locked_interface(G.main->wm.first, false);
+	WM_set_locked_interface(G_MAIN->wm.first, false);
 
 	WM_main_add_notifier(NC_SCENE | ND_FRAME, scene);
 	WM_main_add_notifier(NC_OBJECT | ND_POINTCACHE, job->baker->pid.ob);
@@ -164,7 +164,7 @@ static PTCacheBaker *ptcache_baker_create(bContext *C, wmOperator *op, bool all)
 {
 	PTCacheBaker *baker = MEM_callocN(sizeof(PTCacheBaker), "PTCacheBaker");
 
-	baker->main = CTX_data_main(C);
+	baker->bmain = CTX_data_main(C);
 	baker->scene = CTX_data_scene(C);
 	baker->view_layer = CTX_data_view_layer(C);
 	baker->depsgraph = CTX_data_depsgraph(C);
@@ -440,4 +440,3 @@ void PTCACHE_OT_remove(wmOperatorType *ot)
 	/* flags */
 	ot->flag = OPTYPE_REGISTER|OPTYPE_UNDO;
 }
-

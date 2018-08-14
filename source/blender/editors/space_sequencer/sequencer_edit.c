@@ -476,7 +476,7 @@ void recurs_sel_seq(Sequence *seqm)
 	}
 }
 
-int ED_space_sequencer_maskedit_mask_poll(bContext *C)
+bool ED_space_sequencer_maskedit_mask_poll(bContext *C)
 {
 	/* in this case both funcs are the same, for clip editor not */
 	return ED_space_sequencer_maskedit_poll(C);
@@ -491,7 +491,7 @@ bool ED_space_sequencer_check_show_maskedit(SpaceSeq *sseq, Scene *scene)
 	return false;
 }
 
-int ED_space_sequencer_maskedit_poll(bContext *C)
+bool ED_space_sequencer_maskedit_poll(bContext *C)
 {
 	SpaceSeq *sseq = CTX_wm_space_seq(C);
 
@@ -739,7 +739,7 @@ static Sequence *cut_seq_hard(Scene *scene, Sequence *seq, int cutframe)
 
 	if (!skip_dup) {
 		/* Duplicate AFTER the first change */
-		seqn = BKE_sequence_dupli_recursive(scene, scene, seq, SEQ_DUPE_UNIQUE_NAME | SEQ_DUPE_ANIM);
+		seqn = BKE_sequence_dupli_recursive(scene, scene, seq, SEQ_DUPE_ANIM);
 	}
 
 	if (seqn) {
@@ -848,7 +848,7 @@ static Sequence *cut_seq_soft(Scene *scene, Sequence *seq, int cutframe)
 
 	if (!skip_dup) {
 		/* Duplicate AFTER the first change */
-		seqn = BKE_sequence_dupli_recursive(scene, scene, seq, SEQ_DUPE_UNIQUE_NAME | SEQ_DUPE_ANIM);
+		seqn = BKE_sequence_dupli_recursive(scene, scene, seq, SEQ_DUPE_ANIM);
 	}
 
 	if (seqn) {
@@ -1149,27 +1149,27 @@ static int seq_get_snaplimit(View2D *v2d)
 #endif
 
 /* Operator functions */
-int sequencer_edit_poll(bContext *C)
+bool sequencer_edit_poll(bContext *C)
 {
 	return (BKE_sequencer_editing_get(CTX_data_scene(C), false) != NULL);
 }
 
 #if 0 /* UNUSED */
-int sequencer_strip_poll(bContext *C)
+bool sequencer_strip_poll(bContext *C)
 {
 	Editing *ed;
 	return (((ed = BKE_sequencer_editing_get(CTX_data_scene(C), false)) != NULL) && (ed->act_seq != NULL));
 }
 #endif
 
-int sequencer_strip_has_path_poll(bContext *C)
+bool sequencer_strip_has_path_poll(bContext *C)
 {
 	Editing *ed;
 	Sequence *seq;
 	return (((ed = BKE_sequencer_editing_get(CTX_data_scene(C), false)) != NULL) && ((seq = ed->act_seq) != NULL) && (SEQ_HAS_PATH(seq)));
 }
 
-int sequencer_view_preview_poll(bContext *C)
+bool sequencer_view_preview_poll(bContext *C)
 {
 	SpaceSeq *sseq = CTX_wm_space_seq(C);
 	Editing *ed = BKE_sequencer_editing_get(CTX_data_scene(C), false);
@@ -1179,7 +1179,7 @@ int sequencer_view_preview_poll(bContext *C)
 	return 0;
 }
 
-int sequencer_view_strips_poll(bContext *C)
+bool sequencer_view_strips_poll(bContext *C)
 {
 	SpaceSeq *sseq = CTX_wm_space_seq(C);
 	if (sseq && ED_space_sequencer_check_show_strip(sseq))
@@ -1534,7 +1534,7 @@ static void sequencer_slip_update_header(Scene *scene, ScrArea *sa, SlipData *da
 		}
 	}
 
-	ED_area_headerprint(sa, msg);
+	ED_area_status_text(sa, msg);
 }
 
 static int sequencer_slip_modal(bContext *C, wmOperator *op, const wmEvent *event)
@@ -1605,7 +1605,7 @@ static int sequencer_slip_modal(bContext *C, wmOperator *op, const wmEvent *even
 			MEM_freeN(data);
 			op->customdata = NULL;
 			if (sa) {
-				ED_area_headerprint(sa, NULL);
+				ED_area_status_text(sa, NULL);
 			}
 			WM_event_add_notifier(C, NC_SCENE | ND_SEQUENCER, scene);
 			return OPERATOR_FINISHED;
@@ -1638,7 +1638,7 @@ static int sequencer_slip_modal(bContext *C, wmOperator *op, const wmEvent *even
 			BKE_sequencer_free_imbuf(scene, &ed->seqbase, false);
 
 			if (sa) {
-				ED_area_headerprint(sa, NULL);
+				ED_area_status_text(sa, NULL);
 			}
 
 			return OPERATOR_CANCELLED;
@@ -1914,7 +1914,7 @@ void SEQUENCER_OT_reload(struct wmOperatorType *ot)
 }
 
 /* reload operator */
-static int sequencer_refresh_all_poll(bContext *C)
+static bool sequencer_refresh_all_poll(bContext *C)
 {
 	if (G.is_rendering) {
 		return 0;
@@ -1976,7 +1976,7 @@ static int sequencer_reassign_inputs_exec(bContext *C, wmOperator *op)
 	return OPERATOR_FINISHED;
 }
 
-static int sequencer_effect_poll(bContext *C)
+static bool sequencer_effect_poll(bContext *C)
 {
 	Scene *scene = CTX_data_scene(C);
 	Editing *ed = BKE_sequencer_editing_get(scene, false);
@@ -2091,6 +2091,7 @@ static int sequencer_cut_exec(bContext *C, wmOperator *op)
 
 		SEQP_BEGIN (ed, seq)
 		{
+			BKE_sequence_base_unique_name_recursive(&ed->seqbase, seq);
 			if (seq->seq1 || seq->seq2 || seq->seq3) {
 				BKE_sequence_calc(scene, seq);
 			}
@@ -2970,7 +2971,7 @@ static bool strip_jump_internal(Scene *scene,
 	return changed;
 }
 
-static int sequencer_strip_jump_poll(bContext *C)
+static bool sequencer_strip_jump_poll(bContext *C)
 {
 	/* prevent changes during render */
 	if (G.is_rendering)
@@ -3874,7 +3875,7 @@ static int sequencer_export_subtitles_invoke(bContext *C, wmOperator *op, const 
 		else
 			BLI_strncpy(filepath, BKE_main_blendfile_path(bmain), sizeof(filepath));
 
-		BLI_replace_extension(filepath, sizeof(filepath), ".srt");
+		BLI_path_extension_replace(filepath, sizeof(filepath), ".srt");
 		RNA_string_set(op->ptr, "filepath", filepath);
 	}
 
@@ -3899,7 +3900,7 @@ static int sequencer_export_subtitles_exec(bContext *C, wmOperator *op)
 	}
 
 	RNA_string_get(op->ptr, "filepath", filepath);
-	BLI_ensure_extension(filepath, sizeof(filepath), ".srt");
+	BLI_path_extension_ensure(filepath, sizeof(filepath), ".srt");
 
 	/* Avoid File write exceptions */
 	if (!BLI_exists(filepath)) {
@@ -3953,7 +3954,7 @@ static int sequencer_export_subtitles_exec(bContext *C, wmOperator *op)
 	return OPERATOR_FINISHED;
 }
 
-static int sequencer_strip_is_text_poll(bContext *C)
+static bool sequencer_strip_is_text_poll(bContext *C)
 {
 	Editing *ed;
 	Sequence *seq;

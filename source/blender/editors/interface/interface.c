@@ -53,13 +53,15 @@
 
 #include "BKE_animsys.h"
 #include "BKE_context.h"
-#include "BKE_unit.h"
+#include "BKE_idprop.h"
+#include "BKE_main.h"
 #include "BKE_scene.h"
 #include "BKE_screen.h"
-#include "BKE_idprop.h"
+#include "BKE_unit.h"
 
 #include "GPU_glew.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "BLF_api.h"
 #include "BLT_translation.h"
@@ -85,6 +87,9 @@
 
 #include "interface_intern.h"
 
+/* prototypes. */
+static void ui_but_to_pixelrect(struct rcti *rect, const struct ARegion *ar, struct uiBlock *block, struct uiBut *but);
+
 /* avoid unneeded calls to ui_but_value_get */
 #define UI_BUT_VALUE_UNSET DBL_MAX
 #define UI_GET_BUT_VALUE_INIT(_but, _value) if (_value == DBL_MAX) {  (_value) = ui_but_value_get(_but); } (void)0
@@ -99,18 +104,6 @@
  */
 
 static void ui_but_free(const bContext *C, uiBut *but);
-
-bool ui_block_is_menu(const uiBlock *block)
-{
-	return (((block->flag & UI_BLOCK_LOOP) != 0) &&
-	        /* non-menu popups use keep-open, so check this is off */
-	        ((block->flag & UI_BLOCK_KEEP_OPEN) == 0));
-}
-
-bool ui_block_is_pie_menu(const uiBlock *block)
-{
-	return ((block->flag & UI_BLOCK_RADIAL) != 0);
-}
 
 static bool ui_but_is_unit_radians_ex(UnitSettings *unit, const int unit_type)
 {
@@ -224,12 +217,70 @@ void ui_region_to_window(const ARegion *ar, int *x, int *y)
 	*y += ar->winrct.ymin;
 }
 
+static void ui_update_flexible_spacing(const ARegion *region, uiBlock *block)
+{
+	int sepr_flex_len = 0;
+	for (uiBut *but = block->buttons.first; but; but = but->next) {
+		if (but->type == UI_BTYPE_SEPR_SPACER) {
+			sepr_flex_len++;
+		}
+	}
+
+	if (sepr_flex_len == 0) {
+		return;
+	}
+
+	rcti rect;
+	ui_but_to_pixelrect(&rect, region, block, block->buttons.last);
+	const float buttons_width = (float)rect.xmax + UI_HEADER_OFFSET;
+	const float region_width = (float)region->sizex * U.dpi_fac;
+
+	if (region_width <= buttons_width) {
+		return;
+	}
+
+	/* We could get rid of this loop if we agree on a max number of spacer */
+	int *spacers_pos = alloca(sizeof(*spacers_pos) * (size_t)sepr_flex_len);
+	int i = 0;
+	for (uiBut *but = block->buttons.first; but; but = but->next) {
+		if (but->type == UI_BTYPE_SEPR_SPACER) {
+			ui_but_to_pixelrect(&rect, region, block, but);
+			spacers_pos[i] = rect.xmax + UI_HEADER_OFFSET;
+			i++;
+		}
+	}
+
+	const float segment_width = region_width / (float)sepr_flex_len;
+	float offset = 0, remaining_space = region_width - buttons_width;
+	i = 0;
+	for (uiBut *but = block->buttons.first; but; but = but->next) {
+		BLI_rctf_translate(&but->rect, offset, 0);
+		if (but->type == UI_BTYPE_SEPR_SPACER) {
+			/* How much the next block overlap with the current segment */
+			int overlap = (
+			        (i == sepr_flex_len - 1) ?
+			        buttons_width - spacers_pos[i] :
+			        (spacers_pos[i + 1] - spacers_pos[i]) / 2);
+			int segment_end = segment_width * (i + 1);
+			int spacer_end = segment_end - overlap;
+			int spacer_sta = spacers_pos[i] + offset;
+			if (spacer_end > spacer_sta) {
+				float step = min_ff(remaining_space, spacer_end - spacer_sta);
+				remaining_space -= step;
+				offset += step;
+			}
+			i++;
+		}
+	}
+	ui_block_bounds_calc(block);
+}
+
 static void ui_update_window_matrix(const wmWindow *window, const ARegion *region, uiBlock *block)
 {
 	/* window matrix and aspect */
 	if (region && region->visible) {
 		/* Get projection matrix which includes View2D translation and zoom. */
-		gpuGetProjectionMatrix(block->winmat);
+		GPU_matrix_projection_get(block->winmat);
 		block->aspect = 2.0f / fabsf(region->winx * block->winmat[0][0]);
 	}
 	else {
@@ -282,7 +333,7 @@ static void ui_block_bounds_calc_text(uiBlock *block, float offset)
 	UI_fontstyle_set(&style->widget);
 
 	for (init_col_bt = bt = block->buttons.first; bt; bt = bt->next) {
-		if (!ELEM(bt->type, UI_BTYPE_SEPR, UI_BTYPE_SEPR_LINE)) {
+		if (!ELEM(bt->type, UI_BTYPE_SEPR, UI_BTYPE_SEPR_LINE, UI_BTYPE_SEPR_SPACER)) {
 			j = BLF_width(style->widget.uifont_id, bt->drawstr, sizeof(bt->drawstr));
 
 			if (j > i)
@@ -865,7 +916,6 @@ static void ui_menu_block_set_keyaccels(uiBlock *block)
  * but this could be supported */
 void ui_but_add_shortcut(uiBut *but, const char *shortcut_str, const bool do_strip)
 {
-
 	if (do_strip && (but->flag & UI_BUT_HAS_SEP_CHAR)) {
 		char *cpoin = strrchr(but->str, UI_SEP_CHAR);
 		if (cpoin) {
@@ -884,54 +934,119 @@ void ui_but_add_shortcut(uiBut *but, const char *shortcut_str, const bool do_str
 		else {
 			butstr_orig = BLI_strdup(but->str);
 		}
-		BLI_snprintf(but->strdata,
-		             sizeof(but->strdata),
-		             "%s" UI_SEP_CHAR_S "%s",
-		             butstr_orig, shortcut_str);
+		BLI_snprintf(
+		        but->strdata,
+		        sizeof(but->strdata),
+		        "%s" UI_SEP_CHAR_S "%s",
+		        butstr_orig, shortcut_str);
 		MEM_freeN(butstr_orig);
 		but->str = but->strdata;
 		but->flag |= UI_BUT_HAS_SEP_CHAR;
+		but->drawflag |= UI_BUT_HAS_SHORTCUT;
 		ui_but_update(but);
 	}
+}
+
+/* -------------------------------------------------------------------- */
+/** \name Find Key Shortcut for Button
+ *
+ * - #ui_but_event_operator_string (and helpers)
+ * - #ui_but_event_property_operator_string
+ * \{ */
+
+static bool ui_but_event_operator_string_from_operator(
+        const bContext *C, uiBut *but,
+        char *buf, const size_t buf_len)
+{
+	BLI_assert(but->optype != NULL);
+	bool found = false;
+	IDProperty *prop = (but->opptr) ? but->opptr->data : NULL;
+
+	if (WM_key_event_operator_string(
+	            C, but->optype->idname, but->opcontext, prop, true,
+	            buf, buf_len))
+	{
+		found = true;
+	}
+	return found;
+}
+
+static bool ui_but_event_operator_string_from_menu(
+        const bContext *C, uiBut *but,
+        char *buf, const size_t buf_len)
+{
+	MenuType *mt = UI_but_menutype_get(but);
+	BLI_assert(mt != NULL);
+
+	bool found = false;
+	IDProperty *prop_menu;
+
+	/* annoying, create a property */
+	IDPropertyTemplate val = {0};
+	prop_menu = IDP_New(IDP_GROUP, &val, __func__); /* dummy, name is unimportant  */
+	IDP_AddToGroup(prop_menu, IDP_NewString(mt->idname, "name", sizeof(mt->idname)));
+
+	if (WM_key_event_operator_string(
+	        C, "WM_OT_call_menu", WM_OP_INVOKE_REGION_WIN, prop_menu, true,
+	        buf, buf_len))
+	{
+		found = true;
+	}
+
+	IDP_FreeProperty(prop_menu);
+	MEM_freeN(prop_menu);
+	return found;
+}
+
+static bool ui_but_event_operator_string_from_panel(
+        const bContext *C, uiBut *but,
+        char *buf, const size_t buf_len)
+{
+	/** Nearly exact copy of #ui_but_event_operator_string_from_menu */
+	PanelType *pt = UI_but_paneltype_get(but);
+	BLI_assert(pt != NULL);
+
+	bool found = false;
+	IDProperty *prop_panel;
+
+	/* annoying, create a property */
+	IDPropertyTemplate val = {0};
+	prop_panel = IDP_New(IDP_GROUP, &val, __func__); /* dummy, name is unimportant  */
+	IDP_AddToGroup(prop_panel, IDP_NewString(pt->idname, "name", sizeof(pt->idname)));
+	IDP_AddToGroup(prop_panel, IDP_New(IDP_INT, &(IDPropertyTemplate){ .i = pt->space_type, }, "space_type"));
+	IDP_AddToGroup(prop_panel, IDP_New(IDP_INT, &(IDPropertyTemplate){ .i = pt->region_type, }, "region_type"));
+
+	for (int i = 0; i < 2; i++) {
+		/* FIXME(campbell): We can't reasonably search all configurations - long term. */
+		IDP_ReplaceInGroup(prop_panel, IDP_New(IDP_INT, &(IDPropertyTemplate){ .i = i, }, "keep_open"));
+		if (WM_key_event_operator_string(
+		            C, "WM_OT_call_panel", WM_OP_INVOKE_REGION_WIN, prop_panel, true,
+		            buf, buf_len))
+		{
+			found = true;
+			break;
+		}
+	}
+
+	IDP_FreeProperty(prop_panel);
+	MEM_freeN(prop_panel);
+	return found;
 }
 
 static bool ui_but_event_operator_string(
         const bContext *C, uiBut *but,
         char *buf, const size_t buf_len)
 {
-	MenuType *mt;
 	bool found = false;
 
-	if (but->optype) {
-		IDProperty *prop = (but->opptr) ? but->opptr->data : NULL;
-
-		if (WM_key_event_operator_string(
-		        C, but->optype->idname, but->opcontext, prop, true,
-		        buf, buf_len))
-		{
-			found = true;
-		}
+	if (but->optype != NULL) {
+		found = ui_but_event_operator_string_from_operator(C, but, buf, buf_len);
 	}
-	else if ((mt = UI_but_menutype_get(but))) {
-		IDProperty *prop_menu;
-		IDProperty *prop_menu_name;
-
-		/* annoying, create a property */
-		IDPropertyTemplate val = {0};
-		prop_menu = IDP_New(IDP_GROUP, &val, __func__); /* dummy, name is unimportant  */
-		IDP_AddToGroup(prop_menu, (prop_menu_name = IDP_NewString("", "name", sizeof(mt->idname))));
-
-		IDP_AssignString(prop_menu_name, mt->idname, sizeof(mt->idname));
-
-		if (WM_key_event_operator_string(
-		        C, "WM_OT_call_menu", WM_OP_INVOKE_REGION_WIN, prop_menu, true,
-		        buf, buf_len))
-		{
-			found = true;
-		}
-
-		IDP_FreeProperty(prop_menu);
-		MEM_freeN(prop_menu);
+	else if (UI_but_menutype_get(but) != NULL) {
+		found = ui_but_event_operator_string_from_menu(C, but, buf, buf_len);
+	}
+	else if (UI_but_paneltype_get(but) != NULL) {
+		found = ui_but_event_operator_string_from_panel(C, but, buf, buf_len);
 	}
 
 	return found;
@@ -1052,6 +1167,8 @@ static bool ui_but_event_property_operator_string(
 
 	return found;
 }
+
+/** \} */
 
 /**
  * This goes in a seemingly weird pattern:
@@ -1181,6 +1298,7 @@ void UI_block_end_ex(const bContext *C, uiBlock *block, const int xy[2], int r_x
 {
 	wmWindow *window = CTX_wm_window(C);
 	Scene *scene = CTX_data_scene(C);
+	ARegion *region = CTX_wm_region(C);
 	uiBut *but;
 
 	BLI_assert(block->active);
@@ -1209,6 +1327,9 @@ void UI_block_end_ex(const bContext *C, uiBlock *block, const int xy[2], int r_x
 
 		ui_but_anim_flag(but, (scene) ? scene->r.cfra : 0.0f);
 		ui_but_override_flag(but);
+		if (UI_but_is_decorator(but)) {
+			ui_but_anim_decorate_update_from_flag(but);
+		}
 	}
 
 
@@ -1256,6 +1377,8 @@ void UI_block_end_ex(const bContext *C, uiBlock *block, const int xy[2], int r_x
 	if (block->flag & UI_BUT_ALIGN) {
 		UI_block_align_end(block);
 	}
+
+	ui_update_flexible_spacing(region, block);
 
 	block->endblock = 1;
 }
@@ -1313,7 +1436,7 @@ void UI_block_draw(const bContext *C, uiBlock *block)
 		UI_block_end(C, block);
 
 	/* we set this only once */
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
 
 	/* scale fonts */
 	ui_fontscale(&style.paneltitle.points, block->aspect);
@@ -1325,9 +1448,9 @@ void UI_block_draw(const bContext *C, uiBlock *block)
 	ui_but_to_pixelrect(&rect, ar, block, NULL);
 
 	/* pixel space for AA widgets */
-	gpuPushProjectionMatrix();
-	gpuPushMatrix();
-	gpuLoadIdentity();
+	GPU_matrix_push_projection();
+	GPU_matrix_push();
+	GPU_matrix_identity_set();
 
 	wmOrtho2_region_pixelspace(ar);
 
@@ -1362,8 +1485,8 @@ void UI_block_draw(const bContext *C, uiBlock *block)
 	BLF_batch_draw_end();
 
 	/* restore matrix */
-	gpuPopProjectionMatrix();
-	gpuPopMatrix();
+	GPU_matrix_pop_projection();
+	GPU_matrix_pop();
 }
 
 static void ui_block_message_subscribe(ARegion *ar, struct wmMsgBus *mbus, uiBlock *block)
@@ -2064,8 +2187,9 @@ static void ui_get_but_string_unit(uiBut *but, char *str, int len_max, double va
 		precision = float_precision;
 	}
 
-	bUnit_AsString(str, len_max, ui_get_but_scale_unit(but, value), precision,
-	               unit->system, RNA_SUBTYPE_UNIT_VALUE(unit_type), do_split, pad);
+	bUnit_AsString(
+	        str, len_max, ui_get_but_scale_unit(but, value), precision,
+	        unit->system, RNA_SUBTYPE_UNIT_VALUE(unit_type), do_split, pad);
 }
 
 static float ui_get_but_step_unit(uiBut *but, float step_default)
@@ -2286,8 +2410,9 @@ static bool ui_set_but_string_eval_num_unit(bContext *C, uiBut *but, const char 
 
 	/* ugly, use the draw string to get the value,
 	 * this could cause problems if it includes some text which resolves to a unit */
-	bUnit_ReplaceString(str_unit_convert, sizeof(str_unit_convert), but->drawstr,
-	                    ui_get_but_scale_unit(but, 1.0), but->block->unit->system, RNA_SUBTYPE_UNIT_VALUE(unit_type));
+	bUnit_ReplaceString(
+	        str_unit_convert, sizeof(str_unit_convert), but->drawstr,
+	        ui_get_but_scale_unit(but, 1.0), but->block->unit->system, RNA_SUBTYPE_UNIT_VALUE(unit_type));
 
 	return BPY_execute_string_as_number(C, str_unit_convert, true, r_value);
 }
@@ -3224,7 +3349,8 @@ static uiBut *ui_def_but(
 	         UI_BTYPE_BLOCK, UI_BTYPE_BUT, UI_BTYPE_LABEL,
 	         UI_BTYPE_PULLDOWN, UI_BTYPE_ROUNDBOX, UI_BTYPE_LISTBOX,
 	         UI_BTYPE_BUT_MENU, UI_BTYPE_SCROLL, UI_BTYPE_GRIP,
-	         UI_BTYPE_SEPR, UI_BTYPE_SEPR_LINE) ||
+	         UI_BTYPE_SEPR, UI_BTYPE_SEPR_LINE,
+	         UI_BTYPE_SEPR_SPACER) ||
 	    (but->type >= UI_BTYPE_SEARCH_MENU))
 	{
 		/* pass */
@@ -3371,12 +3497,14 @@ static void ui_def_but_rna__menu(bContext *UNUSED(C), uiLayout *layout, void *bu
 		}
 		else {
 			if (item->icon) {
-				uiDefIconTextButI(block, UI_BTYPE_BUT_MENU, B_NOP, item->icon, item->name, 0, 0,
-				                  UI_UNIT_X * 5, UI_UNIT_Y, &handle->retvalue, item->value, 0.0, 0, -1, item->description);
+				uiDefIconTextButI(
+				        block, UI_BTYPE_BUT_MENU, B_NOP, item->icon, item->name, 0, 0,
+				        UI_UNIT_X * 5, UI_UNIT_Y, &handle->retvalue, item->value, 0.0, 0, -1, item->description);
 			}
 			else {
-				uiDefButI(block, UI_BTYPE_BUT_MENU, B_NOP, item->name, 0, 0,
-				          UI_UNIT_X * 5, UI_UNIT_X, &handle->retvalue, item->value, 0.0, 0, -1, item->description);
+				uiDefButI(
+				        block, UI_BTYPE_BUT_MENU, B_NOP, item->name, 0, 0,
+				        UI_UNIT_X * 5, UI_UNIT_X, &handle->retvalue, item->value, 0.0, 0, -1, item->description);
 			}
 		}
 	}
@@ -3388,6 +3516,12 @@ static void ui_def_but_rna__menu(bContext *UNUSED(C), uiLayout *layout, void *bu
 	}
 	BLI_assert((block->flag & UI_BLOCK_IS_FLIP) == 0);
 	block->flag |= UI_BLOCK_IS_FLIP;
+}
+
+static void ui_but_submenu_enable(uiBlock *block, uiBut *but)
+{
+	but->flag |= UI_BUT_ICON_SUBMENU;
+	block->content_hints |= BLOCK_CONTAINS_SUBMENU_BUT;
 }
 
 /**
@@ -3525,7 +3659,7 @@ static uiBut *ui_def_but_rna(
 	}
 
 	if ((type == UI_BTYPE_MENU) && (but->dt == UI_EMBOSS_PULLDOWN)) {
-		but->flag |= UI_BUT_ICON_SUBMENU;
+		ui_but_submenu_enable(block, but);
 	}
 
 	const char *info;
@@ -4264,7 +4398,7 @@ uiBut *uiDefIconTextMenuBut(uiBlock *block, uiMenuCreateFunc func, void *arg, in
 	ui_def_but_icon(but, icon, UI_HAS_ICON);
 
 	but->drawflag |= UI_BUT_ICON_LEFT;
-	but->flag |= UI_BUT_ICON_SUBMENU;
+	ui_but_submenu_enable(block, but);
 
 	but->menu_create_func = func;
 	ui_but_update(but);
@@ -4296,7 +4430,7 @@ uiBut *uiDefIconTextBlockBut(uiBlock *block, uiBlockCreateFunc func, void *arg, 
 		but->drawflag |= UI_BUT_ICON_LEFT;
 	}
 	but->flag |= UI_HAS_ICON;
-	but->flag |= UI_BUT_ICON_SUBMENU;
+	ui_but_submenu_enable(block, but);
 
 	but->block_create_func = func;
 	ui_but_update(but);
@@ -4694,10 +4828,10 @@ void UI_init(void)
 }
 
 /* after reading userdef file */
-void UI_init_userdef(void)
+void UI_init_userdef(Main *bmain)
 {
 	/* fix saved themes */
-	init_userdef_do_versions();
+	init_userdef_do_versions(bmain);
 	uiStyleInit();
 }
 
@@ -4711,4 +4845,3 @@ void UI_exit(void)
 	ui_resources_free();
 	ui_but_clipboard_free();
 }
-

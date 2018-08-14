@@ -20,20 +20,25 @@
 # <pep8 compliant>
 import bpy
 from bpy.types import Menu, Panel, UIList
+from bl_operators.presets import PresetMenu
+from .space_view3d import (
+    VIEW3D_PT_shading_lighting,
+    VIEW3D_PT_shading_color,
+    VIEW3D_PT_shading_options,
+)
 
 
-class RENDER_MT_presets(Menu):
+class RENDER_PT_presets(PresetMenu):
     bl_label = "Render Presets"
     preset_subdir = "render"
     preset_operator = "script.execute_preset"
-    draw = Menu.draw_preset
+    preset_add_operator = "render.preset_add"
 
 
-class RENDER_MT_ffmpeg_presets(Menu):
+class RENDER_PT_ffmpeg_presets(PresetMenu):
     bl_label = "FFMPEG Presets"
     preset_subdir = "ffmpeg"
     preset_operator = "script.python_file_run"
-    draw = Menu.draw_preset
 
 
 class RENDER_MT_framerate_presets(Menu):
@@ -68,6 +73,7 @@ class RENDER_PT_context(Panel):
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
+        layout.use_property_decorate = False
 
         scene = context.scene
         rd = scene.render
@@ -78,10 +84,13 @@ class RENDER_PT_context(Panel):
 
 class RENDER_PT_dimensions(RenderButtonsPanel, Panel):
     bl_label = "Dimensions"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     _frame_rate_args_prev = None
     _preset_class = None
+
+    def draw_header_preset(self, context):
+        RENDER_PT_presets.draw_panel_header(self.layout)
 
     @staticmethod
     def _draw_framerate_label(*args):
@@ -100,10 +109,10 @@ class RENDER_PT_dimensions(RenderButtonsPanel, Panel):
         custom_framerate = (fps_rate not in {23.98, 24, 25, 29.97, 30, 50, 59.94, 60})
 
         if custom_framerate is True:
-            fps_label_text = "Custom (%r fps)" % fps_rate
+            fps_label_text = f"Custom ({fps_rate!r} fps)"
             show_framerate = True
         else:
-            fps_label_text = "%r fps" % fps_rate
+            fps_label_text = f"{fps_rate!r} fps"
             show_framerate = (preset_label == "Custom")
 
         RENDER_PT_dimensions._frame_rate_args_prev = args
@@ -111,7 +120,7 @@ class RENDER_PT_dimensions(RenderButtonsPanel, Panel):
         return args
 
     @staticmethod
-    def draw_framerate(sub, rd):
+    def draw_framerate(layout, sub, rd):
         if RENDER_PT_dimensions._preset_class is None:
             RENDER_PT_dimensions._preset_class = bpy.types.RENDER_MT_framerate_presets
 
@@ -121,20 +130,17 @@ class RENDER_PT_dimensions(RenderButtonsPanel, Panel):
         sub.menu("RENDER_MT_framerate_presets", text=fps_label_text)
 
         if show_framerate:
-            sub.prop(rd, "fps")
-            sub.prop(rd, "fps_base", text="/")
+            col = layout.column(align=True)
+            col.prop(rd, "fps")
+            col.prop(rd, "fps_base", text="Base")
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
 
         scene = context.scene
         rd = scene.render
-
-        row = layout.row(align=True)
-        row.menu("RENDER_MT_presets", text=bpy.types.RENDER_MT_presets.bl_label)
-        row.operator("render.preset_add", text="", icon='ZOOMIN')
-        row.operator("render.preset_add", text="", icon='ZOOMOUT').remove_active = True
 
         col = layout.column(align=True)
         col.prop(rd, "resolution_x", text="Resolution X")
@@ -156,21 +162,22 @@ class RENDER_PT_dimensions(RenderButtonsPanel, Panel):
         col.prop(scene, "frame_end", text="End")
         col.prop(scene, "frame_step", text="Step")
 
-        col = layout.split(percentage=0.5)
+        col = layout.split()
         col.alignment = 'RIGHT'
         col.label(text="Frame Rate")
-        self.draw_framerate(col, rd)
+        self.draw_framerate(layout, col, rd)
 
 
 class RENDER_PT_frame_remapping(RenderButtonsPanel, Panel):
     bl_label = "Time Remapping"
     bl_parent_id = "RENDER_PT_dimensions"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
 
         rd = context.scene.render
 
@@ -182,7 +189,7 @@ class RENDER_PT_frame_remapping(RenderButtonsPanel, Panel):
 class RENDER_PT_post_processing(RenderButtonsPanel, Panel):
     bl_label = "Post Processing"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
@@ -200,34 +207,47 @@ class RENDER_PT_post_processing(RenderButtonsPanel, Panel):
 class RENDER_PT_stamp(RenderButtonsPanel, Panel):
     bl_label = "Metadata"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
-        layout.use_property_split = False
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
 
         rd = context.scene.render
 
         split = layout.split()
 
         col = split.column(align=True)
-        col.prop(rd, "use_stamp_time", text="Time")
         col.prop(rd, "use_stamp_date", text="Date")
-        col.prop(rd, "use_stamp_render_time", text="RenderTime")
+        col.prop(rd, "use_stamp_time", text="Time")
+
+        col.separator()
+
+        col.prop(rd, "use_stamp_render_time", text="Render Time")
         col.prop(rd, "use_stamp_frame", text="Frame")
-        col.prop(rd, "use_stamp_scene", text="Scene")
+        col.prop(rd, "use_stamp_frame_range", text="Frame Range")
         col.prop(rd, "use_stamp_memory", text="Memory")
 
         col = split.column(align=True)
         col.prop(rd, "use_stamp_camera", text="Camera")
         col.prop(rd, "use_stamp_lens", text="Lens")
-        col.prop(rd, "use_stamp_filename", text="Filename")
-        col.prop(rd, "use_stamp_frame_range", text="Frame range")
+
+        col.separator()
+
+        col.prop(rd, "use_stamp_scene", text="Scene")
         col.prop(rd, "use_stamp_marker", text="Marker")
-        col.prop(rd, "use_stamp_sequencer_strip", text="Seq. Strip")
+
+        col.separator()
+
+        col.prop(rd, "use_stamp_filename", text="Filename")
+
+        col.separator()
+
+        col.prop(rd, "use_stamp_sequencer_strip", text="Strip Name")
 
         if rd.use_sequencer:
-            col.prop(rd, "use_stamp_strip_meta", text="Sequence Strip")
+            col.prop(rd, "use_stamp_strip_meta", text="Use Strip Metadata")
 
         row = layout.split(percentage=0.3)
         row.prop(rd, "use_stamp_note", text="Note")
@@ -240,7 +260,7 @@ class RENDER_PT_stamp_burn(RenderButtonsPanel, Panel):
     bl_label = "Burn Into Image"
     bl_parent_id = "RENDER_PT_stamp"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw_header(self, context):
         rd = context.scene.render
@@ -264,11 +284,12 @@ class RENDER_PT_stamp_burn(RenderButtonsPanel, Panel):
 
 class RENDER_PT_output(RenderButtonsPanel, Panel):
     bl_label = "Output"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = False
+        layout.use_property_decorate = False  # No animation.
 
         rd = context.scene.render
         image_settings = rd.image_settings
@@ -295,7 +316,10 @@ class RENDER_PT_output(RenderButtonsPanel, Panel):
 class RENDER_PT_encoding(RenderButtonsPanel, Panel):
     bl_label = "Encoding"
     bl_options = {'DEFAULT_CLOSED'}
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
+
+    def draw_header_preset(self, context):
+        RENDER_PT_ffmpeg_presets.draw_panel_header(self.layout)
 
     @classmethod
     def poll(cls, context):
@@ -307,8 +331,6 @@ class RENDER_PT_encoding(RenderButtonsPanel, Panel):
 
         rd = context.scene.render
         ffmpeg = rd.ffmpeg
-
-        layout.menu("RENDER_MT_ffmpeg_presets", text="Presets")
 
         split = layout.split()
         split.prop(rd.ffmpeg, "format")
@@ -378,7 +400,7 @@ class RENDER_UL_renderviews(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         view = item
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            if view.name in {'left', 'right'}:
+            if view.name in {"left", "right"}:
                 layout.label(view.name, icon_value=icon + (not view.use))
             else:
                 layout.prop(view, "name", text="", index=index, icon_value=icon, emboss=False)
@@ -391,7 +413,7 @@ class RENDER_UL_renderviews(UIList):
 
 class RENDER_PT_stereoscopy(RenderButtonsPanel, Panel):
     bl_label = "Stereoscopy"
-    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_CLAY', 'BLENDER_EEVEE'}
+    COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_OPENGL'}
     bl_options = {'DEFAULT_CLOSED'}
 
     def draw_header(self, context):
@@ -430,28 +452,6 @@ class RENDER_PT_stereoscopy(RenderButtonsPanel, Panel):
             row = layout.row()
             row.label(text="Camera Suffix:")
             row.prop(rv, "camera_suffix", text="")
-
-
-class RENDER_PT_clay_settings(RenderButtonsPanel, Panel):
-    bl_label = "Clay Settings"
-    COMPAT_ENGINES = {'BLENDER_CLAY'}
-
-    def draw(self, context):
-        layout = self.layout
-        props = context.scene.display
-
-        col = layout.column()
-        col.template_icon_view(props, "matcap_icon")
-        col.prop(props, "matcap_rotation")
-        col.prop(props, "matcap_hue")
-        col.prop(props, "matcap_saturation")
-        col.prop(props, "matcap_value")
-        col.prop(props, "matcap_ssao_samples")
-        col.prop(props, "matcap_ssao_factor_cavity")
-        col.prop(props, "matcap_ssao_factor_edge")
-        col.prop(props, "matcap_ssao_distance")
-        col.prop(props, "matcap_ssao_attenuation")
-        col.prop(props, "matcap_hair_brightness_randomness")
 
 
 class RENDER_PT_eevee_ambient_occlusion(RenderButtonsPanel, Panel):
@@ -607,8 +607,6 @@ class RENDER_PT_eevee_volumetric(RenderButtonsPanel, Panel):
         sub = col.column()
         sub.active = props.use_volumetric_shadows
         sub.prop(props, "volumetric_shadow_samples", text="Shadow Samples")
-        col.separator()
-        col.prop(props, "use_volumetric_colored_transmittance")
 
 
 class RENDER_PT_eevee_subsurface_scattering(RenderButtonsPanel, Panel):
@@ -690,8 +688,8 @@ class RENDER_PT_eevee_shadows(RenderButtonsPanel, Panel):
 
         col = layout.column()
         col.prop(props, "shadow_method")
-        col.prop(props, "shadow_cube_size")
-        col.prop(props, "shadow_cascade_size")
+        col.prop(props, "shadow_cube_size", text="Cube Size")
+        col.prop(props, "shadow_cascade_size", text="Cascade Size")
         col.prop(props, "use_shadow_high_bitdepth")
 
 
@@ -707,6 +705,7 @@ class RENDER_PT_eevee_sampling(RenderButtonsPanel, Panel):
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
 
         scene = context.scene
         props = scene.eevee
@@ -729,14 +728,48 @@ class RENDER_PT_eevee_indirect_lighting(RenderButtonsPanel, Panel):
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
 
         scene = context.scene
         props = scene.eevee
 
         col = layout.column()
+        col.operator("scene.light_cache_bake", text="Bake Indirect Lighting", icon='RENDER_STILL')
+        col.operator("scene.light_cache_bake", text="Bake Cubemap Only", icon='LIGHTPROBE_CUBEMAP').subset = "CUBEMAPS"
+        col.operator("scene.light_cache_free", text="Free Lighting Cache")
+
+        cache_info = scene.eevee.gi_cache_info
+        if cache_info:
+            col.label(text=cache_info)
+
+        col.prop(props, "gi_auto_bake")
+
         col.prop(props, "gi_diffuse_bounces")
         col.prop(props, "gi_cubemap_resolution")
-        col.prop(props, "gi_visibility_resolution")
+        col.prop(props, "gi_visibility_resolution", text="Diffuse Occlusion")
+
+        layout.use_property_split = False
+        row = layout.split(percentage=0.5)
+        row.alignment = 'RIGHT'
+        row.label("Cubemap Display")
+
+        sub = row.row(align=True)
+        sub.prop(props, "gi_cubemap_draw_size", text="Size")
+        if props.gi_show_cubemaps:
+            sub.prop(props, "gi_show_cubemaps", text="", toggle=True, icon='HIDE_OFF')
+        else:
+            sub.prop(props, "gi_show_cubemaps", text="", toggle=True, icon='HIDE_ON')
+
+        row = layout.split(percentage=0.5)
+        row.alignment = 'RIGHT'
+        row.label("Irradiance Display")
+
+        sub = row.row(align=True)
+        sub.prop(props, "gi_irradiance_draw_size", text="Size")
+        if props.gi_show_irradiance:
+            sub.prop(props, "gi_show_irradiance", text="", toggle=True, icon='HIDE_OFF')
+        else:
+            sub.prop(props, "gi_show_irradiance", text="", toggle=True, icon='HIDE_ON')
 
 
 class RENDER_PT_eevee_film(RenderButtonsPanel, Panel):
@@ -760,7 +793,7 @@ class RENDER_PT_eevee_film(RenderButtonsPanel, Panel):
         col.prop(rd, "alpha_mode", text="Alpha")
 
 
-class RENDER_PT_hair(RenderButtonsPanel, Panel):
+class RENDER_PT_eevee_hair(RenderButtonsPanel, Panel):
     bl_label = "Hair"
     bl_options = {'DEFAULT_CLOSED'}
     COMPAT_ENGINES = {'BLENDER_EEVEE'}
@@ -781,9 +814,63 @@ class RENDER_PT_hair(RenderButtonsPanel, Panel):
         layout.prop(rd, "hair_subdiv")
 
 
+class RENDER_PT_opengl_film(RenderButtonsPanel, Panel):
+    bl_label = "Film"
+    bl_options = {'DEFAULT_CLOSED'}
+    COMPAT_ENGINES = {'BLENDER_OPENGL'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
+
+        rd = context.scene.render
+
+        layout.prop(rd, "use_antialiasing")
+
+        layout.prop(rd, "antialiasing_samples")
+        layout.prop(rd, "alpha_mode")
+
+
+class RENDER_PT_opengl_lighting(RenderButtonsPanel, Panel):
+    bl_label = "Lighting"
+    COMPAT_ENGINES = {'BLENDER_OPENGL'}
+
+    @classmethod
+    def poll(cls, context):
+        return (context.engine in cls.COMPAT_ENGINES)
+
+    def draw(self, context):
+        VIEW3D_PT_shading_lighting.draw(self, context)
+
+
+class RENDER_PT_opengl_color(RenderButtonsPanel, Panel):
+    bl_label = "Color"
+    COMPAT_ENGINES = {'BLENDER_OPENGL'}
+
+    @classmethod
+    def poll(cls, context):
+        return (context.engine in cls.COMPAT_ENGINES)
+
+    def draw(self, context):
+        VIEW3D_PT_shading_color.draw(self, context)
+
+
+class RENDER_PT_opengl_options(RenderButtonsPanel, Panel):
+    bl_label = "Options"
+    COMPAT_ENGINES = {'BLENDER_OPENGL'}
+
+    @classmethod
+    def poll(cls, context):
+        return (context.engine in cls.COMPAT_ENGINES)
+
+    def draw(self, context):
+        VIEW3D_PT_shading_options.draw(self, context)
+
+
 classes = (
-    RENDER_MT_presets,
-    RENDER_MT_ffmpeg_presets,
+    RENDER_PT_presets,
+    RENDER_PT_ffmpeg_presets,
     RENDER_MT_framerate_presets,
     RENDER_PT_context,
     RENDER_PT_dimensions,
@@ -795,8 +882,7 @@ classes = (
     RENDER_PT_stamp_burn,
     RENDER_UL_renderviews,
     RENDER_PT_stereoscopy,
-    RENDER_PT_hair,
-    RENDER_PT_clay_settings,
+    RENDER_PT_eevee_hair,
     RENDER_PT_eevee_sampling,
     RENDER_PT_eevee_film,
     RENDER_PT_eevee_shadows,
@@ -808,6 +894,10 @@ classes = (
     RENDER_PT_eevee_motion_blur,
     RENDER_PT_eevee_depth_of_field,
     RENDER_PT_eevee_bloom,
+    RENDER_PT_opengl_film,
+    RENDER_PT_opengl_lighting,
+    RENDER_PT_opengl_color,
+    RENDER_PT_opengl_options,
 )
 
 if __name__ == "__main__":  # only for live edit.

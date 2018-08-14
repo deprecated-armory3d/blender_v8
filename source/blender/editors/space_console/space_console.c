@@ -49,6 +49,7 @@
 #include "UI_view2d.h"
 
 #include "console_intern.h" // own include
+#include "GPU_framebuffer.h"
 
 /* ******************** default callbacks for console space ***************** */
 
@@ -169,31 +170,24 @@ static void console_cursor(wmWindow *win, ScrArea *sa, ARegion *ar)
 
 /* ************* dropboxes ************* */
 
-static int id_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
+static bool id_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
-//	SpaceConsole *sc = CTX_wm_space_console(C);
-	if (drag->type == WM_DRAG_ID)
-		return 1;
-	return 0;
+	return WM_drag_ID(drag, 0) != NULL;
 }
 
 static void id_drop_copy(wmDrag *drag, wmDropBox *drop)
 {
-	char *text;
-	ID *id = drag->poin;
+	ID *id = WM_drag_ID(drag, 0);
 
 	/* copy drag path to properties */
-	text = RNA_path_full_ID_py(id);
+	char *text = RNA_path_full_ID_py(id);
 	RNA_string_set(drop->ptr, "text", text);
 	MEM_freeN(text);
 }
 
-static int path_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
+static bool path_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
-	// SpaceConsole *sc = CTX_wm_space_console(C);
-	if (drag->type == WM_DRAG_PATH)
-		return 1;
-	return 0;
+	return (drag->type == WM_DRAG_PATH);
 }
 
 static void path_drop_copy(wmDrag *drag, wmDropBox *drop)
@@ -227,7 +221,7 @@ static void console_main_region_draw(const bContext *C, ARegion *ar)
 
 	/* clear and setup matrix */
 	UI_ThemeClearColor(TH_BACK);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear(GPU_COLOR_BIT);
 
 	/* worlks best with no view2d matrix set */
 	UI_view2d_view_ortho(v2d);
@@ -332,7 +326,6 @@ static void console_keymap(struct wmKeyConfig *keyconf)
 	kmi = WM_keymap_add_item(keymap, "CONSOLE_OT_execute", PADENTER, KM_PRESS, 0, 0);
 	RNA_boolean_set(kmi->ptr, "interactive", true);
 
-	//WM_keymap_add_item(keymap, "CONSOLE_OT_autocomplete", TABKEY, KM_PRESS, 0, 0); /* python operator - space_text.py */
 	WM_keymap_add_item(keymap, "CONSOLE_OT_autocomplete", SPACEKEY, KM_PRESS, KM_CTRL, 0); /* python operator - space_text.py */
 #endif
 
@@ -369,7 +362,7 @@ static void console_header_region_draw(const bContext *C, ARegion *ar)
 }
 
 static void console_main_region_listener(
-        bScreen *UNUSED(sc), ScrArea *sa, ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *sa, ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	// SpaceInfo *sinfo = sa->spacedata.first;

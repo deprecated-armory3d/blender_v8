@@ -3522,13 +3522,16 @@ static void sculpt_topology_update(Sculpt *sd, Object *ob, Brush *brush, Unified
 		PBVHTopologyUpdateMode mode = 0;
 		float location[3];
 
-		if (sd->flags & SCULPT_DYNTOPO_SUBDIVIDE)
-			mode |= PBVH_Subdivide;
+		if (!(sd->flags & SCULPT_DYNTOPO_DETAIL_MANUAL)) {
+			if (sd->flags & SCULPT_DYNTOPO_SUBDIVIDE) {
+				mode |= PBVH_Subdivide;
+			}
 
-		if ((sd->flags & SCULPT_DYNTOPO_COLLAPSE) ||
-		    (brush->sculpt_tool == SCULPT_TOOL_SIMPLIFY))
-		{
-			mode |= PBVH_Collapse;
+			if ((sd->flags & SCULPT_DYNTOPO_COLLAPSE) ||
+			    (brush->sculpt_tool == SCULPT_TOOL_SIMPLIFY))
+			{
+				mode |= PBVH_Collapse;
+			}
 		}
 
 		for (n = 0; n < totnode; n++) {
@@ -4082,25 +4085,25 @@ static void sculpt_update_tex(const Scene *scene, Sculpt *sd, SculptSession *ss)
 
 
 
-int sculpt_mode_poll(bContext *C)
+bool sculpt_mode_poll(bContext *C)
 {
 	Object *ob = CTX_data_active_object(C);
 	return ob && ob->mode & OB_MODE_SCULPT;
 }
 
-int sculpt_mode_poll_view3d(bContext *C)
+bool sculpt_mode_poll_view3d(bContext *C)
 {
 	return (sculpt_mode_poll(C) &&
 	        CTX_wm_region_view3d(C));
 }
 
-int sculpt_poll_view3d(bContext *C)
+bool sculpt_poll_view3d(bContext *C)
 {
 	return (sculpt_poll(C) &&
 	        CTX_wm_region_view3d(C));
 }
 
-int sculpt_poll(bContext *C)
+bool sculpt_poll(bContext *C)
 {
 	return sculpt_mode_poll(C) && paint_poll(C);
 }
@@ -4808,7 +4811,7 @@ static void sculpt_brush_init_tex(const Scene *scene, Sculpt *sd, SculptSession 
 	sculpt_update_tex(scene, sd, ss);
 }
 
-static bool sculpt_brush_stroke_init(bContext *C, wmOperator *op)
+static void sculpt_brush_stroke_init(bContext *C, wmOperator *op)
 {
 	Depsgraph *depsgraph = CTX_data_depsgraph(C);
 	Scene *scene = CTX_data_scene(C);
@@ -4829,8 +4832,6 @@ static bool sculpt_brush_stroke_init(bContext *C, wmOperator *op)
 
 	is_smooth = sculpt_any_smooth_mode(brush, NULL, mode);
 	BKE_sculpt_update_mesh_elements(depsgraph, scene, sd, ob, is_smooth, need_mask);
-
-	return 1;
 }
 
 static void sculpt_restore_mesh(Sculpt *sd, Object *ob)
@@ -4868,6 +4869,8 @@ static void sculpt_flush_update(bContext *C)
 
 	if (mmd)
 		multires_mark_as_modified(ob, MULTIRES_COORDS_MODIFIED);
+
+	DEG_id_tag_update(&ob->id, DEG_TAG_SHADING_UPDATE);
 
 	if (ss->kb || ss->modifiers_active) {
 		DEG_id_tag_update(&ob->id, OB_RECALC_DATA);
@@ -4954,7 +4957,7 @@ static void sculpt_stroke_update_step(bContext *C, struct PaintStroke *UNUSED(st
 	sculpt_update_cache_variants(C, sd, ob, itemptr);
 	sculpt_restore_mesh(sd, ob);
 
-	if (sd->flags & SCULPT_DYNTOPO_DETAIL_CONSTANT) {
+	if (sd->flags & (SCULPT_DYNTOPO_DETAIL_CONSTANT | SCULPT_DYNTOPO_DETAIL_MANUAL)) {
 		BKE_pbvh_bmesh_detail_size_set(ss->pbvh, 1.0f / sd->constant_detail);
 	}
 	else if (sd->flags & SCULPT_DYNTOPO_DETAIL_BRUSH) {
@@ -5075,8 +5078,7 @@ static int sculpt_brush_stroke_invoke(bContext *C, wmOperator *op, const wmEvent
 	int ignore_background_click;
 	int retval;
 
-	if (!sculpt_brush_stroke_init(C, op))
-		return OPERATOR_CANCELLED;
+	sculpt_brush_stroke_init(C, op);
 
 	stroke = paint_stroke_new(C, op, sculpt_stroke_get_location,
 	                          sculpt_stroke_test_start,
@@ -5108,8 +5110,7 @@ static int sculpt_brush_stroke_invoke(bContext *C, wmOperator *op, const wmEvent
 
 static int sculpt_brush_stroke_exec(bContext *C, wmOperator *op)
 {
-	if (!sculpt_brush_stroke_init(C, op))
-		return OPERATOR_CANCELLED;
+	sculpt_brush_stroke_init(C, op);
 
 	op->customdata = paint_stroke_new(C, op, sculpt_stroke_get_location, sculpt_stroke_test_start,
 	                                  sculpt_stroke_update_step, NULL, sculpt_stroke_done, 0);
@@ -5210,14 +5211,12 @@ static void sculpt_dynamic_topology_triangulate(BMesh *bm)
 void sculpt_pbvh_clear(Object *ob)
 {
 	SculptSession *ss = ob->sculpt;
-	DerivedMesh *dm = ob->derivedFinal;
 
 	/* Clear out any existing DM and PBVH */
-	if (ss->pbvh)
+	if (ss->pbvh) {
 		BKE_pbvh_free(ss->pbvh);
+	}
 	ss->pbvh = NULL;
-	if (dm)
-		dm->getPBVH(NULL, dm);
 	BKE_object_free_derived_caches(ob);
 }
 
@@ -5543,7 +5542,7 @@ static int sculpt_optimize_exec(bContext *C, wmOperator *UNUSED(op))
 	return OPERATOR_FINISHED;
 }
 
-static int sculpt_and_dynamic_topology_poll(bContext *C)
+static bool sculpt_and_dynamic_topology_poll(bContext *C)
 {
 	Object *ob = CTX_data_active_object(C);
 
@@ -5629,7 +5628,7 @@ static void sculpt_init_session(Depsgraph *depsgraph, Scene *scene, Object *ob)
 
 	ob->sculpt = MEM_callocN(sizeof(SculptSession), "sculpt session");
 	ob->sculpt->mode_type = OB_MODE_SCULPT;
-	BKE_sculpt_update_mesh_elements(depsgraph, scene, scene->toolsettings->sculpt, ob, 0, false);
+	BKE_sculpt_update_mesh_elements(depsgraph, scene, scene->toolsettings->sculpt, ob, false, false);
 }
 
 static int ed_object_sculptmode_flush_recalc_flag(Scene *scene, Object *ob, MultiresModifierData *mmd)
@@ -5643,7 +5642,7 @@ static int ed_object_sculptmode_flush_recalc_flag(Scene *scene, Object *ob, Mult
 }
 
 void ED_object_sculptmode_enter_ex(
-        Depsgraph *depsgraph,
+        Main *bmain, Depsgraph *depsgraph,
         Scene *scene, Object *ob,
         ReportList *reports)
 {
@@ -5665,6 +5664,11 @@ void ED_object_sculptmode_enter_ex(
 		BKE_sculptsession_free(ob);
 	}
 
+	/* Make sure derived final from original object does not reference possibly
+	 * freed memory.
+	 */
+	BKE_object_free_derived_caches(ob);
+
 	sculpt_init_session(depsgraph, scene, ob);
 
 	/* Mask layer is required */
@@ -5684,9 +5688,9 @@ void ED_object_sculptmode_enter_ex(
 	}
 
 	Paint *paint = BKE_paint_get_active_from_paintmode(scene, ePaintSculpt);
-	BKE_paint_init(scene, ePaintSculpt, PAINT_CURSOR_SCULPT);
+	BKE_paint_init(bmain, scene, ePaintSculpt, PAINT_CURSOR_SCULPT);
 
-	paint_cursor_start_explicit(paint, G.main->wm.first, sculpt_poll_view3d);
+	paint_cursor_start_explicit(paint, bmain->wm.first, sculpt_poll_view3d);
 
 	/* Check dynamic-topology flag; re-enter dynamic-topology mode when changing modes,
 	 * As long as no data was added that is not supported. */
@@ -5734,18 +5738,17 @@ void ED_object_sculptmode_enter_ex(
 		}
 	}
 
-	// ED_workspace_object_mode_sync_from_object(G.main->wm.first, workspace, ob);
-
 	/* Flush object mode. */
 	DEG_id_tag_update(&ob->id, DEG_TAG_COPY_ON_WRITE);
 }
 
 void ED_object_sculptmode_enter(struct bContext *C, ReportList *reports)
 {
+	Main *bmain = CTX_data_main(C);
 	Scene *scene = CTX_data_scene(C);
 	Object *ob = CTX_data_active_object(C);
 	Depsgraph *depsgraph = CTX_data_depsgraph(C);
-	ED_object_sculptmode_enter_ex(depsgraph, scene, ob, reports);
+	ED_object_sculptmode_enter_ex(bmain, depsgraph, scene, ob, reports);
 }
 
 void ED_object_sculptmode_exit_ex(
@@ -5785,11 +5788,12 @@ void ED_object_sculptmode_exit_ex(
 	/* Leave sculptmode */
 	ob->mode &= ~mode_flag;
 
-	// ED_workspace_object_mode_sync_from_object(G.main->wm.first, workspace, ob);
-
 	BKE_sculptsession_free(ob);
 
 	paint_cursor_delete_textures();
+
+	/* Never leave derived meshes behind. */
+	BKE_object_free_derived_caches(ob);
 
 	/* Flush object mode. */
 	DEG_id_tag_update(&ob->id, DEG_TAG_COPY_ON_WRITE);
@@ -5806,6 +5810,7 @@ void ED_object_sculptmode_exit(bContext *C)
 static int sculpt_mode_toggle_exec(bContext *C, wmOperator *op)
 {
 	struct wmMsgBus *mbus = CTX_wm_message_bus(C);
+	Main *bmain = CTX_data_main(C);
 	Depsgraph *depsgraph = CTX_data_depsgraph_on_load(C);
 	Scene *scene = CTX_data_scene(C);
 	Object *ob = CTX_data_active_object(C);
@@ -5822,7 +5827,7 @@ static int sculpt_mode_toggle_exec(bContext *C, wmOperator *op)
 		ED_object_sculptmode_exit_ex(depsgraph, scene, ob);
 	}
 	else {
-		ED_object_sculptmode_enter_ex(depsgraph, scene, ob, op->reports);
+		ED_object_sculptmode_enter_ex(bmain, depsgraph, scene, ob, op->reports);
 	}
 
 	WM_event_add_notifier(C, NC_SCENE | ND_MODE, scene);
@@ -5848,13 +5853,13 @@ static void SCULPT_OT_sculptmode_toggle(wmOperatorType *ot)
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
-
-static int sculpt_and_dynamic_topology_constant_detail_poll(bContext *C)
+static bool sculpt_and_constant_or_manual_detail_poll(bContext *C)
 {
 	Object *ob = CTX_data_active_object(C);
 	Sculpt *sd = CTX_data_tool_settings(C)->sculpt;
 
-	return sculpt_mode_poll(C) && ob->sculpt->bm && (sd->flags & SCULPT_DYNTOPO_DETAIL_CONSTANT);
+	return sculpt_mode_poll(C) && ob->sculpt->bm &&
+	       (sd->flags & (SCULPT_DYNTOPO_DETAIL_CONSTANT | SCULPT_DYNTOPO_DETAIL_MANUAL));
 }
 
 static int sculpt_detail_flood_fill_exec(bContext *C, wmOperator *UNUSED(op))
@@ -5916,7 +5921,7 @@ static void SCULPT_OT_detail_flood_fill(wmOperatorType *ot)
 
 	/* api callbacks */
 	ot->exec = sculpt_detail_flood_fill_exec;
-	ot->poll = sculpt_and_dynamic_topology_constant_detail_poll;
+	ot->poll = sculpt_and_constant_or_manual_detail_poll;
 
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
@@ -5966,8 +5971,7 @@ static int sculpt_sample_detail_size_exec(bContext *C, wmOperator *op)
 
 static int sculpt_sample_detail_size_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(e))
 {
-	ScrArea *sa = CTX_wm_area(C);
-	ED_area_headerprint(sa, "Click on the mesh to set the detail");
+	ED_workspace_status_text(C, "Click on the mesh to set the detail");
 	WM_cursor_modal_set(CTX_wm_window(C), BC_EYEDROPPER_CURSOR);
 	WM_event_add_modal_handler(C, op);
 	return OPERATOR_RUNNING_MODAL;
@@ -5978,14 +5982,13 @@ static int sculpt_sample_detail_size_modal(bContext *C, wmOperator *op, const wm
 	switch (e->type) {
 		case LEFTMOUSE:
 			if (e->val == KM_PRESS) {
-				ScrArea *sa = CTX_wm_area(C);
 				int ss_co[2] = {e->mval[0], e->mval[1]};
 
 				sample_detail(C, ss_co);
 
 				RNA_int_set_array(op->ptr, "location", ss_co);
 				WM_cursor_modal_restore(CTX_wm_window(C));
-				ED_area_headerprint(sa, NULL);
+				ED_workspace_status_text(C, NULL);
 				WM_main_add_notifier(NC_SCENE | ND_TOOLSETTINGS, NULL);
 
 				return OPERATOR_FINISHED;
@@ -5994,9 +5997,8 @@ static int sculpt_sample_detail_size_modal(bContext *C, wmOperator *op, const wm
 
 		case RIGHTMOUSE:
 		{
-			ScrArea *sa = CTX_wm_area(C);
 			WM_cursor_modal_restore(CTX_wm_window(C));
-			ED_area_headerprint(sa, NULL);
+			ED_workspace_status_text(C, NULL);
 
 			return OPERATOR_CANCELLED;
 		}
@@ -6017,7 +6019,7 @@ static void SCULPT_OT_sample_detail_size(wmOperatorType *ot)
 	ot->invoke = sculpt_sample_detail_size_invoke;
 	ot->exec = sculpt_sample_detail_size_exec;
 	ot->modal = sculpt_sample_detail_size_modal;
-	ot->poll = sculpt_and_dynamic_topology_constant_detail_poll;
+	ot->poll = sculpt_and_constant_or_manual_detail_poll;
 
 	ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 
@@ -6035,7 +6037,7 @@ static int sculpt_set_detail_size_exec(bContext *C, wmOperator *UNUSED(op))
 
 	WM_operator_properties_create_ptr(&props_ptr, ot);
 
-	if (sd->flags & SCULPT_DYNTOPO_DETAIL_CONSTANT) {
+	if (sd->flags & (SCULPT_DYNTOPO_DETAIL_CONSTANT | SCULPT_DYNTOPO_DETAIL_MANUAL)) {
 		set_brush_rc_props(&props_ptr, "sculpt", "constant_detail_resolution", NULL, 0);
 		RNA_string_set(&props_ptr, "data_path_primary", "tool_settings.sculpt.constant_detail_resolution");
 	}

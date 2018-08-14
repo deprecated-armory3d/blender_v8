@@ -115,12 +115,12 @@ static DRWShadingGroup *drw_shgroup_create_hair_procedural_ex(
 
 	/* TODO optimize this. Only bind the ones GPUMaterial needs. */
 	for (int i = 0; i < hair_cache->num_uv_layers; ++i) {
-		for (int n = 0; hair_cache->uv_layer_names[i][n][0] != '\0'; ++n) {
+		for (int n = 0; n < MAX_LAYER_NAME_CT && hair_cache->uv_layer_names[i][n][0] != '\0'; ++n) {
 			DRW_shgroup_uniform_texture(shgrp, hair_cache->uv_layer_names[i][n], hair_cache->uv_tex[i]);
 		}
 	}
 	for (int i = 0; i < hair_cache->num_col_layers; ++i) {
-		for (int n = 0; hair_cache->col_layer_names[i][n][0] != '\0'; ++n) {
+		for (int n = 0; n < MAX_LAYER_NAME_CT && hair_cache->col_layer_names[i][n][0] != '\0'; ++n) {
 			DRW_shgroup_uniform_texture(shgrp, hair_cache->col_layer_names[i][n], hair_cache->col_tex[i]);
 		}
 	}
@@ -137,14 +137,14 @@ static DRWShadingGroup *drw_shgroup_create_hair_procedural_ex(
 
 	/* Transform Feedback subdiv. */
 	if (need_ft_update) {
-		int final_points_ct = hair_cache->final[subdiv].strands_res * hair_cache->strands_count;
+		int final_points_len = hair_cache->final[subdiv].strands_res * hair_cache->strands_len;
 		GPUShader *tf_shader = hair_refine_shader_get(PART_REFINE_CATMULL_ROM);
 		DRWShadingGroup *tf_shgrp = DRW_shgroup_transform_feedback_create(tf_shader, g_tf_pass,
 		                                                                  hair_cache->final[subdiv].proc_buf);
 		DRW_shgroup_uniform_texture(tf_shgrp, "hairPointBuffer", hair_cache->point_tex);
 		DRW_shgroup_uniform_texture(tf_shgrp, "hairStrandBuffer", hair_cache->strand_tex);
 		DRW_shgroup_uniform_int(tf_shgrp, "hairStrandsRes", &hair_cache->final[subdiv].strands_res, 1);
-		DRW_shgroup_call_procedural_points_add(tf_shgrp, final_points_ct, NULL);
+		DRW_shgroup_call_procedural_points_add(tf_shgrp, final_points_len, NULL);
 	}
 
 	return shgrp;

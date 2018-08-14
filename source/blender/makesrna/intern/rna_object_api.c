@@ -68,7 +68,6 @@ static const EnumPropertyItem space_items[] = {
 
 #include "BKE_anim.h"
 #include "BKE_bvhutils.h"
-#include "BKE_cdderivedmesh.h"
 #include "BKE_constraint.h"
 #include "BKE_context.h"
 #include "BKE_customdata.h"
@@ -123,30 +122,54 @@ static void rna_Object_select_set(Object *ob, bContext *C, ReportList *reports, 
 	}
 }
 
-static int rna_Object_select_get(Object *ob, bContext *C, ReportList *reports)
+static bool rna_Object_select_get(Object *ob, bContext *C, ReportList *reports)
 {
 	ViewLayer *view_layer = CTX_data_view_layer(C);
 	Base *base = BKE_view_layer_base_find(view_layer, ob);
 
 	if (!base) {
-		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in Render Layer '%s'!", ob->id.name + 2, view_layer->name);
-		return -1;
+		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in View Layer '%s'!", ob->id.name + 2, view_layer->name);
+		return false;
 	}
 
-	return ((base->flag & BASE_SELECTED) != 0) ? 1 : 0;
+	return ((base->flag & BASE_SELECTED) != 0);
 }
 
-static int rna_Object_visible_get(Object *ob, bContext *C, ReportList *reports)
+static bool rna_Object_visible_get(Object *ob, bContext *C, ReportList *reports)
 {
 	ViewLayer *view_layer = CTX_data_view_layer(C);
 	Base *base = BKE_view_layer_base_find(view_layer, ob);
 
 	if (!base) {
-		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in Render Layer '%s'!", ob->id.name + 2, view_layer->name);
-		return -1;
+		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in View Layer '%s'!", ob->id.name + 2, view_layer->name);
+		return false;
 	}
 
-	return ((base->flag & BASE_VISIBLED) != 0) ? 1 : 0;
+	return ((base->flag & BASE_VISIBLE) != 0);
+}
+
+static bool rna_Object_holdout_get(Object *ob, ReportList *reports, ViewLayer *view_layer)
+{
+	Base *base = BKE_view_layer_base_find(view_layer, ob);
+
+	if (!base) {
+		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in View Layer '%s'!", ob->id.name + 2, view_layer->name);
+		return false;
+	}
+
+	return ((base->flag & BASE_HOLDOUT) != 0);
+}
+
+static bool rna_Object_indirect_only_get(Object *ob, ReportList *reports, ViewLayer *view_layer)
+{
+	Base *base = BKE_view_layer_base_find(view_layer, ob);
+
+	if (!base) {
+		BKE_reportf(reports, RPT_ERROR, "Object '%s' not in View Layer '%s'!", ob->id.name + 2, view_layer->name);
+		return false;
+	}
+
+	return ((base->flag & BASE_INDIRECT_ONLY) != 0);
 }
 
 /* Convert a given matrix from a space to another (using the object and/or a bone as reference). */
@@ -201,7 +224,7 @@ static void rna_Object_camera_fit_coords(
 /* settings: 0 - preview, 1 - render */
 static Mesh *rna_Object_to_mesh(
         Object *ob, bContext *C, ReportList *reports, Depsgraph *depsgraph,
-        int apply_modifiers, int calc_tessface, int calc_undeformed)
+        bool apply_modifiers, bool calc_tessface, bool calc_undeformed)
 {
 	Main *bmain = CTX_data_main(C);
 
@@ -209,16 +232,17 @@ static Mesh *rna_Object_to_mesh(
 }
 
 static PointerRNA rna_Object_shape_key_add(Object *ob, bContext *C, ReportList *reports,
-                                           const char *name, int from_mix)
+                                           const char *name, bool from_mix)
 {
+	Main *bmain = CTX_data_main(C);
 	KeyBlock *kb = NULL;
 
-	if ((kb = BKE_object_shapekey_insert(ob, name, from_mix))) {
+	if ((kb = BKE_object_shapekey_insert(bmain, ob, name, from_mix))) {
 		PointerRNA keyptr;
 
 		RNA_pointer_create((ID *)ob->data, &RNA_ShapeKey, kb, &keyptr);
 		WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, ob);
-		
+
 		return keyptr;
 	}
 	else {
@@ -288,20 +312,20 @@ static void rna_Mesh_assign_verts_to_group(Object *ob, bDeformGroup *group, int 
 #endif
 
 /* don't call inside a loop */
-static int dm_looptri_to_poly_index(DerivedMesh *dm, const MLoopTri *lt)
+static int mesh_looptri_to_poly_index(Mesh *me_eval, const MLoopTri *lt)
 {
-	const int *index_mp_to_orig = dm->getPolyDataArray(dm, CD_ORIGINDEX);
+	const int *index_mp_to_orig = CustomData_get_layer(&me_eval->pdata, CD_ORIGINDEX);
 	return index_mp_to_orig ? index_mp_to_orig[lt->poly] : lt->poly;
 }
 
 static void rna_Object_ray_cast(
         Object *ob, ReportList *reports,
         float origin[3], float direction[3], float distance,
-        int *r_success, float r_location[3], float r_normal[3], int *r_index)
+        bool *r_success, float r_location[3], float r_normal[3], int *r_index)
 {
 	bool success = false;
 
-	if (ob->derivedFinal == NULL) {
+	if (ob->runtime.mesh_eval == NULL) {
 		BKE_reportf(reports, RPT_ERROR, "Object '%s' has no mesh data to be used for ray casting", ob->id.name + 2);
 		return;
 	}
@@ -309,12 +333,14 @@ static void rna_Object_ray_cast(
 	/* Test BoundBox first (efficiency) */
 	BoundBox *bb = BKE_object_boundbox_get(ob);
 	float distmin;
-	if (!bb || (isect_ray_aabb_v3_simple(origin, direction, bb->vec[0], bb->vec[6], &distmin, NULL) && distmin <= distance)) {
-
+	normalize_v3(direction);  /* Needed for valid distance check from isect_ray_aabb_v3_simple() call. */
+	if (!bb ||
+	    (isect_ray_aabb_v3_simple(origin, direction, bb->vec[0], bb->vec[6], &distmin, NULL) && distmin <= distance))
+	{
 		BVHTreeFromMesh treeData = {NULL};
 
 		/* no need to managing allocation or freeing of the BVH data. this is generated and freed as needed */
-		bvhtree_from_mesh_get(&treeData, ob->derivedFinal, BVHTREE_FROM_LOOPTRI, 4);
+		BKE_bvhtree_from_mesh_get(&treeData, ob->runtime.mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
 
 		/* may fail if the mesh has no faces, in that case the ray-cast misses */
 		if (treeData.tree != NULL) {
@@ -322,9 +348,6 @@ static void rna_Object_ray_cast(
 
 			hit.index = -1;
 			hit.dist = distance;
-
-			normalize_v3(direction);
-
 
 			if (BLI_bvhtree_ray_cast(treeData.tree, origin, direction, 0.0f, &hit,
 			                         treeData.raycast_callback, &treeData) != -1)
@@ -334,7 +357,7 @@ static void rna_Object_ray_cast(
 
 					copy_v3_v3(r_location, hit.co);
 					copy_v3_v3(r_normal, hit.no);
-					*r_index = dm_looptri_to_poly_index(ob->derivedFinal, &treeData.looptri[hit.index]);
+					*r_index = mesh_looptri_to_poly_index(ob->runtime.mesh_eval, &treeData.looptri[hit.index]);
 				}
 			}
 
@@ -352,18 +375,18 @@ static void rna_Object_ray_cast(
 
 static void rna_Object_closest_point_on_mesh(
         Object *ob, ReportList *reports, float origin[3], float distance,
-        int *r_success, float r_location[3], float r_normal[3], int *r_index)
+        bool *r_success, float r_location[3], float r_normal[3], int *r_index)
 {
 	BVHTreeFromMesh treeData = {NULL};
-	
-	if (ob->derivedFinal == NULL) {
+
+	if (ob->runtime.mesh_eval == NULL) {
 		BKE_reportf(reports, RPT_ERROR, "Object '%s' has no mesh data to be used for finding nearest point",
 		            ob->id.name + 2);
 		return;
 	}
 
 	/* no need to managing allocation or freeing of the BVH data. this is generated and freed as needed */
-	bvhtree_from_mesh_get(&treeData, ob->derivedFinal, BVHTREE_FROM_LOOPTRI, 4);
+	BKE_bvhtree_from_mesh_get(&treeData, ob->runtime.mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
 
 	if (treeData.tree == NULL) {
 		BKE_reportf(reports, RPT_ERROR, "Object '%s' could not create internal data for finding nearest point",
@@ -381,7 +404,7 @@ static void rna_Object_closest_point_on_mesh(
 
 			copy_v3_v3(r_location, nearest.co);
 			copy_v3_v3(r_normal, nearest.no);
-			*r_index = dm_looptri_to_poly_index(ob->derivedFinal, &treeData.looptri[nearest.index]);
+			*r_index = mesh_looptri_to_poly_index(ob->runtime.mesh_eval, &treeData.looptri[nearest.index]);
 
 			goto finally;
 		}
@@ -397,21 +420,23 @@ finally:
 	free_bvhtree_from_mesh(&treeData);
 }
 
-static int rna_Object_is_modified(Object *ob, Scene *scene, int settings)
+static bool rna_Object_is_modified(Object *ob, Scene *scene, int settings)
 {
 	return BKE_object_is_modified(scene, ob) & settings;
 }
 
-static int rna_Object_is_deform_modified(Object *ob, Scene *scene, int settings)
+static bool rna_Object_is_deform_modified(Object *ob, Scene *scene, int settings)
 {
 	return BKE_object_is_deform_modified(scene, ob) & settings;
 }
 
 #ifndef NDEBUG
-void rna_Object_dm_info(struct Object *ob, int type, char *result)
+
+#include "BKE_mesh_runtime.h"
+
+void rna_Object_me_eval_info(struct Object *ob, int type, char *result)
 {
-	DerivedMesh *dm = NULL;
-	bool dm_release = false;
+	Mesh *me_eval = NULL;
 	char *ret = NULL;
 
 	result[0] = '\0';
@@ -419,24 +444,19 @@ void rna_Object_dm_info(struct Object *ob, int type, char *result)
 	switch (type) {
 		case 0:
 			if (ob->type == OB_MESH) {
-				dm = CDDM_from_mesh(ob->data);
-				ret = DM_debug_info(dm);
-				dm_release = true;
+				me_eval = ob->data;
 			}
 			break;
 		case 1:
-			dm = ob->derivedDeform;
+			me_eval = ob->runtime.mesh_deform_eval;
 			break;
 		case 2:
-			dm = ob->derivedFinal;
+			me_eval = ob->runtime.mesh_eval;
 			break;
 	}
 
-	if (dm) {
-		ret = DM_debug_info(dm);
-		if (dm_release) {
-			dm->release(dm);
-		}
+	if (me_eval) {
+		ret = BKE_mesh_runtime_debug_info(me_eval);
 		if (ret) {
 			strcpy(result, ret);
 			MEM_freeN(ret);
@@ -445,7 +465,7 @@ void rna_Object_dm_info(struct Object *ob, int type, char *result)
 }
 #endif /* NDEBUG */
 
-static int rna_Object_update_from_editmode(Object *ob, Main *bmain)
+static bool rna_Object_update_from_editmode(Object *ob, Main *bmain)
 {
 	/* fail gracefully if we aren't in edit-mode. */
 	return ED_object_editmode_load(bmain, ob);
@@ -473,29 +493,45 @@ void RNA_api_object(StructRNA *srna)
 #endif
 
 	static EnumPropertyItem object_select_items[] = {
-	    {0, "SELECT", 0, "Select", "Select object from the active render layer"},
-	    {1, "DESELECT", 0, "Deselect", "Deselect object from the active render layer"},
-	    {2, "TOGGLE", 0, "Toggle", "Toggle object selection from the active render layer"},
+	    {0, "SELECT", 0, "Select", "Select object from the active view layer"},
+	    {1, "DESELECT", 0, "Deselect", "Deselect object from the active view layer"},
+	    {2, "TOGGLE", 0, "Toggle", "Toggle object selection from the active view layer"},
 	    {0, NULL, 0, NULL, NULL}
 	};
 
 	/* Special wrapper to access the base selection value */
 	func = RNA_def_function(srna, "select_set", "rna_Object_select_set");
-	RNA_def_function_ui_description(func, "Select the object (for the active render layer)");
+	RNA_def_function_ui_description(func, "Select the object (for the active view layer)");
 	RNA_def_function_flag(func, FUNC_USE_CONTEXT | FUNC_USE_REPORTS);
 	parm = RNA_def_enum(func, "action", object_select_items, 0, "Action", "Select mode");
 	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
 
 	func = RNA_def_function(srna, "select_get", "rna_Object_select_get");
-	RNA_def_function_ui_description(func, "Get the object selection for the active render layer");
+	RNA_def_function_ui_description(func, "Get the object selection for the active view layer");
 	RNA_def_function_flag(func, FUNC_USE_CONTEXT | FUNC_USE_REPORTS);
 	parm = RNA_def_boolean(func, "result", 0, "", "Object selected");
 	RNA_def_function_return(func, parm);
 
 	func = RNA_def_function(srna, "visible_get", "rna_Object_visible_get");
-	RNA_def_function_ui_description(func, "Get the object visibility for the active render layer");
+	RNA_def_function_ui_description(func, "Get the object visibility for the active view layer");
 	RNA_def_function_flag(func, FUNC_USE_CONTEXT | FUNC_USE_REPORTS);
 	parm = RNA_def_boolean(func, "result", 0, "", "Object visible");
+	RNA_def_function_return(func, parm);
+
+	func = RNA_def_function(srna, "holdout_get", "rna_Object_holdout_get");
+	RNA_def_function_ui_description(func, "Test if object is masked in the view layer");
+	RNA_def_function_flag(func, FUNC_USE_REPORTS);
+	parm = RNA_def_pointer(func, "view_layer", "ViewLayer", "", "");
+	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
+	parm = RNA_def_boolean(func, "result", 0, "", "Object holdout");
+	RNA_def_function_return(func, parm);
+
+	func = RNA_def_function(srna, "indirect_only_get", "rna_Object_indirect_only_get");
+	RNA_def_function_ui_description(func, "Test if object is set to contribute only indirectly (through shadows and reflections) in the view layer");
+	RNA_def_function_flag(func, FUNC_USE_REPORTS);
+	parm = RNA_def_pointer(func, "view_layer", "ViewLayer", "", "");
+	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
+	parm = RNA_def_boolean(func, "result", 0, "", "Object indirect only");
 	RNA_def_function_return(func, parm);
 
 	/* Matrix space conversion */
@@ -520,7 +556,7 @@ void RNA_api_object(StructRNA *srna)
 	/* Camera-related operations */
 	func = RNA_def_function(srna, "calc_matrix_camera", "rna_Object_calc_matrix_camera");
 	RNA_def_function_ui_description(func, "Generate the camera projection matrix of this object "
-	                                      "(mostly useful for Camera and Lamp types)");
+	                                      "(mostly useful for Camera and Light types)");
 	parm = RNA_def_pointer(func, "depsgraph", "Depsgraph", "",
 	                       "Depsgraph to get evaluated data from");
 	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
@@ -591,7 +627,7 @@ void RNA_api_object(StructRNA *srna)
 	func = RNA_def_function(srna, "ray_cast", "rna_Object_ray_cast");
 	RNA_def_function_ui_description(func, "Cast a ray onto in object space");
 	RNA_def_function_flag(func, FUNC_USE_REPORTS);
-	
+
 	/* ray start and end */
 	parm = RNA_def_float_vector(func, "origin", 3, NULL, -FLT_MAX, FLT_MAX, "", "", -1e4, 1e4);
 	RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
@@ -663,7 +699,7 @@ void RNA_api_object(StructRNA *srna)
 
 #ifndef NDEBUG
 	/* mesh */
-	func = RNA_def_function(srna, "dm_info", "rna_Object_dm_info");
+	func = RNA_def_function(srna, "dm_info", "rna_Object_me_eval_info");
 	RNA_def_function_ui_description(func, "Returns a string for derived mesh data");
 
 	parm = RNA_def_enum(func, "type", mesh_dm_info_items, 0, "", "Modifier settings to apply");

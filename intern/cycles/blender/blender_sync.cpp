@@ -113,17 +113,17 @@ void BlenderSync::sync_recalc(BL::Depsgraph& b_depsgraph)
 			BL::Material b_mat(b_id);
 			shader_map.set_recalc(b_mat);
 		}
-		/* Lamp */
-		else if (b_id.is_a(&RNA_Lamp)) {
-			BL::Lamp b_lamp(b_id);
-			shader_map.set_recalc(b_lamp);
+		/* Light */
+		else if (b_id.is_a(&RNA_Light)) {
+			BL::Light b_light(b_id);
+			shader_map.set_recalc(b_light);
 		}
 		/* Object */
 		else if (b_id.is_a(&RNA_Object)) {
 			BL::Object b_ob(b_id);
-			const bool updated_geometry = b_update->updated_geometry();
+			const bool updated_geometry = !b_update->is_dirty_geometry();
 
-			if (b_update->updated_transform()) {
+			if (!b_update->is_dirty_transform()) {
 				object_map.set_recalc(b_ob);
 				light_map.set_recalc(b_ob);
 			}
@@ -177,7 +177,7 @@ void BlenderSync::sync_recalc(BL::Depsgraph& b_depsgraph)
 }
 
 void BlenderSync::sync_data(BL::RenderSettings& b_render,
-	                        BL::Depsgraph& b_depsgraph,
+                            BL::Depsgraph& b_depsgraph,
                             BL::SpaceView3D& b_v3d,
                             BL::Object& b_override,
                             int width, int height,
@@ -207,6 +207,8 @@ void BlenderSync::sync_data(BL::RenderSettings& b_render,
 	            python_thread_state);
 
 	mesh_synced.clear();
+
+	free_data_after_sync(b_depsgraph);
 }
 
 /* Integrator */
@@ -292,7 +294,7 @@ void BlenderSync::sync_integrator()
 		integrator->mesh_light_samples = mesh_light_samples * mesh_light_samples;
 		integrator->subsurface_samples = subsurface_samples * subsurface_samples;
 		integrator->volume_samples = volume_samples * volume_samples;
-	} 
+	}
 	else {
 		integrator->diffuse_samples = diffuse_samples;
 		integrator->glossy_samples = glossy_samples;
@@ -327,7 +329,7 @@ void BlenderSync::sync_film()
 
 	Film *film = scene->film;
 	Film prevfilm = *film;
-	
+
 	film->exposure = get_float(cscene, "film_exposure");
 	film->filter_type = (FilterType)get_enum(cscene,
 	                                         "pixel_filter_type",
@@ -363,28 +365,11 @@ void BlenderSync::sync_film()
 void BlenderSync::sync_view_layer(BL::SpaceView3D& /*b_v3d*/, BL::ViewLayer& b_view_layer)
 {
 	/* render layer */
-	uint layer_override = get_layer(b_engine.layer_override());
-	uint view_layers = layer_override ? layer_override : get_layer(b_scene.layers());
-
 	view_layer.name = b_view_layer.name();
-
-	view_layer.holdout_layer = 0;
-	view_layer.exclude_layer = 0;
-
-	view_layer.view_layer = view_layers & ~view_layer.exclude_layer;
-	view_layer.view_layer |= view_layer.exclude_layer & view_layer.holdout_layer;
-
-	view_layer.layer = (1 << 20) - 1;
-	view_layer.layer |= view_layer.holdout_layer;
-
-	view_layer.material_override = PointerRNA_NULL;
 	view_layer.use_background_shader = b_view_layer.use_sky();
 	view_layer.use_background_ao = b_view_layer.use_ao();
 	view_layer.use_surfaces = b_view_layer.use_solid();
 	view_layer.use_hair = b_view_layer.use_strand();
-
-	view_layer.bound_samples = false;
-	view_layer.samples = 0;
 }
 
 /* Images */
@@ -566,6 +551,30 @@ array<Pass> BlenderSync::sync_render_passes(BL::RenderLayer& b_rlay,
 	return passes;
 }
 
+void BlenderSync::free_data_after_sync(BL::Depsgraph& b_depsgraph)
+{
+	/* When viewport display is not needed during render we can force some
+	 * caches to be releases from blender side in order to reduce peak memory
+	 * footprint during synchronization process.
+	 */
+	const bool is_interface_locked = b_engine.render() &&
+	                                 b_engine.render().use_lock_interface();
+	const bool can_free_caches = BlenderSession::headless || is_interface_locked;
+	if (!can_free_caches) {
+		return;
+	}
+	/* TODO(sergey): We can actually remove the whole dependency graph,
+	 * but that will need some API support first.
+	 */
+	BL::Depsgraph::objects_iterator b_ob;
+	for(b_depsgraph.objects.begin(b_ob);
+	    b_ob != b_depsgraph.objects.end();
+	    ++b_ob)
+	{
+		b_ob->cache_release();
+	}
+}
+
 /* Scene Parameters */
 
 SceneParams BlenderSync::get_scene_params(BL::Scene& b_scene,
@@ -580,7 +589,7 @@ SceneParams BlenderSync::get_scene_params(BL::Scene& b_scene,
 		params.shadingsystem = SHADINGSYSTEM_SVM;
 	else if(shadingsystem == 1)
 		params.shadingsystem = SHADINGSYSTEM_OSL;
-	
+
 	if(background || DebugFlags().viewport_static_bvh)
 		params.bvh_type = SceneParams::BVH_STATIC;
 	else
@@ -645,7 +654,7 @@ SessionParams BlenderSync::get_session_params(BL::RenderEngine& b_engine,
 
 	/* device type */
 	vector<DeviceInfo>& devices = Device::available_devices();
-	
+
 	/* device default CPU */
 	foreach(DeviceInfo& device, devices) {
 		if(device.type == DEVICE_CPU) {
@@ -720,7 +729,7 @@ SessionParams BlenderSync::get_session_params(BL::RenderEngine& b_engine,
 	int aa_samples = get_int(cscene, "aa_samples");
 	int preview_samples = get_int(cscene, "preview_samples");
 	int preview_aa_samples = get_int(cscene, "preview_aa_samples");
-	
+
 	if(get_boolean(cscene, "use_square_samples")) {
 		aa_samples = aa_samples * aa_samples;
 		preview_aa_samples = preview_aa_samples * preview_aa_samples;
@@ -817,7 +826,7 @@ SessionParams BlenderSync::get_session_params(BL::RenderEngine& b_engine,
 		params.shadingsystem = SHADINGSYSTEM_SVM;
 	else if(shadingsystem == 1)
 		params.shadingsystem = SHADINGSYSTEM_OSL;
-	
+
 	/* color managagement */
 	params.display_buffer_linear = GLEW_ARB_half_float_pixel &&
 	                               b_engine.support_display_space_shader(b_scene);
@@ -833,4 +842,3 @@ SessionParams BlenderSync::get_session_params(BL::RenderEngine& b_engine,
 }
 
 CCL_NAMESPACE_END
-

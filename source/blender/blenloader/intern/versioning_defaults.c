@@ -52,7 +52,6 @@
 
 #include "BLO_readfile.h"
 
-
 /**
  * Override values in in-memory startup.blend, avoids resaving for small changes.
  */
@@ -72,7 +71,6 @@ void BLO_update_defaults_userpref_blend(void)
 	/* Defaults from T54943 (phase 1). */
 	U.flag &= ~USER_TOOLTIPS_PYTHON;
 	U.uiflag |= USER_AUTOPERSP;
-	U.manipulator_flag |= USER_MANIPULATOR_DRAW_NAVIGATE;
 	U.uiflag2 |= USER_REGION_OVERLAP;
 
 	U.versions = 1;
@@ -94,6 +92,13 @@ void BLO_update_defaults_userpref_blend(void)
 #else
 	U.flag &= ~USER_SCRIPT_AUTOEXEC_DISABLE;
 #endif
+
+	/* Ignore the theme saved in the blend file,
+	 * instead use the theme from 'userdef_default_theme.c' */
+	{
+		bTheme *theme = U.themes.first;
+		memcpy(theme, &U_theme_default, sizeof(bTheme));
+	}
 }
 
 /**
@@ -141,6 +146,8 @@ void BLO_update_defaults_startup_blend(Main *bmain)
 		if (scene->toolsettings) {
 			ToolSettings *ts = scene->toolsettings;
 
+			ts->object_flag |= SCE_OBJECT_MODE_LOCK;
+
 			ts->uvcalc_flag |= UVCALC_TRANSFORM_CORRECT;
 
 			if (ts->sculpt) {
@@ -149,7 +156,7 @@ void BLO_update_defaults_startup_blend(Main *bmain)
 				sculpt->flags |= SCULPT_DYNTOPO_COLLAPSE;
 				sculpt->detail_size = 12;
 			}
-			
+
 			if (ts->vpaint) {
 				VPaint *vp = ts->vpaint;
 				vp->radial_symm[0] = vp->radial_symm[1] = vp->radial_symm[2] = 1;
@@ -163,52 +170,86 @@ void BLO_update_defaults_startup_blend(Main *bmain)
 			if (ts->gp_sculpt.brush[0].size == 0) {
 				GP_BrushEdit_Settings *gset = &ts->gp_sculpt;
 				GP_EditBrush_Data *brush;
-				
+				float curcolor_add[3], curcolor_sub[3];
+				ARRAY_SET_ITEMS(curcolor_add, 1.0f, 0.6f, 0.6f);
+				ARRAY_SET_ITEMS(curcolor_sub, 0.6f, 0.6f, 1.0f);
+
+				/* default sculpt brush */
+				gset->brushtype = GP_EDITBRUSH_TYPE_PUSH;
+				/* default weight paint brush */
+				gset->weighttype = GP_EDITBRUSH_TYPE_WEIGHT;
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_SMOOTH];
 				brush->size = 25;
 				brush->strength = 0.3f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_SMOOTH_PRESSURE;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_SMOOTH_PRESSURE | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_THICKNESS];
 				brush->size = 25;
 				brush->strength = 0.5f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_STRENGTH];
 				brush->size = 25;
 				brush->strength = 0.5f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
 
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_GRAB];
 				brush->size = 50;
 				brush->strength = 0.3f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_PUSH];
 				brush->size = 25;
 				brush->strength = 0.3f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_TWIST];
 				brush->size = 50;
 				brush->strength = 0.3f; // XXX?
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_PINCH];
 				brush->size = 50;
 				brush->strength = 0.5f; // XXX?
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
-				
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
 				brush = &gset->brush[GP_EDITBRUSH_TYPE_RANDOMIZE];
 				brush->size = 25;
 				brush->strength = 0.5f;
-				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
+
+				brush = &gset->brush[GP_EDITBRUSH_TYPE_WEIGHT];
+				brush->size = 25;
+				brush->strength = 0.5f;
+				brush->flag = GP_EDITBRUSH_FLAG_USE_FALLOFF | GP_EDITBRUSH_FLAG_ENABLE_CURSOR;
+				copy_v3_v3(brush->curcolor_add, curcolor_add);
+				copy_v3_v3(brush->curcolor_sub, curcolor_sub);
 			}
-			
+
 			ts->gpencil_v3d_align = GP_PROJECT_VIEWSPACE;
 			ts->gpencil_v2d_align = GP_PROJECT_VIEWSPACE;
 			ts->gpencil_seq_align = GP_PROJECT_VIEWSPACE;
 			ts->gpencil_ima_align = GP_PROJECT_VIEWSPACE;
+
+			ts->annotate_v3d_align = GP_PROJECT_VIEWSPACE | GP_PROJECT_CURSOR;
+			ts->annotate_thickness = 3;
 
 			ParticleEditSettings *pset = &ts->particle;
 			for (int a = 0; a < ARRAY_SIZE(pset->brush); a++) {
@@ -219,7 +260,7 @@ void BLO_update_defaults_startup_blend(Main *bmain)
 		}
 
 		scene->r.ffcodecdata.audio_mixrate = 48000;
-		
+
 		/* set av sync by default */
 		scene->audio.flag |= AUDIO_SYNC;
 		scene->flag &= ~SCE_FRAME_DROP;
@@ -401,5 +442,21 @@ void BLO_update_defaults_startup_blend(Main *bmain)
 			la->energy = 10.0;
 		}
 	}
+	/* default grease pencil settings */
+	{
+		for (bScreen *sc = bmain->screen.first; sc; sc = sc->id.next) {
+			for (ScrArea *sa = sc->areabase.first; sa; sa = sa->next) {
+				for (SpaceLink *sl = sa->spacedata.first; sl; sl = sl->next) {
+					if (sl->spacetype == SPACE_VIEW3D) {
+						View3D *v3d = (View3D *)sl;
+						v3d->gp_flag |= V3D_GP_SHOW_EDIT_LINES;
+						v3d->gp_flag |= V3D_GP_SHOW_MULTIEDIT_LINES;
+						v3d->gp_flag |= V3D_GP_SHOW_ONION_SKIN;
+						v3d->vertex_opacity = 0.9f;
+						break;
+					}
+				}
+			}
+		}
+	}
 }
-

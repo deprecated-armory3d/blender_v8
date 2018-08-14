@@ -9,7 +9,7 @@ uniform vec2 viewportSize;
 uniform float nearDist;
 
 uniform samplerBuffer vertData;
-uniform isamplerBuffer faceIds;
+uniform usamplerBuffer faceIds;
 
 #ifdef USE_GEOM_SHADER
 out vec2 ssPos;
@@ -24,7 +24,8 @@ out float facing;
 #ifdef LIGHT_EDGES
 #ifdef USE_GEOM_SHADER
 out vec3 obPos;
-out vec3 edgeAdj;
+out vec3 vNor;
+out float forceEdge;
 #else
 flat out vec3 edgeSharpness;
 #endif
@@ -52,9 +53,9 @@ float short_to_unit_float(uint s)
 	return float(value) / float(0x7FFF);
 }
 
-vec3 get_vertex_nor(int v_id)
+vec3 get_vertex_nor(uint id)
 {
-	v_id *= 5; /* See vertex format for explanation. */
+	int v_id = int(id) * 5; /* See vertex format for explanation. */
 	/* Fetch compressed normal as float and unpack them. */
 	vec2 data;
 	data.x = texelFetch(vertData, v_id + 3).r;
@@ -69,9 +70,9 @@ vec3 get_vertex_nor(int v_id)
 	return nor;
 }
 
-vec3 get_vertex_pos(int v_id)
+vec3 get_vertex_pos(uint id)
 {
-	v_id *= 5; /* See vertex format for explanation. */
+	int v_id = int(id) * 5; /* See vertex format for explanation. */
 	vec3 pos;
 	pos.x = texelFetch(vertData, v_id).r;
 	pos.y = texelFetch(vertData, v_id + 1).r;
@@ -79,11 +80,18 @@ vec3 get_vertex_pos(int v_id)
 	return pos;
 }
 
-float get_edge_sharpness(vec3 e0, vec3 e1, vec3 e2)
+vec3 get_edge_normal(vec3 n1, vec3 n2, vec3 edge)
 {
-	vec3 n0 = normalize(cross(e0, e1));
-	vec3 n1 = normalize(cross(e1, e2));
-	return dot(n0, n1);
+	edge = normalize(edge);
+	vec3 n = n1 + n2;
+	float p = dot(edge, n);
+	return normalize(n - p * edge);
+}
+
+float get_edge_sharpness(vec3 fnor, vec3 vnor)
+{
+	float sharpness = abs(dot(fnor, vnor));
+	return smoothstep(wireStepParam.x, wireStepParam.y, sharpness);
 }
 
 #define NO_EDGE vec3(10000.0);
@@ -91,15 +99,11 @@ float get_edge_sharpness(vec3 e0, vec3 e1, vec3 e2)
 void main()
 {
 #ifdef USE_GEOM_SHADER
+	uint v_id = texelFetch(faceIds, gl_VertexID).r;
 
-#  ifdef LIGHT_EDGES
-	int v_id = texelFetch(faceIds, gl_VertexID * 2).r;
-#  else
-	int v_id = texelFetch(faceIds, gl_VertexID).r;
-#  endif
-
-	bool do_edge = v_id < 0;
-	v_id = abs(v_id) - 1;
+	bool do_edge = (v_id & (1u << 30u)) != 0u;
+	bool force_edge = (v_id & (1u << 31u)) != 0u;
+	v_id = (v_id << 2u) >> 2u;
 
 	vec3 pos = get_vertex_pos(v_id);
 	vec3 nor = get_vertex_nor(v_id);
@@ -110,30 +114,29 @@ void main()
 	ssPos = proj(gl_Position);
 
 #  ifdef LIGHT_EDGES
-	int adj_id = texelFetch(faceIds, gl_VertexID * 2 + 1).r;
 	obPos = pos;
-	edgeAdj = get_vertex_pos(adj_id);
+	vNor = nor;
+	forceEdge = float(force_edge); /* meh, could try to also encode it in facingOut */
 #  endif
 
 #else
-
-#  ifdef LIGHT_EDGES
-	int v_0 = (gl_VertexID / 3) * 6;
-	ivec2 ofs = ivec2(2, 4); /* GL_TRIANGLE_ADJACENCY */
-#  else
 	int v_0 = (gl_VertexID / 3) * 3;
-	ivec2 ofs = ivec2(1, 2); /* GL_TRIANGLES */
-#  endif
 	int v_n = gl_VertexID % 3;
 
 	/* Getting the same positions for each of the 3 verts. */
-	ivec3 v_id;
+	uvec3 v_id;
 	v_id.x = texelFetch(faceIds, v_0).r;
-	v_id.y = texelFetch(faceIds, v_0 + ofs.x).r;
-	v_id.z = texelFetch(faceIds, v_0 + ofs.y).r;
+	v_id.y = texelFetch(faceIds, v_0 + 1).r;
+	v_id.z = texelFetch(faceIds, v_0 + 2).r;
 
-	bvec3 do_edge = lessThan(v_id, ivec3(0));
-	v_id = abs(v_id) - 1;
+	bvec3 do_edge, force_edge;
+	do_edge.x = (v_id.x & (1u << 30u)) != 0u;
+	do_edge.y = (v_id.y & (1u << 30u)) != 0u;
+	do_edge.z = (v_id.z & (1u << 30u)) != 0u;
+	force_edge.x = (v_id.x & (1u << 31u)) != 0u;
+	force_edge.y = (v_id.y & (1u << 31u)) != 0u;
+	force_edge.z = (v_id.z & (1u << 31u)) != 0u;
+	v_id = (v_id << 2u) >> 2u;
 
 	vec3 pos[3];
 	pos[0] = get_vertex_pos(v_id.x);
@@ -157,32 +160,30 @@ void main()
 
 	gl_Position = p_pos[v_n];
 
+#  ifndef LIGHT_EDGES
 	vec3 nor = get_vertex_nor(v_id[v_n]);
-	facing = normalize(NormalMatrix * nor).z;
-
-#  ifdef LIGHT_EDGES
-	ivec3 adj_id;
-	adj_id.x = texelFetch(faceIds, v_0 + 1).r;
-	adj_id.y = texelFetch(faceIds, v_0 + 3).r;
-	adj_id.z = texelFetch(faceIds, v_0 + 5).r;
-
-	vec3 adj_pos[3];
-	adj_pos[0] = get_vertex_pos(adj_id.x);
-	adj_pos[1] = get_vertex_pos(adj_id.y);
-	adj_pos[2] = get_vertex_pos(adj_id.z);
-
+#  else
 	vec3 edges[3];
 	edges[0] = pos[1] - pos[0];
 	edges[1] = pos[2] - pos[1];
 	edges[2] = pos[0] - pos[2];
+	vec3 fnor = normalize(cross(edges[0], -edges[2]));
 
-	edgeSharpness.x = get_edge_sharpness(adj_pos[0] - pos[0], edges[0], -edges[2]);
-	edgeSharpness.y = get_edge_sharpness(adj_pos[1] - pos[1], edges[1], -edges[0]);
-	edgeSharpness.z = get_edge_sharpness(adj_pos[2] - pos[2], edges[2], -edges[1]);
+	vec3 nors[3];
+	nors[0] = get_vertex_nor(v_id.x);
+	nors[1] = get_vertex_nor(v_id.y);
+	nors[2] = get_vertex_nor(v_id.z);
+	edgeSharpness.x = get_edge_sharpness(fnor, get_edge_normal(nors[0], nors[1], edges[0]));
+	edgeSharpness.y = get_edge_sharpness(fnor, get_edge_normal(nors[1], nors[2], edges[1]));
+	edgeSharpness.z = get_edge_sharpness(fnor, get_edge_normal(nors[2], nors[0], edges[2]));
+	edgeSharpness.x = force_edge.x ? 1.0 : edgeSharpness.x;
+	edgeSharpness.y = force_edge.y ? 1.0 : edgeSharpness.y;
+	edgeSharpness.z = force_edge.z ? 1.0 : edgeSharpness.z;
 
-	/* Easy to adjust parameters. */
-	edgeSharpness = smoothstep(wireStepParam.xxx, wireStepParam.yyy, edgeSharpness);
+	vec3 nor = nors[v_n];
 #  endif
+
+	facing = normalize(NormalMatrix * nor).z;
 
 #endif
 }

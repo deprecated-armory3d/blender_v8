@@ -34,6 +34,7 @@
 #include "DNA_scene_types.h"
 
 #include "BLI_rect.h"
+#include "BLI_listbase.h"
 
 #include "BKE_colortools.h"
 #include "BKE_context.h"
@@ -64,7 +65,7 @@ Image *ED_space_image(SpaceImage *sima)
 }
 
 /* called to assign images to UV faces */
-void ED_space_image_set(SpaceImage *sima, Scene *UNUSED(scene), Object *obedit, Image *ima)
+void ED_space_image_set(Main *bmain, SpaceImage *sima, Scene *UNUSED(scene), Object *obedit, Image *ima)
 {
 	/* change the space ima after because uvedit_face_visible_test uses the space ima
 	 * to check if the face is displayed in UV-localview */
@@ -77,7 +78,7 @@ void ED_space_image_set(SpaceImage *sima, Scene *UNUSED(scene), Object *obedit, 
 	}
 
 	if (sima->image)
-		BKE_image_signal(sima->image, &sima->iuser, IMA_SIGNAL_USER_NEW_IMAGE);
+		BKE_image_signal(bmain, sima->image, &sima->iuser, IMA_SIGNAL_USER_NEW_IMAGE);
 
 	id_us_ensure_real((ID *)sima->image);
 
@@ -302,17 +303,19 @@ bool ED_image_slot_cycle(struct Image *image, int direction)
 
 	BLI_assert(ELEM(direction, -1, 1));
 
-	for (i = 1; i < IMA_MAX_RENDER_SLOT; i++) {
-		slot = (cur + ((direction == -1) ? -i : i)) % IMA_MAX_RENDER_SLOT;
-		if (slot < 0) slot += IMA_MAX_RENDER_SLOT;
+	int num_slots = BLI_listbase_count(&image->renderslots);
+	for (i = 1; i < num_slots; i++) {
+		slot = (cur + ((direction == -1) ? -i : i)) % num_slots;
+		if (slot < 0) slot += num_slots;
 
-		if (image->renders[slot] || slot == image->last_render_slot) {
+		RenderSlot *render_slot = BKE_image_get_renderslot(image, slot);
+		if ((render_slot && render_slot->render) || slot == image->last_render_slot) {
 			image->render_slot = slot;
 			break;
 		}
 	}
 
-	if (i == IMA_MAX_RENDER_SLOT) {
+	if (i == num_slots) {
 		image->render_slot = ((cur == 1) ? 0 : 1);
 	}
 
@@ -385,7 +388,7 @@ bool ED_space_image_check_show_maskedit(SpaceImage *sima, ViewLayer *view_layer)
 	return (sima->mode == SI_MODE_MASK);
 }
 
-int ED_space_image_maskedit_poll(bContext *C)
+bool ED_space_image_maskedit_poll(bContext *C)
 {
 	SpaceImage *sima = CTX_wm_space_image(C);
 
@@ -412,7 +415,7 @@ bool ED_space_image_paint_curve(const bContext *C)
 }
 
 
-int ED_space_image_maskedit_mask_poll(bContext *C)
+bool ED_space_image_maskedit_mask_poll(bContext *C)
 {
 	if (ED_space_image_maskedit_poll(C)) {
 		SpaceImage *sima = CTX_wm_space_image(C);
@@ -421,4 +424,3 @@ int ED_space_image_maskedit_mask_poll(bContext *C)
 
 	return false;
 }
-

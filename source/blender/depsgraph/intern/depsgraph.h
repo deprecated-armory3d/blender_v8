@@ -38,11 +38,14 @@
 
 #include <stdlib.h>
 
+#include "DNA_ID.h" /* for ID_Type */
+
 #include "BKE_library.h" /* for MAX_LIBARRAY */
 
 #include "BLI_threads.h"  /* for SpinLock */
 
 #include "DEG_depsgraph.h"
+#include "DEG_depsgraph_physics.h"
 
 #include "intern/depsgraph_types.h"
 
@@ -128,6 +131,7 @@ struct Depsgraph {
 	IDDepsNode *find_id_node(const ID *id) const;
 	IDDepsNode *add_id_node(ID *id, ID *id_cow_hint = NULL);
 	void clear_id_nodes();
+	void clear_id_nodes_conditional(const std::function <bool (ID_Type id_type)>& filter);
 
 	/* Add new relationship between two nodes. */
 	DepsRelation *add_new_relation(OperationDepsNode *from,
@@ -223,6 +227,10 @@ struct Depsgraph {
 	/* NITE: Corresponds to G_DEBUG_DEPSGRAPH_* flags. */
 	int debug_flags;
 	string debug_name;
+
+	/* Cached list of colliders/effectors for collections and the scene
+	 * created along with relations, for fast lookup during evaluation. */
+	GHash *physics_relations[DEG_PHYSICS_RELATIONS_NUM];
 };
 
 }  // namespace DEG

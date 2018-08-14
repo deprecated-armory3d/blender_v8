@@ -46,6 +46,7 @@
 
 #include "BKE_camera.h"
 #include "BKE_context.h"
+#include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_screen.h"
 
@@ -188,8 +189,8 @@ void view3d_region_operator_needs_opengl(wmWindow *UNUSED(win), ARegion *ar)
 		RegionView3D *rv3d = ar->regiondata;
 
 		wmViewport(&ar->winrct); // TODO: bad
-		gpuLoadProjectionMatrix(rv3d->winmat);
-		gpuLoadMatrix(rv3d->viewmat);
+		GPU_matrix_projection_set(rv3d->winmat);
+		GPU_matrix_set(rv3d->viewmat);
 	}
 }
 
@@ -899,7 +900,7 @@ static float view_autodist_depth_margin(ARegion *ar, const int mval[2], int marg
  * \param fallback_depth_pt: Use this points depth when no depth can be found.
  */
 bool ED_view3d_autodist(
-        struct Depsgraph *depsgraph, ARegion *ar, View3D *v3d,
+        Depsgraph *depsgraph, ARegion *ar, View3D *v3d,
         const int mval[2], float mouse_worldloc[3],
         const bool alphaoverride, const float fallback_depth_pt[3])
 {
@@ -936,7 +937,7 @@ bool ED_view3d_autodist(
 	}
 }
 
-void ED_view3d_autodist_init(struct Depsgraph *depsgraph,
+void ED_view3d_autodist_init(Depsgraph *depsgraph,
         ARegion *ar, View3D *v3d, int mode)
 {
 	/* Get Z Depths, needed for perspective, nice for ortho */

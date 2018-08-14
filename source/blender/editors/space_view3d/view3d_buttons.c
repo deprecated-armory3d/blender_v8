@@ -60,6 +60,7 @@
 #include "BKE_deform.h"
 #include "BKE_object.h"
 #include "BKE_object_deform.h"
+#include "BKE_report.h"
 
 #include "DEG_depsgraph.h"
 
@@ -69,6 +70,7 @@
 #include "RNA_access.h"
 
 #include "ED_armature.h"
+#include "ED_object.h"
 #include "ED_mesh.h"
 #include "ED_screen.h"
 
@@ -785,7 +787,7 @@ static void do_view3d_vgroup_buttons(bContext *C, void *UNUSED(arg), int event)
 	}
 }
 
-static int view3d_panel_vgroup_poll(const bContext *C, PanelType *UNUSED(pt))
+static bool view3d_panel_vgroup_poll(const bContext *C, PanelType *UNUSED(pt))
 {
 	ViewLayer *view_layer = CTX_data_view_layer(C);
 	Object *ob = OBACT(view_layer);
@@ -1119,7 +1121,7 @@ static void do_view3d_region_buttons(bContext *C, void *UNUSED(index), int event
 	WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, v3d);
 }
 
-static int view3d_panel_transform_poll(const bContext *C, PanelType *UNUSED(pt))
+static bool view3d_panel_transform_poll(const bContext *C, PanelType *UNUSED(pt))
 {
 	ViewLayer *view_layer = CTX_data_view_layer(C);
 	return (view_layer->basact != NULL);
@@ -1163,6 +1165,11 @@ static void view3d_panel_transform(const bContext *C, Panel *pa)
 	}
 }
 
+static void hide_collections_menu_draw(const bContext *C, Menu *menu)
+{
+	ED_hide_collections_menu_draw(C, menu->layout);
+}
+
 void view3d_buttons_register(ARegionType *art)
 {
 	PanelType *pt;
@@ -1182,6 +1189,15 @@ void view3d_buttons_register(ARegionType *art)
 	pt->draw = view3d_panel_vgroup;
 	pt->poll = view3d_panel_vgroup_poll;
 	BLI_addtail(&art->paneltypes, pt);
+
+	MenuType *mt;
+
+	mt = MEM_callocN(sizeof(MenuType), "spacetype view3d menu collections");
+	strcpy(mt->idname, "VIEW3D_MT_collection");
+	strcpy(mt->label, N_("Collection"));
+	strcpy(mt->translation_context, BLT_I18NCONTEXT_DEFAULT_BPYRNA);
+	mt->draw = hide_collections_menu_draw;
+	WM_menutype_add(mt);
 }
 
 static int view3d_properties_toggle_exec(bContext *C, wmOperator *UNUSED(op))
@@ -1197,11 +1213,41 @@ static int view3d_properties_toggle_exec(bContext *C, wmOperator *UNUSED(op))
 
 void VIEW3D_OT_properties(wmOperatorType *ot)
 {
-	ot->name = "Properties";
+	ot->name = "Toggle Sidebar";
 	ot->description = "Toggle the properties region visibility";
 	ot->idname = "VIEW3D_OT_properties";
 
 	ot->exec = view3d_properties_toggle_exec;
+	ot->poll = ED_operator_view3d_active;
+
+	/* flags */
+	ot->flag = 0;
+}
+
+static int view3d_object_mode_menu(bContext *C, wmOperator *op)
+{
+	Object *ob = CTX_data_active_object(C);
+	if (ob == NULL) {
+		BKE_report(op->reports, RPT_WARNING, "No active object found");
+		return OPERATOR_CANCELLED;
+	}
+	else if (((ob->mode & OB_MODE_EDIT) == 0) && (ELEM(ob->type, OB_ARMATURE))) {
+		ED_object_mode_toggle(C, OB_MODE_POSE);
+		return OPERATOR_CANCELLED;
+	}
+	else {
+		UI_pie_menu_invoke(C, "VIEW3D_MT_object_mode_pie", CTX_wm_window(C)->eventstate);
+		return OPERATOR_CANCELLED;
+	}
+}
+
+void VIEW3D_OT_object_mode_pie_or_toggle(wmOperatorType *ot)
+{
+	ot->name = "Object Mode Menu";
+	ot->description = "";
+	ot->idname = "VIEW3D_OT_object_mode_pie_or_toggle";
+
+	ot->exec = view3d_object_mode_menu;
 	ot->poll = ED_operator_view3d_active;
 
 	/* flags */

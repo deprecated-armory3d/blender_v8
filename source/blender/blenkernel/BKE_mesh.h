@@ -64,7 +64,6 @@ struct MDeformVert;
 struct MDisps;
 struct Object;
 struct CustomData;
-struct DerivedMesh;
 struct Scene;
 struct MLoopUV;
 struct ReportList;
@@ -145,10 +144,10 @@ int BKE_mesh_nurbs_displist_to_mdata(
         struct MLoop **r_allloop, struct MPoly **r_allpoly,
         struct MLoopUV **r_alluv, int *r_totloop, int *r_totpoly);
 void BKE_mesh_from_nurbs_displist(
-        struct Object *ob, struct ListBase *dispbase, const bool use_orco_uv, const char *obdata_name, bool temporary);
-void BKE_mesh_from_nurbs(struct Object *ob);
+        struct Main *bmain, struct Object *ob, struct ListBase *dispbase, const bool use_orco_uv, const char *obdata_name, bool temporary);
+void BKE_mesh_from_nurbs(struct Main *bmain, struct Object *ob);
 void BKE_mesh_to_curve_nurblist(const struct Mesh *me, struct ListBase *nurblist, const int edge_users_test);
-void BKE_mesh_to_curve(struct Depsgraph *depsgraph, struct Scene *scene, struct Object *ob);
+void BKE_mesh_to_curve(struct Main *bmain, struct Depsgraph *depsgraph, struct Scene *scene, struct Object *ob);
 void BKE_mesh_material_index_remove(struct Mesh *me, short index);
 void BKE_mesh_material_index_clear(struct Mesh *me);
 void BKE_mesh_material_remap(struct Mesh *me, const unsigned int *remap, unsigned int remap_len);
@@ -205,6 +204,7 @@ int  BKE_mesh_mselect_active_get(struct Mesh *me, int type);
 void BKE_mesh_mselect_active_set(struct Mesh *me, int index, int type);
 
 void BKE_mesh_apply_vert_coords(struct Mesh *mesh, float (*vertCoords)[3]);
+void BKE_mesh_apply_vert_normals(struct Mesh *mesh, short (*vertNormals)[3]);
 
 
 /* *** mesh_evaluate.c *** */
@@ -270,6 +270,8 @@ typedef struct MLoopNorSpace {
 	 *     - BMLoop pointers. */
 	struct LinkNode *loops;
 	char flags;
+
+	void *user_data;  /* To be used for extended processing related to loop normal spaces (aka smooth fans). */
 } MLoopNorSpace;
 /**
  * MLoopNorSpace.flags
@@ -285,6 +287,7 @@ typedef struct MLoopNorSpaceArray {
 	MLoopNorSpace **lspacearr;    /* MLoop aligned array */
 	struct LinkNode *loops_pool;  /* Allocated once, avoids to call BLI_linklist_prepend_arena() for each loop! */
 	char data_type;               /* Whether we store loop indices, or pointers to BMLoop. */
+	int num_spaces;               /* Number of clnors spaces defined in this array. */
 	struct MemArena *mem;
 } MLoopNorSpaceArray;
 /**
@@ -393,9 +396,6 @@ void BKE_mesh_recalc_looptri(
         const struct MVert *mvert,
         int totloop, int totpoly,
         struct MLoopTri *mlooptri);
-int BKE_mesh_mpoly_to_mface(
-        struct CustomData *fdata, struct CustomData *ldata,
-        struct CustomData *pdata, int totface, int totloop, int totpoly);
 void BKE_mesh_convert_mfaces_to_mpolys(struct Mesh *mesh);
 void BKE_mesh_do_versions_convert_mfaces_to_mpolys(struct Mesh *mesh);
 void BKE_mesh_convert_mfaces_to_mpolys_ex(
@@ -468,9 +468,9 @@ void BKE_mesh_calc_relative_deform(
 
 /* *** mesh_validate.c *** */
 
-int BKE_mesh_validate(struct Mesh *me, const int do_verbose, const int cddata_check_mask);
+bool BKE_mesh_validate(struct Mesh *me, const bool do_verbose, const bool cddata_check_mask);
 bool BKE_mesh_is_valid(struct Mesh *me);
-int BKE_mesh_validate_material_indices(struct Mesh *me);
+bool BKE_mesh_validate_material_indices(struct Mesh *me);
 
 bool BKE_mesh_validate_arrays(
         struct Mesh *me,

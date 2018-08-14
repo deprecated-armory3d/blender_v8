@@ -60,7 +60,6 @@
 #include "BKE_anim.h"
 #include "BKE_constraint.h"
 #include "BKE_curve.h"
-#include "BKE_DerivedMesh.h"
 #include "BKE_deform.h"
 #include "BKE_displist.h"
 #include "BKE_idprop.h"
@@ -71,6 +70,8 @@
 #include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_scene.h"
+
+#include "DEG_depsgraph_build.h"
 
 #include "BIK_api.h"
 
@@ -432,6 +433,25 @@ void equalize_bbone_bezier(float *data, int desired)
 	copy_qt_qt(fp, temp[MAX_BBONE_SUBDIV]);
 }
 
+/* get "next" and "prev" bones - these are used for handle calculations */
+void BKE_pchan_get_bbone_handles(bPoseChannel *pchan, bPoseChannel **r_prev, bPoseChannel **r_next)
+{
+	if (pchan->bboneflag & PCHAN_BBONE_CUSTOM_HANDLES) {
+		/* use the provided bones as the next/prev - leave blank to eliminate this effect altogether */
+		*r_prev = pchan->bbone_prev;
+		*r_next = pchan->bbone_next;
+	}
+	else {
+		/* evaluate next and prev bones */
+		if (pchan->bone->flag & BONE_CONNECTED)
+			*r_prev = pchan->parent;
+		else
+			*r_prev = NULL;
+
+		*r_next = pchan->child;
+	}
+}
+
 /* returns pointer to static array, filled with desired amount of bone->segments elements */
 /* this calculation is done  within unit bone space */
 void b_bone_spline_setup(bPoseChannel *pchan, int rest, Mat4 result_array[MAX_BBONE_SUBDIV])
@@ -459,21 +479,7 @@ void b_bone_spline_setup(bPoseChannel *pchan, int rest, Mat4 result_array[MAX_BB
 		}
 	}
 
-	/* get "next" and "prev" bones - these are used for handle calculations */
-	if (pchan->bboneflag & PCHAN_BBONE_CUSTOM_HANDLES) {
-		/* use the provided bones as the next/prev - leave blank to eliminate this effect altogether */
-		prev = pchan->bbone_prev;
-		next = pchan->bbone_next;
-	}
-	else {
-		/* evaluate next and prev bones */
-		if (bone->flag & BONE_CONNECTED)
-			prev = pchan->parent;
-		else
-			prev = NULL;
-
-		next = pchan->child;
-	}
+	BKE_pchan_get_bbone_handles(pchan, &prev, &next);
 
 	/* find the handle points, since this is inside bone space, the
 	 * first point = (0, 0, 0)
@@ -632,17 +638,17 @@ void b_bone_spline_setup(bPoseChannel *pchan, int rest, Mat4 result_array[MAX_BB
 		/* add extra rolls */
 		roll1 += bone->roll1 + (!rest ? pchan->roll1 : 0.0f);
 		roll2 += bone->roll2 + (!rest ? pchan->roll2 : 0.0f);
-		
+
 		if (bone->flag & BONE_ADD_PARENT_END_ROLL) {
 			if (prev) {
 				if (prev->bone)
 					roll1 += prev->bone->roll2;
-				
+
 				if (!rest)
 					roll1 += prev->roll2;
 			}
 		}
-		
+
 		/* extra curve x / y */
 		/* NOTE: Scale correction factors here are to compensate for some random floating-point glitches
 		 *       when scaling up the bone or it's parent by a factor of approximately 8.15/6, which results
@@ -650,14 +656,14 @@ void b_bone_spline_setup(bPoseChannel *pchan, int rest, Mat4 result_array[MAX_BB
 		 */
 		const float xscale_correction = (do_scale) ? scale[0] : 1.0f;
 		const float yscale_correction = (do_scale) ? scale[2] : 1.0f;
-		
+
 		h1[0] += (bone->curveInX + (!rest ? pchan->curveInX : 0.0f)) * xscale_correction;
 		h1[2] += (bone->curveInY + (!rest ? pchan->curveInY : 0.0f)) * yscale_correction;
-		
+
 		h2[0] += (bone->curveOutX + (!rest ? pchan->curveOutX : 0.0f)) * xscale_correction;
 		h2[2] += (bone->curveOutY + (!rest ? pchan->curveOutY : 0.0f)) * yscale_correction;
 	}
-	
+
 	/* make curve */
 	if (bone->segments > MAX_BBONE_SUBDIV)
 		bone->segments = MAX_BBONE_SUBDIV;
@@ -673,39 +679,39 @@ void b_bone_spline_setup(bPoseChannel *pchan, int rest, Mat4 result_array[MAX_BB
 	for (a = 0, fp = data[0]; a < bone->segments; a++, fp += 4) {
 		sub_v3_v3v3(h1, fp + 4, fp);
 		vec_roll_to_mat3(h1, fp[3], mat3); /* fp[3] is roll */
-		
+
 		copy_m4_m3(result_array[a].mat, mat3);
 		copy_v3_v3(result_array[a].mat[3], fp);
-		
+
 		if (do_scale) {
 			/* correct for scaling when this matrix is used in scaled space */
 			mul_m4_series(result_array[a].mat, iscalemat, result_array[a].mat, scalemat);
 		}
-		
+
 		/* BBone scale... */
 		{
 			const int num_segments = bone->segments;
-			
+
 			const float scaleIn = bone->scaleIn * (!rest ? pchan->scaleIn : 1.0f);
 			const float scaleFactorIn  = 1.0f + (scaleIn  - 1.0f) * ((float)(num_segments - a) / (float)num_segments);
-			
+
 			const float scaleOut = bone->scaleOut * (!rest ? pchan->scaleOut : 1.0f);
 			const float scaleFactorOut = 1.0f + (scaleOut - 1.0f) * ((float)(a + 1)            / (float)num_segments);
-			
+
 			const float scalefac = scaleFactorIn * scaleFactorOut;
 			float bscalemat[4][4], bscale[3];
-			
+
 			bscale[0] = scalefac;
 			bscale[1] = 1.0f;
 			bscale[2] = scalefac;
-			
+
 			size_to_mat4(bscalemat, bscale);
-			
+
 			/* Note: don't multiply by inverse scale mat here, as it causes problems with scaling shearing and breaking segment chains */
 			/*mul_m4_series(result_array[a].mat, ibscalemat, result_array[a].mat, bscalemat);*/
 			mul_m4_series(result_array[a].mat, result_array[a].mat, bscalemat);
 		}
-		
+
 	}
 }
 
@@ -764,10 +770,10 @@ static void b_bone_deform(bPoseChanDeform *pdef_info, Bone *bone, float co[3], D
 	float (*mat)[4] = b_bone[0].mat;
 	float segment, y;
 	int a;
-	
+
 	/* need to transform co back to bonespace, only need y */
 	y = mat[0][1] * co[0] + mat[1][1] * co[1] + mat[2][1] * co[2] + mat[3][1];
-	
+
 	/* now calculate which of the b_bones are deforming this */
 	segment = bone->length / ((float)bone->segments);
 	a = (int)(y / segment);
@@ -1811,7 +1817,7 @@ static void pose_proxy_synchronize(Object *ob, Object *from, int layer_protected
 
 	for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
 		pchanp = BKE_pose_channel_find_name(frompose, pchan->name);
-		
+
 		if (UNLIKELY(pchanp == NULL)) {
 			/* happens for proxies that become invalid because of a missing link
 			 * for regular cases it shouldn't happen at all */
@@ -1819,7 +1825,7 @@ static void pose_proxy_synchronize(Object *ob, Object *from, int layer_protected
 		else if (pchan->bone->layer & layer_protected) {
 			ListBase proxylocal_constraints = {NULL, NULL};
 			bPoseChannel pchanw;
-			
+
 			/* copy posechannel to temp, but restore important pointers */
 			pchanw = *pchanp;
 			pchanw.bone = pchan->bone;
@@ -1835,13 +1841,13 @@ static void pose_proxy_synchronize(Object *ob, Object *from, int layer_protected
 			/* this is freed so copy a copy, else undo crashes */
 			if (pchanw.prop) {
 				pchanw.prop = IDP_CopyProperty(pchanw.prop);
-				
+
 				/* use the values from the existing props */
 				if (pchan->prop) {
 					IDP_SyncGroupValues(pchanw.prop, pchan->prop);
 				}
 			}
-			
+
 			/* constraints - proxy constraints are flushed... local ones are added after
 			 *     1. extract constraints not from proxy (CONSTRAINT_PROXY_LOCAL) from pchan's constraints
 			 *     2. copy proxy-pchan's constraints on-to new
@@ -1853,29 +1859,29 @@ static void pose_proxy_synchronize(Object *ob, Object *from, int layer_protected
 			BKE_constraints_proxylocal_extract(&proxylocal_constraints, &pchan->constraints);
 			BKE_constraints_copy(&pchanw.constraints, &pchanp->constraints, false);
 			BLI_movelisttolist(&pchanw.constraints, &proxylocal_constraints);
-			
+
 			/* constraints - set target ob pointer to own object */
 			for (con = pchanw.constraints.first; con; con = con->next) {
 				const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_get(con);
 				ListBase targets = {NULL, NULL};
 				bConstraintTarget *ct;
-				
+
 				if (cti && cti->get_constraint_targets) {
 					cti->get_constraint_targets(con, &targets);
-					
+
 					for (ct = targets.first; ct; ct = ct->next) {
 						if (ct->tar == from)
 							ct->tar = ob;
 					}
-					
+
 					if (cti->flush_constraint_targets)
 						cti->flush_constraint_targets(con, &targets, 0);
 				}
 			}
-			
+
 			/* free stuff from current channel */
 			BKE_pose_channel_free(pchan);
-			
+
 			/* copy data in temp back over to the cleaned-out (but still allocated) original channel */
 			*pchan = pchanw;
 			if (pchan->custom) {
@@ -1952,9 +1958,14 @@ void BKE_pose_remap_bone_pointers(bArmature *armature, bPose *pose)
 	BLI_ghash_free(bone_hash, NULL, NULL);
 }
 
-/* only after leave editmode, duplicating, validating older files, library syncing */
-/* NOTE: pose->flag is set for it */
-void BKE_pose_rebuild(Object *ob, bArmature *arm)
+/**
+ * Only after leave editmode, duplicating, validating older files, library syncing.
+ *
+ * \note pose->flag is set for it.
+ *
+ * \param bmain May be NULL, only used to tag depsgraph as being dirty...
+ */
+void BKE_pose_rebuild(Main *bmain, Object *ob, bArmature *arm, const bool do_id_user)
 {
 	Bone *bone;
 	bPose *pose;
@@ -1983,7 +1994,7 @@ void BKE_pose_rebuild(Object *ob, bArmature *arm)
 	for (pchan = pose->chanbase.first; pchan; pchan = next) {
 		next = pchan->next;
 		if (pchan->bone == NULL) {
-			BKE_pose_channel_free(pchan);
+			BKE_pose_channel_free_ex(pchan, do_id_user);
 			BKE_pose_channels_hash_free(pose);
 			BLI_freelinkN(&pose->chanbase, pchan);
 		}
@@ -1999,12 +2010,17 @@ void BKE_pose_rebuild(Object *ob, bArmature *arm)
 		pose_proxy_synchronize(ob, ob->proxy, arm->layer_protected);
 	}
 
-	BKE_pose_update_constraint_flags(ob->pose); /* for IK detection for example */
+	BKE_pose_update_constraint_flags(pose); /* for IK detection for example */
 
-	ob->pose->flag &= ~POSE_RECALC;
-	ob->pose->flag |= POSE_WAS_REBUILT;
+	pose->flag &= ~POSE_RECALC;
+	pose->flag |= POSE_WAS_REBUILT;
 
-	BKE_pose_channels_hash_make(ob->pose);
+	BKE_pose_channels_hash_make(pose);
+
+	/* Rebuilding poses forces us to also rebuild the dependency graph, since there is one node per pose/bone... */
+	if (bmain != NULL) {
+		DEG_relations_tag_update(bmain);
+	}
 }
 
 /* ********************** THE POSE SOLVER ******************* */
@@ -2278,8 +2294,10 @@ void BKE_pose_where_is(struct Depsgraph *depsgraph, Scene *scene, Object *ob)
 
 	if (ELEM(NULL, arm, scene))
 		return;
-	if ((ob->pose == NULL) || (ob->pose->flag & POSE_RECALC))
-		BKE_pose_rebuild(ob, arm);
+	if ((ob->pose == NULL) || (ob->pose->flag & POSE_RECALC)) {
+		/* WARNING! passing NULL bmain here means we won't tag depsgraph's as dirty - hopefully this is OK. */
+		BKE_pose_rebuild(NULL, ob, arm, true);
+	}
 
 	ctime = BKE_scene_frame_get(scene); /* not accurate... */
 

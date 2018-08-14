@@ -28,6 +28,7 @@
 #include "render/scene.h"
 #include "render/session.h"
 #include "render/shader.h"
+#include "render/stats.h"
 
 #include "util/util_color.h"
 #include "util/util_foreach.h"
@@ -48,12 +49,14 @@ int BlenderSession::num_resumable_chunks = 0;
 int BlenderSession::current_resumable_chunk = 0;
 int BlenderSession::start_resumable_chunk = 0;
 int BlenderSession::end_resumable_chunk = 0;
+bool BlenderSession::print_render_stats = false;
 
 BlenderSession::BlenderSession(BL::RenderEngine& b_engine,
                                BL::UserPreferences& b_userpref,
                                BL::BlendData& b_data,
                                bool preview_osl)
 : session(NULL),
+  sync(NULL),
   b_engine(b_engine),
   b_userpref(b_userpref),
   b_data(b_data),
@@ -81,6 +84,7 @@ BlenderSession::BlenderSession(BL::RenderEngine& b_engine,
                                BL::RegionView3D& b_rv3d,
                                int width, int height)
 : session(NULL),
+  sync(NULL),
   b_engine(b_engine),
   b_userpref(b_userpref),
   b_data(b_data),
@@ -209,11 +213,8 @@ void BlenderSession::reset_session(BL::BlendData& b_data, BL::Depsgraph& b_depsg
 		/* if scene or session parameters changed, it's easier to simply re-create
 		 * them rather than trying to distinguish which settings need to be updated
 		 */
-
-		delete session;
-
+		free_session();
 		create_session();
-
 		return;
 	}
 
@@ -449,11 +450,12 @@ void BlenderSession::render(BL::Depsgraph& b_depsgraph_)
 		BL::Object b_camera_override(b_engine.camera_override());
 		sync->sync_camera(b_render, b_camera_override, width, height, b_rview_name.c_str());
 		sync->sync_data(b_render,
-						b_depsgraph,
-						b_v3d,
-						b_camera_override,
-						width, height,
-						&python_thread_state);
+		                b_depsgraph,
+		                b_v3d,
+		                b_camera_override,
+		                width, height,
+		                &python_thread_state);
+		builtin_images_load();
 
 		/* Make sure all views have different noise patterns. - hardcoded value just to make it random */
 		if(view_index != 0) {
@@ -461,15 +463,13 @@ void BlenderSession::render(BL::Depsgraph& b_depsgraph_)
 			scene->integrator->tag_update(scene);
 		}
 
-		/* Update number of samples per layer. */
-		int samples = sync->get_layer_samples();
-		bool bound_samples = sync->get_layer_bound_samples();
-		int effective_layer_samples;
+		int effective_layer_samples = session_params.samples;
 
+		/* TODO: Update number of samples per layer. */
+#if 0
 		if(samples != 0 && (!bound_samples || (samples < session_params.samples)))
 			effective_layer_samples = samples;
-		else
-			effective_layer_samples = session_params.samples;
+#endif
 
 		/* Update tile manager if we're doing resumable render. */
 		update_resumable_tile_manager(effective_layer_samples);
@@ -480,6 +480,12 @@ void BlenderSession::render(BL::Depsgraph& b_depsgraph_)
 		/* render */
 		session->start();
 		session->wait();
+
+		if(!b_engine.is_preview() && background && print_render_stats) {
+			RenderStats stats;
+			session->scene->collect_statistics(&stats);
+			printf("Render statistics:\n%s\n", stats.full_report().c_str());
+		}
 
 		if(session->progress.get_cancel())
 			break;
@@ -609,11 +615,12 @@ void BlenderSession::bake(BL::Depsgraph& b_depsgraph_,
 		BL::Object b_camera_override(b_engine.camera_override());
 		sync->sync_camera(b_render, b_camera_override, width, height, "");
 		sync->sync_data(b_render,
-						b_depsgraph,
-						b_v3d,
-						b_camera_override,
-						width, height,
-						&python_thread_state);
+		                b_depsgraph,
+		                b_v3d,
+		                b_camera_override,
+		                width, height,
+		                &python_thread_state);
+		builtin_images_load();
 	}
 
 	BakeData *bake_data = NULL;
@@ -802,6 +809,8 @@ void BlenderSession::synchronize(BL::Depsgraph& b_depsgraph_)
 		sync->sync_view(b_v3d, b_rv3d, width, height);
 	else
 		sync->sync_camera(b_render, b_camera_override, width, height, "");
+
+	builtin_images_load();
 
 	/* unlock */
 	session->scene->mutex.unlock();
@@ -1325,6 +1334,16 @@ bool BlenderSession::builtin_image_float_pixels(const string &builtin_name,
 	}
 
 	return false;
+}
+
+void BlenderSession::builtin_images_load()
+{
+	/* Force builtin images to be loaded along with Blender data sync. This
+	 * is needed because we may be reading from depsgraph evaluated data which
+	 * can be freed by Blender before Cycles reads it. */
+	ImageManager *manager = session->scene->image_manager;
+	Device *device = session->device;
+	manager->device_load_builtin(device, session->scene, session->progress);
 }
 
 void BlenderSession::update_resumable_tile_manager(int num_samples)

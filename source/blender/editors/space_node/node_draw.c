@@ -58,6 +58,8 @@
 #include "GPU_immediate.h"
 #include "GPU_immediate_util.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
+#include "GPU_framebuffer.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -165,7 +167,7 @@ void ED_node_tag_update_nodetree(Main *bmain, bNodeTree *ntree, bNode *node)
 
 	bool do_tag_update = true;
 	if (node != NULL) {
-		if (!node_connected_to_output(ntree, node)) {
+		if (!node_connected_to_output(bmain, ntree, node)) {
 			do_tag_update = false;
 		}
 	}
@@ -620,12 +622,12 @@ static void node_draw_mute_line(View2D *v2d, SpaceNode *snode, bNode *node)
 {
 	bNodeLink *link;
 
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 
 	for (link = node->internal_links.first; link; link = link->next)
 		node_draw_link_bezier(v2d, snode, link, TH_REDALERT, TH_REDALERT, -1);
 
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 }
 
 static void node_socket_circle_draw(const bContext *C, bNodeTree *ntree, PointerRNA node_ptr, bNodeSocket *sock, unsigned pos, unsigned col)
@@ -646,8 +648,8 @@ static void node_draw_preview_background(float tile, rctf *rect)
 {
 	float x, y;
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
@@ -710,16 +712,16 @@ static void node_draw_preview(bNodePreview *preview, rctf *prv)
 
 	node_draw_preview_background(BLI_rctf_size_x(prv) / 10.0f, &draw_rect);
 
-	glEnable(GL_BLEND);
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);  /* premul graphics */
+	GPU_blend(true);
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);  /* premul graphics */
 
 	IMMDrawPixelsTexState state = immDrawPixelsTexSetup(GPU_SHADER_2D_IMAGE_COLOR);
 	immDrawPixelsTex(&state, draw_rect.xmin, draw_rect.ymin, preview->xsize, preview->ysize, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, preview->rect,
 	                 scale, scale, NULL);
 
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	immUniformThemeColorShadeAlpha(TH_BACK, -15, +100);
 	imm_draw_box_wire_2d(pos, draw_rect.xmin, draw_rect.ymin, draw_rect.xmax, draw_rect.ymax);
@@ -756,10 +758,10 @@ void node_draw_shadow(SpaceNode *snode, bNode *node, float radius, float alpha)
 
 void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *node, bool draw_outputs, bool select_all)
 {
-	const unsigned int total_input_ct = BLI_listbase_count(&node->inputs);
-	const unsigned int total_output_ct = BLI_listbase_count(&node->outputs);
+	const uint total_input_len = BLI_listbase_count(&node->inputs);
+	const uint total_output_len = BLI_listbase_count(&node->outputs);
 
-	if (total_input_ct + total_output_ct == 0) {
+	if (total_input_len + total_output_len == 0) {
 		return;
 	}
 
@@ -769,11 +771,11 @@ void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *
 	float scale;
 	UI_view2d_scale_get(v2d, &scale, NULL);
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
-	unsigned int col = GWN_vertformat_attr_add(format, "color", GWN_COMP_F32, 4, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
+	uint col = GPU_vertformat_attr_add(format, "color", GPU_COMP_F32, 4, GPU_FETCH_FLOAT);
 
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 	GPU_enable_program_point_size();
 
 	immBindBuiltinProgram(GPU_SHADER_2D_POINT_UNIFORM_SIZE_VARYING_COLOR_OUTLINE_AA);
@@ -786,17 +788,17 @@ void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *
 		immUniform1f("outlineWidth", 1.0f);
 		immUniform4f("outlineColor", 0.0f, 0.0f, 0.0f, 0.6f);
 
-		immBeginAtMost(GWN_PRIM_POINTS, total_input_ct + total_output_ct);
+		immBeginAtMost(GPU_PRIM_POINTS, total_input_len + total_output_len);
 	}
 
 	/* socket inputs */
-	short selected_input_ct = 0;
+	short selected_input_len = 0;
 	bNodeSocket *sock;
 	for (sock = node->inputs.first; sock; sock = sock->next) {
 		if (nodeSocketIsHidden(sock))
 			continue;
 		if (select_all || (sock->flag & SELECT)) {
-			++selected_input_ct;
+			++selected_input_len;
 			continue;
 		}
 
@@ -804,13 +806,13 @@ void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *
 	}
 
 	/* socket outputs */
-	short selected_output_ct = 0;
+	short selected_output_len = 0;
 	if (draw_outputs) {
 		for (sock = node->outputs.first; sock; sock = sock->next) {
 			if (nodeSocketIsHidden(sock))
 				continue;
 			if (select_all || (sock->flag & SELECT)) {
-				++selected_output_ct;
+				++selected_output_len;
 				continue;
 			}
 
@@ -823,36 +825,36 @@ void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *
 	}
 
 	/* go back and draw selected sockets */
-	if (selected_input_ct + selected_output_ct > 0) {
+	if (selected_input_len + selected_output_len > 0) {
 		/* outline for selected sockets */
 		float c[3];
 		UI_GetThemeColor3fv(TH_TEXT_HI, c);
 		immUniform4f("outlineColor", c[0], c[1], c[2], 1.0f);
 		immUniform1f("outlineWidth", 1.5f);
 
-		immBegin(GWN_PRIM_POINTS, selected_input_ct + selected_output_ct);
+		immBegin(GPU_PRIM_POINTS, selected_input_len + selected_output_len);
 
-		if (selected_input_ct) {
+		if (selected_input_len) {
 			/* socket inputs */
 			for (sock = node->inputs.first; sock; sock = sock->next) {
 				if (nodeSocketIsHidden(sock))
 					continue;
 				if (select_all || (sock->flag & SELECT)) {
 					node_socket_circle_draw(C, ntree, node_ptr, sock, pos, col);
-					if (--selected_input_ct == 0)
+					if (--selected_input_len == 0)
 						break; /* stop as soon as last one is drawn */
 				}
 			}
 		}
 
-		if (selected_output_ct) {
+		if (selected_output_len) {
 			/* socket outputs */
 			for (sock = node->outputs.first; sock; sock = sock->next) {
 				if (nodeSocketIsHidden(sock))
 					continue;
 				if (select_all || (sock->flag & SELECT)) {
 					node_socket_circle_draw(C, ntree, node_ptr, sock, pos, col);
-					if (--selected_output_ct == 0)
+					if (--selected_output_len == 0)
 						break; /* stop as soon as last one is drawn */
 				}
 			}
@@ -864,7 +866,7 @@ void node_draw_sockets(View2D *v2d, const bContext *C, bNodeTree *ntree, bNode *
 	immUnbindProgram();
 
 	GPU_disable_program_point_size();
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 }
 
 static void node_draw_basis(const bContext *C, ARegion *ar, SpaceNode *snode, bNodeTree *ntree, bNode *node, bNodeInstanceKey key)
@@ -903,7 +905,7 @@ static void node_draw_basis(const bContext *C, ARegion *ar, SpaceNode *snode, bN
 		}
 	}
 
-	glLineWidth(1.0f);
+	GPU_line_width(1.0f);
 
 	UI_draw_roundbox_corner_set(UI_CNR_TOP_LEFT | UI_CNR_TOP_RIGHT);
 	UI_draw_roundbox_aa(true, rct->xmin, rct->ymax - NODE_DY, rct->xmax, rct->ymax, BASIS_RAD, color);
@@ -949,17 +951,18 @@ static void node_draw_basis(const bContext *C, ARegion *ar, SpaceNode *snode, bN
 	/* open/close entirely? */
 	{
 		uiBut *but;
-		int but_size = UI_UNIT_X * 0.6f;
+		int but_size = UI_UNIT_X * 1.2f;
 		/* XXX button uses a custom triangle draw below, so make it invisible without icon */
 		UI_block_emboss_set(node->block, UI_EMBOSS_NONE);
 		but = uiDefBut(node->block, UI_BTYPE_BUT_TOGGLE, B_REDR, "",
-		               rct->xmin + 0.5f * U.widget_unit - but_size / 2, rct->ymax - NODE_DY / 2.0f - but_size / 2,
+		               rct->xmin + 0.6f * U.widget_unit - but_size / 2, rct->ymax - NODE_DY / 2.2f - but_size / 2,
 		               but_size, but_size, NULL, 0, 0, 0, 0, "");
 		UI_but_func_set(but, node_toggle_button_cb, node, (void *)"NODE_OT_hide_toggle");
 		UI_block_emboss_set(node->block, UI_EMBOSS);
 
+		UI_GetThemeColor4fv(TH_TEXT, color);
 		/* custom draw function for this button */
-		UI_draw_icon_tri(rct->xmin + 0.5f * U.widget_unit, rct->ymax - NODE_DY / 2.0f, 'v', color);
+		UI_draw_icon_tri(rct->xmin + 0.6f * U.widget_unit, rct->ymax - NODE_DY / 2.2f, 'v', color);
 	}
 
 	nodeLabel(ntree, node, showname, sizeof(showname));
@@ -1048,13 +1051,13 @@ static void node_draw_hidden(const bContext *C, ARegion *ar, SpaceNode *snode, b
 
 	/* custom color inline */
 	if (node->flag & NODE_CUSTOM_COLOR) {
-		glEnable(GL_BLEND);
-		glEnable(GL_LINE_SMOOTH);
+		GPU_blend(true);
+		GPU_line_smooth(true);
 
 		UI_draw_roundbox_3fvAlpha(false, rct->xmin + 1, rct->ymin + 1, rct->xmax -1, rct->ymax - 1, hiddenrad, node->color, 1.0f);
 
-		glDisable(GL_LINE_SMOOTH);
-		glDisable(GL_BLEND);
+		GPU_line_smooth(false);
+		GPU_blend(false);
 	}
 
 	/* title */
@@ -1068,7 +1071,7 @@ static void node_draw_hidden(const bContext *C, ARegion *ar, SpaceNode *snode, b
 	/* open entirely icon */
 	{
 		uiBut *but;
-		int but_size = UI_UNIT_X * 0.6f;
+		int but_size = UI_UNIT_X * 1.2f;
 		/* XXX button uses a custom triangle draw below, so make it invisible without icon */
 		UI_block_emboss_set(node->block, UI_EMBOSS_NONE);
 		but = uiDefBut(node->block, UI_BTYPE_BUT_TOGGLE, B_REDR, "",
@@ -1077,6 +1080,7 @@ static void node_draw_hidden(const bContext *C, ARegion *ar, SpaceNode *snode, b
 		UI_but_func_set(but, node_toggle_button_cb, node, (void *)"NODE_OT_hide_toggle");
 		UI_block_emboss_set(node->block, UI_EMBOSS);
 
+		UI_GetThemeColor4fv(TH_TEXT, color);
 		/* custom draw function for this button */
 		UI_draw_icon_tri(rct->xmin + 10.0f, centy, 'h', color);
 	}
@@ -1098,13 +1102,13 @@ static void node_draw_hidden(const bContext *C, ARegion *ar, SpaceNode *snode, b
 	}
 
 	/* scale widget thing */
-	unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 	immUniformThemeColorShade(color_id, -10);
 	dx = 10.0f;
 
-	immBegin(GWN_PRIM_LINES, 4);
+	immBegin(GPU_PRIM_LINES, 4);
 	immVertex2f(pos, rct->xmax - dx, centy - 4.0f);
 	immVertex2f(pos, rct->xmax - dx, centy + 4.0f);
 
@@ -1115,7 +1119,7 @@ static void node_draw_hidden(const bContext *C, ARegion *ar, SpaceNode *snode, b
 	immUniformThemeColorShade(color_id, 30);
 	dx -= snode->aspect;
 
-	immBegin(GWN_PRIM_LINES, 4);
+	immBegin(GPU_PRIM_LINES, 4);
 	immVertex2f(pos, rct->xmax - dx, centy - 4.0f);
 	immVertex2f(pos, rct->xmax - dx, centy + 4.0f);
 
@@ -1239,14 +1243,14 @@ void node_draw_nodetree(const bContext *C, ARegion *ar, SpaceNode *snode, bNodeT
 	}
 
 	/* node lines */
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 	nodelink_batch_start(snode);
 	for (link = ntree->links.first; link; link = link->next) {
 		if (!nodeLinkIsHidden(link))
 			node_draw_link(&ar->v2d, snode, link);
 	}
 	nodelink_batch_end(snode);
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	/* draw foreground nodes, last nodes in front */
 	for (a = 0, node = ntree->nodes.first; node; node = node->next, a++) {
@@ -1303,12 +1307,12 @@ static void draw_group_overlay(const bContext *C, ARegion *ar)
 	float color[4];
 
 	/* shade node groups to separate them visually */
-	glEnable(GL_BLEND);
+	GPU_blend(true);
 
 	UI_GetThemeColorShadeAlpha4fv(TH_NODE_GROUP, 0, -70, color);
 	UI_draw_roundbox_corner_set(UI_CNR_NONE);
 	UI_draw_roundbox_4fv(true, rect.xmin, rect.ymin, rect.xmax, rect.ymax, 0, color);
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	/* set the block bounds to clip mouse events from underlying nodes */
 	block = UI_block_begin(C, ar, "node tree bounds block", UI_EMBOSS);
@@ -1325,7 +1329,7 @@ void drawnodespace(const bContext *C, ARegion *ar)
 	View2D *v2d = &ar->v2d;
 
 	UI_ThemeClearColor(TH_BACK);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear(GPU_COLOR_BIT);
 
 	UI_view2d_view_ortho(v2d);
 
@@ -1338,7 +1342,7 @@ void drawnodespace(const bContext *C, ARegion *ar)
 	ED_region_draw_cb_draw(C, ar, REGION_DRAW_PRE_VIEW);
 
 	/* only set once */
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
 
 	/* nodes */
 	snode_set_context(C);
@@ -1401,31 +1405,31 @@ void drawnodespace(const bContext *C, ARegion *ar)
 
 			{
 				float original_proj[4][4];
-				gpuGetProjectionMatrix(original_proj);
+				GPU_matrix_projection_get(original_proj);
 
-				gpuPushMatrix();
-				gpuLoadIdentity();
+				GPU_matrix_push();
+				GPU_matrix_identity_set();
 
 				wmOrtho2_pixelspace(ar->winx, ar->winy);
 
-				WM_manipulatormap_draw(ar->manipulator_map, C, WM_MANIPULATORMAP_DRAWSTEP_2D);
+				WM_gizmomap_draw(ar->gizmo_map, C, WM_GIZMOMAP_DRAWSTEP_2D);
 
-				gpuPopMatrix();
-				gpuLoadProjectionMatrix(original_proj);
+				GPU_matrix_pop();
+				GPU_matrix_projection_set(original_proj);
 			}
 
 			draw_nodetree(C, ar, ntree, path->parent_key);
 		}
 
 		/* temporary links */
-		glEnable(GL_BLEND);
-		glEnable(GL_LINE_SMOOTH);
+		GPU_blend(true);
+		GPU_line_smooth(true);
 		for (nldrag = snode->linkdrag.first; nldrag; nldrag = nldrag->next) {
 			for (linkdata = nldrag->links.first; linkdata; linkdata = linkdata->next)
 				node_draw_link(v2d, snode, (bNodeLink *)linkdata->data);
 		}
-		glDisable(GL_LINE_SMOOTH);
-		glDisable(GL_BLEND);
+		GPU_line_smooth(false);
+		GPU_blend(false);
 
 		if (snode->flag & SNODE_SHOW_GPENCIL) {
 			/* draw grease-pencil ('canvas' strokes) */

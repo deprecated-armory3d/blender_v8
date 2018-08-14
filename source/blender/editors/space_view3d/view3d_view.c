@@ -55,6 +55,7 @@
 #include "GPU_glew.h"
 #include "GPU_select.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -183,7 +184,7 @@ void ED_view3d_smooth_view_ex(
 	}
 
 	/* skip smooth viewing for render engine draw */
-	if (smooth_viewtx && v3d->drawtype != OB_RENDER) {
+	if (smooth_viewtx && v3d->shading.type != OB_RENDER) {
 		bool changed = false; /* zero means no difference */
 
 		if (sview->camera_old != sview->camera)
@@ -463,7 +464,7 @@ static int view3d_camera_to_view_exec(bContext *C, wmOperator *UNUSED(op))
 
 }
 
-static int view3d_camera_to_view_poll(bContext *C)
+static bool view3d_camera_to_view_poll(bContext *C)
 {
 	View3D *v3d;
 	ARegion *ar;
@@ -509,7 +510,6 @@ static int view3d_camera_to_view_selected_exec(bContext *C, wmOperator *op)
 {
 	Depsgraph *depsgraph = CTX_data_depsgraph(C);
 	Scene *scene = CTX_data_scene(C);
-	ViewLayer *view_layer = CTX_data_view_layer(C);
 	View3D *v3d = CTX_wm_view3d(C);  /* can be NULL */
 	Object *camera_ob = v3d ? v3d->camera : scene->camera;
 	Object *camera_ob_eval = DEG_get_evaluated_object(depsgraph, camera_ob);
@@ -523,7 +523,7 @@ static int view3d_camera_to_view_selected_exec(bContext *C, wmOperator *op)
 	}
 
 	/* this function does all the important stuff */
-	if (BKE_camera_view_frame_fit_to_scene(depsgraph, scene, view_layer, camera_ob_eval, r_co, &r_scale)) {
+	if (BKE_camera_view_frame_fit_to_scene(depsgraph, scene, camera_ob_eval, r_co, &r_scale)) {
 		ObjectTfmProtectedChannels obtfm;
 		float obmat_new[4][4];
 
@@ -663,7 +663,7 @@ static int view3d_setobjectascamera_exec(bContext *C, wmOperator *op)
 	return OPERATOR_FINISHED;
 }
 
-int ED_operator_rv3d_user_region_poll(bContext *C)
+bool ED_operator_rv3d_user_region_poll(bContext *C)
 {
 	View3D *v3d_dummy;
 	ARegion *ar_dummy;
@@ -721,14 +721,14 @@ void view3d_winmatrix_set(Depsgraph *depsgraph, ARegion *ar, const View3D *v3d, 
 	}
 
 	if (is_ortho) {
-		gpuOrtho(viewplane.xmin, viewplane.xmax, viewplane.ymin, viewplane.ymax, clipsta, clipend);
+		GPU_matrix_ortho_set(viewplane.xmin, viewplane.xmax, viewplane.ymin, viewplane.ymax, clipsta, clipend);
 	}
 	else {
-		gpuFrustum(viewplane.xmin, viewplane.xmax, viewplane.ymin, viewplane.ymax, clipsta, clipend);
+		GPU_matrix_frustum_set(viewplane.xmin, viewplane.xmax, viewplane.ymin, viewplane.ymax, clipsta, clipend);
 	}
 
 	/* update matrix in 3d view region */
-	gpuGetProjectionMatrix(rv3d->winmat);
+	GPU_matrix_projection_get(rv3d->winmat);
 }
 
 static void obmat_to_viewmat(RegionView3D *rv3d, Object *ob)
@@ -896,6 +896,13 @@ static bool drw_select_loop_pass(eDRWSelectStage stage, void *user_data)
 }
 #endif /* WITH_OPENGL_LEGACY */
 
+/** Implement #VIEW3D_SELECT_FILTER_OBJECT_MODE_LOCK. */
+static bool drw_select_filter_object_mode_lock(Object *ob, void *user_data)
+{
+	const Object *obact = user_data;
+	return BKE_object_is_mode_compat(ob, obact->mode);
+}
+
 /**
  * \warning be sure to account for a negative return value
  * This is an error, "Too many objects in select buffer"
@@ -905,7 +912,7 @@ static bool drw_select_loop_pass(eDRWSelectStage stage, void *user_data)
  */
 int view3d_opengl_select(
         ViewContext *vc, unsigned int *buffer, unsigned int bufsize, const rcti *input,
-        eV3DSelectMode select_mode)
+        eV3DSelectMode select_mode, eV3DSelectObjectFilter select_filter)
 {
 	struct bThemeState theme_state;
 	Depsgraph *depsgraph = vc->depsgraph;
@@ -953,6 +960,25 @@ int view3d_opengl_select(
 		}
 	}
 
+	struct {
+		DRW_ObjectFilterFn fn;
+		void *user_data;
+	} object_filter = {NULL, NULL};
+	switch (select_filter) {
+		case VIEW3D_SELECT_FILTER_OBJECT_MODE_LOCK:
+		{
+			Object *obact = OBACT(vc->view_layer);
+			if (obact && obact->mode != OB_MODE_OBJECT) {
+				object_filter.fn = drw_select_filter_object_mode_lock;
+				object_filter.user_data = obact;
+			}
+			break;
+		}
+		case VIEW3D_SELECT_FILTER_NOP:
+			break;
+
+	}
+
 	/* Tools may request depth outside of regular drawing code. */
 	UI_Theme_Store(&theme_state);
 	UI_SetTheme(SPACE_VIEW3D, RGN_TYPE_WINDOW);
@@ -977,9 +1003,8 @@ int view3d_opengl_select(
 	 * the object & bone view locking takes 'rect' into account, see: T51629. */
 	ED_view3d_draw_setup_view(vc->win, depsgraph, scene, ar, v3d, vc->rv3d->viewmat, NULL, &rect);
 
-	if (v3d->drawtype > OB_WIRE) {
-		v3d->zbuf = true;
-		glEnable(GL_DEPTH_TEST);
+	if (v3d->shading.type > OB_WIRE) {
+		GPU_depth_test(true);
 	}
 
 	if (vc->rv3d->rflag & RV3D_CLIPPING)
@@ -1014,7 +1039,8 @@ int view3d_opengl_select(
 		DRW_draw_select_loop(
 		        depsgraph, ar, v3d,
 		        use_obedit_skip, use_nearest, &rect,
-		        drw_select_loop_pass, &drw_select_loop_user_data);
+		        drw_select_loop_pass, &drw_select_loop_user_data,
+		        object_filter.fn, object_filter.user_data);
 		hits = drw_select_loop_user_data.hits;
 	}
 #endif /* WITH_OPENGL_LEGACY */
@@ -1022,9 +1048,8 @@ int view3d_opengl_select(
 	G.f &= ~G_PICKSEL;
 	ED_view3d_draw_setup_view(vc->win, depsgraph, scene, ar, v3d, vc->rv3d->viewmat, NULL, NULL);
 
-	if (v3d->drawtype > OB_WIRE) {
-		v3d->zbuf = 0;
-		glDisable(GL_DEPTH_TEST);
+	if (v3d->shading.type > OB_WIRE) {
+		GPU_depth_test(false);
 	}
 
 	if (vc->rv3d->rflag & RV3D_CLIPPING)
@@ -1049,7 +1074,7 @@ finally:
 /** \name View Layer Utilities
  * \{ */
 
-int ED_view3d_view_layer_set(int lay, const int *values, int *active)
+int ED_view3d_view_layer_set(int lay, const bool *values, int *active)
 {
 	int i, tot = 0;
 

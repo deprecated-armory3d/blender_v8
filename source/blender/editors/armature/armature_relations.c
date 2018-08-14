@@ -377,7 +377,7 @@ int join_armature_exec(bContext *C, wmOperator *op)
 				}
 				else {
 					/* merge in data - we'll fix the drivers manually */
-					BKE_animdata_merge_copy(&ob->id, &base->object->id, ADT_MERGECOPY_KEEP_DST, false);
+					BKE_animdata_merge_copy(bmain, &ob->id, &base->object->id, ADT_MERGECOPY_KEEP_DST, false);
 				}
 			}
 
@@ -388,7 +388,7 @@ int join_armature_exec(bContext *C, wmOperator *op)
 				}
 				else {
 					/* merge in data - we'll fix the drivers manually */
-					BKE_animdata_merge_copy(&arm->id, &curarm->id, ADT_MERGECOPY_KEEP_DST, false);
+					BKE_animdata_merge_copy(bmain, &arm->id, &curarm->id, ADT_MERGECOPY_KEEP_DST, false);
 				}
 			}
 
@@ -403,6 +403,7 @@ int join_armature_exec(bContext *C, wmOperator *op)
 	ED_armature_from_edit(bmain, arm);
 	ED_armature_edit_free(arm);
 
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, scene);
 
 	return OPERATOR_FINISHED;
@@ -411,7 +412,7 @@ int join_armature_exec(bContext *C, wmOperator *op)
 /* *********************************** Separate *********************************************** */
 
 /* Helper function for armature separating - link fixing */
-static void separated_armature_fix_links(Object *origArm, Object *newArm)
+static void separated_armature_fix_links(Main *bmain, Object *origArm, Object *newArm)
 {
 	Object *ob;
 	bPoseChannel *pchan;
@@ -423,7 +424,7 @@ static void separated_armature_fix_links(Object *origArm, Object *newArm)
 	npchans = &newArm->pose->chanbase;
 
 	/* let's go through all objects in database */
-	for (ob = G.main->object.first; ob; ob = ob->id.next) {
+	for (ob = bmain->object.first; ob; ob = ob->id.next) {
 		/* do some object-type specific things */
 		if (ob->type == OB_ARMATURE) {
 			for (pchan = ob->pose->chanbase.first; pchan; pchan = pchan->next) {
@@ -628,7 +629,7 @@ static int separate_armature_exec(bContext *C, wmOperator *op)
 
 
 	/* 4) fix links before depsgraph flushes */ // err... or after?
-	separated_armature_fix_links(oldob, newob);
+	separated_armature_fix_links(bmain, oldob, newob);
 
 	DEG_id_tag_update(&oldob->id, OB_RECALC_DATA);  /* this is the original one */
 	DEG_id_tag_update(&newob->id, OB_RECALC_DATA);  /* this is the separated one */
@@ -908,4 +909,3 @@ void ARMATURE_OT_parent_clear(wmOperatorType *ot)
 
 	ot->prop = RNA_def_enum(ot->srna, "type", prop_editarm_clear_parent_types, 0, "ClearType", "What way to clear parenting");
 }
-

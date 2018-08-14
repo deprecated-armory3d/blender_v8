@@ -37,7 +37,6 @@
 #include "BLI_utildefines.h"
 #include "BLI_bitmap.h"
 
-#include "BKE_cdderivedmesh.h"
 #include "BKE_library.h"
 #include "BKE_library_query.h"
 #include "BKE_mesh.h"
@@ -201,6 +200,7 @@ static void normalEditModifier_do_radial(
         MVert *mvert, const int num_verts, MEdge *medge, const int num_edges,
         MLoop *mloop, const int num_loops, MPoly *mpoly, const int num_polys)
 {
+	const bool do_polynors_fix = (enmd->flag & MOD_NORMALEDIT_NO_POLYNORS_FIX) == 0;
 	int i;
 
 	float (*cos)[3] = MEM_malloc_arrayN((size_t)num_verts, sizeof(*cos), __func__);
@@ -278,7 +278,7 @@ static void normalEditModifier_do_radial(
 		            mix_limit, mix_mode, num_verts, mloop, loopnors, nos, num_loops);
 	}
 
-	if (polygons_check_flip(mloop, nos, &mesh->ldata, mpoly, polynors, num_polys)) {
+	if (do_polynors_fix && polygons_check_flip(mloop, nos, &mesh->ldata, mpoly, polynors, num_polys)) {
 		/* XXX TODO is this still needed? */
 		// mesh->dirty |= DM_DIRTY_TESS_CDLAYERS;
 		/* We need to recompute vertex normals! */
@@ -301,6 +301,7 @@ static void normalEditModifier_do_directional(
         MVert *mvert, const int num_verts, MEdge *medge, const int num_edges,
         MLoop *mloop, const int num_loops, MPoly *mpoly, const int num_polys)
 {
+	const bool do_polynors_fix = (enmd->flag & MOD_NORMALEDIT_NO_POLYNORS_FIX) == 0;
 	const bool use_parallel_normals = (enmd->flag & MOD_NORMALEDIT_USE_DIRECTION_PARALLEL) != 0;
 
 	float (*nos)[3] = MEM_malloc_arrayN((size_t)num_loops, sizeof(*nos), __func__);
@@ -357,7 +358,7 @@ static void normalEditModifier_do_directional(
 		            mix_limit, mix_mode, num_verts, mloop, loopnors, nos, num_loops);
 	}
 
-	if (polygons_check_flip(mloop, nos, &mesh->ldata, mpoly, polynors, num_polys)) {
+	if (do_polynors_fix && polygons_check_flip(mloop, nos, &mesh->ldata, mpoly, polynors, num_polys)) {
 		mesh->runtime.cd_dirty_vert |= CD_MASK_NORMAL;
 	}
 
@@ -469,7 +470,7 @@ static Mesh *normalEditModifier_do(NormalEditModifierData *enmd, Object *ob, Mes
 		clnors = CustomData_add_layer(ldata, CD_CUSTOMLOOPNORMAL, CD_CALLOC, NULL, num_loops);
 	}
 
-	modifier_get_vgroup_mesh(ob, result, enmd->defgrp_name, &dvert, &defgrp_index);
+	MOD_get_vgroup(ob, result, enmd->defgrp_name, &dvert, &defgrp_index);
 
 	if (enmd->mode == MOD_NORMALEDIT_MODE_RADIAL) {
 		normalEditModifier_do_radial(
@@ -523,7 +524,7 @@ static void foreachObjectLink(ModifierData *md, Object *ob, ObjectWalkFunc walk,
 	walk(userData, ob, &enmd->target, IDWALK_CB_NOP);
 }
 
-static bool isDisabled(ModifierData *md, int UNUSED(useRenderParams))
+static bool isDisabled(const struct Scene *UNUSED(scene), ModifierData *md, bool UNUSED(useRenderParams))
 {
 	NormalEditModifierData *enmd = (NormalEditModifierData *)md;
 

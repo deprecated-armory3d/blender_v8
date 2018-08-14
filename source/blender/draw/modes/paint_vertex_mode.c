@@ -36,6 +36,8 @@
 #include "DNA_mesh_types.h"
 #include "DNA_view3d_types.h"
 
+#include "DEG_depsgraph_query.h"
+
 extern struct GPUUniformBuffer *globals_ubo; /* draw_common.c */
 extern struct GlobalsUboStorage ts; /* draw_common.c */
 
@@ -101,6 +103,8 @@ static void PAINT_VERTEX_cache_init(void *vedata)
 {
 	PAINT_VERTEX_PassList *psl = ((PAINT_VERTEX_Data *)vedata)->psl;
 	PAINT_VERTEX_StorageList *stl = ((PAINT_VERTEX_Data *)vedata)->stl;
+	const DRWContextState *draw_ctx = DRW_context_state_get();
+	const View3D *v3d = draw_ctx->v3d;
 
 	if (!stl->g_data) {
 		/* Alloc transient pointers */
@@ -111,9 +115,10 @@ static void PAINT_VERTEX_cache_init(void *vedata)
 		/* Create a pass */
 		psl->vcolor_faces = DRW_pass_create(
 		        "Vert Color Pass",
-		        DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS_EQUAL | DRW_STATE_MULTIPLY);
+		        DRW_STATE_WRITE_COLOR | DRW_STATE_DEPTH_EQUAL | DRW_STATE_BLEND);
 
 		stl->g_data->fvcolor_shgrp = DRW_shgroup_create(e_data.vcolor_face_shader, psl->vcolor_faces);
+		DRW_shgroup_uniform_float(stl->g_data->fvcolor_shgrp, "alpha", &v3d->overlay.vertex_paint_mode_opacity, 1);
 	}
 
 	{
@@ -122,6 +127,7 @@ static void PAINT_VERTEX_cache_init(void *vedata)
 		        DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_LESS_EQUAL);
 
 		stl->g_data->lwire_shgrp = DRW_shgroup_create(e_data.wire_overlay_shader, psl->wire_overlay);
+		DRW_shgroup_uniform_block(stl->g_data->lwire_shgrp, "globalsBlock", globals_ubo);
 	}
 
 	{
@@ -143,11 +149,13 @@ static void PAINT_VERTEX_cache_populate(void *vedata, Object *ob)
 	const View3D *v3d = draw_ctx->v3d;
 
 	if ((ob->type == OB_MESH) && (ob == draw_ctx->obact)) {
+		/* We're always painting on original, display original data. */
+		ob = DEG_get_original_object(ob);
 		const Mesh *me = ob->data;
 		const bool use_wire = (v3d->overlay.paint_flag & V3D_OVERLAY_PAINT_WIRE) != 0;
-		const bool use_surface = DRW_object_is_mode_shade(ob) == true;
+		const bool use_surface = v3d->overlay.vertex_paint_mode_opacity != 0.0f;
 		const bool use_face_sel = (me->editflag & ME_EDIT_PAINT_FACE_SEL) != 0;
-		struct Gwn_Batch *geom;
+		struct GPUBatch *geom;
 
 		if (use_surface) {
 			geom = DRW_cache_mesh_surface_vert_colors_get(ob);

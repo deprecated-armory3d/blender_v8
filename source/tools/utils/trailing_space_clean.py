@@ -13,7 +13,7 @@ SOURCE_EXT = (
     # Python
     ".py",
     # Text (also CMake)
-    ".txt", ".rst",
+    ".txt", ".cmake", ".rst",
 )
 
 
@@ -27,6 +27,8 @@ def path_iter(path, filename_check=None):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
 
         for filename in filenames:
+            if filename.startswith("."):
+                continue
             filepath = join(dirpath, filename)
             if filename_check is None or filename_check(filepath):
                 yield filepath
@@ -47,7 +49,7 @@ def rstrip_file(filename):
         data_src = fh.read()
 
     data_dst = []
-    for l in data_src.splitlines(True):
+    for l in data_src.rstrip().splitlines(True):
         data_dst.append(l.rstrip() + "\n")
 
     data_dst = "".join(data_dst)

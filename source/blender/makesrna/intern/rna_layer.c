@@ -49,6 +49,10 @@
 
 #ifdef RNA_RUNTIME
 
+#ifdef WITH_PYTHON
+#  include "BPY_extern.h"
+#endif
+
 #include "DNA_group_types.h"
 #include "DNA_object_types.h"
 
@@ -165,9 +169,18 @@ static void rna_LayerObjects_selected_begin(CollectionPropertyIterator *iter, Po
 
 static void rna_ViewLayer_update_tagged(ID *id_ptr, ViewLayer *view_layer, Main *bmain)
 {
+#ifdef WITH_PYTHON
+	/* Allow drivers to be evaluated */
+	BPy_BEGIN_ALLOW_THREADS;
+#endif
+
 	Scene *scene = (Scene *)id_ptr;
 	Depsgraph *depsgraph = BKE_scene_get_depsgraph(scene, view_layer, true);
 	BKE_scene_graph_update_tagged(depsgraph, bmain);
+
+#ifdef WITH_PYTHON
+	BPy_END_ALLOW_THREADS;
+#endif
 }
 
 static void rna_ObjectBase_select_update(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
@@ -185,8 +198,7 @@ static void rna_LayerCollection_use_update(Main *bmain, Scene *UNUSED(scene), Po
 
 	BKE_layer_collection_sync(scene, view_layer);
 
-	/* TODO(sergey): Use proper flag for tagging here. */
-	DEG_id_tag_update(&scene->id, 0);
+	DEG_id_tag_update(&scene->id, DEG_TAG_BASE_FLAGS_UPDATE);
 	DEG_relations_tag_update(bmain);
 	WM_main_add_notifier(NC_SCENE | ND_LAYER_CONTENT, NULL);
 }
@@ -217,6 +229,18 @@ static void rna_def_layer_collection(BlenderRNA *brna)
 	RNA_def_property_boolean_sdna(prop, NULL, "flag", LAYER_COLLECTION_EXCLUDE);
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_ui_text(prop, "Exclude", "Exclude collection from view layer");
+	RNA_def_property_update(prop, NC_SCENE | ND_LAYER, "rna_LayerCollection_use_update");
+
+	prop = RNA_def_property(srna, "holdout", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "flag", LAYER_COLLECTION_HOLDOUT);
+	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+	RNA_def_property_ui_text(prop, "Holdout", "Mask out objects in collection from view layer");
+	RNA_def_property_update(prop, NC_SCENE | ND_LAYER, "rna_LayerCollection_use_update");
+
+	prop = RNA_def_property(srna, "indirect_only", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "flag", LAYER_COLLECTION_INDIRECT_ONLY);
+	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+	RNA_def_property_ui_text(prop, "Indirect Only", "Objects in collection only contribute indirectly (through shadows and reflections) in the view layer");
 	RNA_def_property_update(prop, NC_SCENE | ND_LAYER, "rna_LayerCollection_use_update");
 }
 

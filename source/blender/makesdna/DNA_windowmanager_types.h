@@ -184,10 +184,13 @@ typedef struct wmWindow {
 	struct wmWindow *next, *prev;
 
 	void *ghostwin;             /* don't want to include ghost.h stuff */
-	void *gwnctx;               /* don't want to include gawin stuff */
+	void *gpuctx;               /* don't want to include gpu stuff */
 
-	struct Scene *scene;     /* The scene displayed in this window. */
-	struct Scene *new_scene; /* temporary when switching */
+	struct wmWindow *parent;    /* Parent window */
+
+	struct Scene *scene;        /* Active scene displayed in this window. */
+	struct Scene *new_scene;    /* temporary when switching */
+	char view_layer_name[64];   /* Active view layer displayed in this window. */
 
 	struct WorkSpaceInstanceHook *workspace_hook;
 
@@ -232,6 +235,9 @@ typedef struct wmWindow {
 
 	/* custom drawing callbacks */
 	ListBase drawcalls;
+
+	/* Private runtime info to show text in the status bar. */
+	void *cursor_keymap_status;
 } wmWindow;
 
 #ifdef ime_data
@@ -239,7 +245,7 @@ typedef struct wmWindow {
 #endif
 
 /* These two Lines with # tell makesdna this struct can be excluded. */
-/* should be something like DNA_EXCLUDE 
+/* should be something like DNA_EXCLUDE
  * but the preprocessor first removes all comments, spaces etc */
 #
 #
@@ -324,7 +330,9 @@ typedef struct wmKeyMap {
 
 	/* runtime */
 	/** Verify if enabled in the current context, use #WM_keymap_poll instead of direct calls. */
-	int (*poll)(struct bContext *);
+	bool (*poll)(struct bContext *);
+	bool (*poll_modal_item)(const struct wmOperator *op, int value);
+
 	/** For modal, #EnumPropertyItem for now. */
 	const void *modal_items;
 } wmKeyMap;
@@ -377,11 +385,6 @@ typedef struct wmOperator {
 	struct wmOperator *opm;       /* current running macro, not saved */
 	struct uiLayout *layout;      /* runtime for drawing */
 	short flag, pad[3];
-
-	/* Screen context the operator was finished in. It gets temporarily
-	 * restored during operator repeat. Only set for registered operators. */
-	struct ScrArea *execution_area;
-	struct ARegion *execution_region;
 } wmOperator;
 
 /* operator type return flags: exec(), invoke() modal(), return values */

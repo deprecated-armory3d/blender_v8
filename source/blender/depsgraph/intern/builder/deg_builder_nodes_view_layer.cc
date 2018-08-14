@@ -71,13 +71,13 @@ void DepsgraphNodeBuilder::build_layer_collections(ListBase *lb)
 		COLLECTION_RESTRICT_VIEW : COLLECTION_RESTRICT_RENDER;
 
 	for (LayerCollection *lc = (LayerCollection *)lb->first; lc; lc = lc->next) {
-		if (!(lc->collection->flag & restrict_flag)) {
-			if (!(lc->flag & LAYER_COLLECTION_EXCLUDE)) {
-				build_collection(lc->collection);
-			}
-
-			build_layer_collections(&lc->layer_collections);
+		if (lc->collection->flag & restrict_flag) {
+			continue;
 		}
+		if ((lc->flag & LAYER_COLLECTION_EXCLUDE) == 0) {
+			build_collection(DEG_COLLECTION_OWNER_SCENE, lc->collection);
+		}
+		build_layer_collections(&lc->layer_collections);
 	}
 }
 
@@ -105,7 +105,7 @@ void DepsgraphNodeBuilder::build_view_layer(
 	 */
 	int base_index = 0;
 	const int base_flag = (graph_->mode == DAG_EVAL_VIEWPORT) ?
-		BASE_VISIBLE_VIEWPORT : BASE_VISIBLE_RENDER;
+		BASE_ENABLED_VIEWPORT : BASE_ENABLED_RENDER;
 	LISTBASE_FOREACH(Base *, base, &view_layer->object_bases) {
 		/* object itself */
 		if (base->flag & base_flag) {
@@ -133,10 +133,6 @@ void DepsgraphNodeBuilder::build_view_layer(
 	/* Compositor nodes */
 	if (scene->nodetree != NULL) {
 		build_compositor(scene);
-	}
-	/* Grease pencil. */
-	if (scene->gpd != NULL) {
-		build_gpencil(scene->gpd);
 	}
 	/* Cache file. */
 	LISTBASE_FOREACH (CacheFile *, cachefile, &bmain_->cachefiles) {

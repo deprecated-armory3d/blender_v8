@@ -143,7 +143,7 @@ static void rna_def_world_mist(BlenderRNA *brna)
 {
 	StructRNA *srna;
 	PropertyRNA *prop;
-	
+
 	static const EnumPropertyItem falloff_items[] = {
 		{WO_MIST_QUADRATIC, "QUADRATIC", 0, "Quadratic", "Use quadratic progression"},
 		{WO_MIST_LINEAR, "LINEAR", 0, "Linear", "Use linear progression"},
@@ -186,7 +186,7 @@ static void rna_def_world_mist(BlenderRNA *brna)
 	RNA_def_property_range(prop, 0, 100);
 	RNA_def_property_ui_text(prop, "Height", "Control how much mist density decreases with height");
 	RNA_def_property_update(prop, 0, "rna_World_update");
-	
+
 	prop = RNA_def_property(srna, "falloff", PROP_ENUM, PROP_NONE);
 	RNA_def_property_enum_sdna(prop, NULL, "mistype");
 	RNA_def_property_enum_items(prop, falloff_items);
@@ -199,6 +199,8 @@ void RNA_def_world(BlenderRNA *brna)
 	StructRNA *srna;
 	PropertyRNA *prop;
 
+	static float default_world_color[] = {0.05f, 0.05f, 0.05f};
+
 	srna = RNA_def_struct(brna, "World", "ID");
 	RNA_def_struct_ui_text(srna, "World",
 	                       "World data-block describing the environment and ambient lighting of a scene");
@@ -207,14 +209,15 @@ void RNA_def_world(BlenderRNA *brna)
 	rna_def_animdata_common(srna);
 
 	/* colors */
-	prop = RNA_def_property(srna, "horizon_color", PROP_FLOAT, PROP_COLOR);
+	prop = RNA_def_property(srna, "color", PROP_FLOAT, PROP_COLOR);
 	RNA_def_property_float_sdna(prop, NULL, "horr");
 	RNA_def_property_array(prop, 3);
-	RNA_def_property_ui_text(prop, "Horizon Color", "Color at the horizon");
+	RNA_def_property_float_array_default(prop, default_world_color);
+	RNA_def_property_ui_text(prop, "Color", "Color of the background");
 	/* RNA_def_property_update(prop, 0, "rna_World_update"); */
 	/* render-only uses this */
 	RNA_def_property_update(prop, 0, "rna_World_draw_update");
-	
+
 	/* nested structs */
 	prop = RNA_def_property(srna, "light_settings", PROP_POINTER, PROP_NONE);
 	RNA_def_property_flag(prop, PROP_NEVER_NULL);

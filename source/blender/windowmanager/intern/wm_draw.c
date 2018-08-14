@@ -50,6 +50,7 @@
 
 #include "BKE_context.h"
 #include "BKE_image.h"
+#include "BKE_main.h"
 #include "BKE_screen.h"
 #include "BKE_scene.h"
 #include "BKE_workspace.h"
@@ -118,7 +119,7 @@ static void wm_paintcursor_draw(bContext *C, ARegion *ar)
 }
 
 
-static bool wm_draw_region_stereo_set(ScrArea *sa, ARegion *ar, eStereoViews sview)
+static bool wm_draw_region_stereo_set(Main *bmain, ScrArea *sa, ARegion *ar, eStereoViews sview)
 {
 	/* We could detect better when stereo is actually needed, by inspecting the
 	 * image in the image editor and sequencer. */
@@ -149,7 +150,7 @@ static bool wm_draw_region_stereo_set(ScrArea *sa, ARegion *ar, eStereoViews svi
 		{
 			SpaceNode *snode = sa->spacedata.first;
 			if ((snode->flag & SNODE_BACKDRAW) && ED_node_is_compositor(snode)) {
-				Image *ima = BKE_image_verify_viewer(IMA_TYPE_COMPOSITE, "Viewer Node");
+				Image *ima = BKE_image_verify_viewer(bmain, IMA_TYPE_COMPOSITE, "Viewer Node");
 				ima->eye = sview;
 				return true;
 			}
@@ -455,9 +456,9 @@ void wm_draw_region_blend(ARegion *ar, int view, bool blend)
 	glUniform1i(GPU_shader_get_uniform(shader, "image"), 0);
 	glUniform4f(GPU_shader_get_uniform(shader, "rect_icon"), halfx, halfy, 1.0f + halfx, 1.0f + halfy);
 	glUniform4f(GPU_shader_get_uniform(shader, "rect_geom"), ar->winrct.xmin, ar->winrct.ymin, ar->winrct.xmax + 1, ar->winrct.ymax + 1);
-	glUniform4f(GPU_shader_get_builtin_uniform(shader, GWN_UNIFORM_COLOR), alpha, alpha, alpha, alpha);
+	glUniform4f(GPU_shader_get_builtin_uniform(shader, GPU_UNIFORM_COLOR), alpha, alpha, alpha, alpha);
 
-	GWN_draw_primitive(GWN_PRIM_TRI_STRIP, 4);
+	GPU_draw_primitive(GPU_PRIM_TRI_STRIP, 4);
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -488,6 +489,7 @@ GPUViewport *WM_draw_region_get_bound_viewport(ARegion *ar)
 
 static void wm_draw_window_offscreen(bContext *C, wmWindow *win, bool stereo)
 {
+	Main *bmain = CTX_data_main(C);
 	wmWindowManager *wm = CTX_wm_manager(C);
 	bScreen *screen = WM_window_get_active_screen(win);
 
@@ -512,7 +514,7 @@ static void wm_draw_window_offscreen(bContext *C, wmWindow *win, bool stereo)
 				CTX_wm_region_set(C, ar);
 				bool use_viewport = wm_region_use_viewport(sa, ar);
 
-				if (stereo && wm_draw_region_stereo_set(sa, ar, STEREO_LEFT_ID)) {
+				if (stereo && wm_draw_region_stereo_set(bmain, sa, ar, STEREO_LEFT_ID)) {
 					wm_draw_region_buffer_create(ar, true, use_viewport);
 
 					for (int view = 0; view < 2; view++) {
@@ -522,7 +524,7 @@ static void wm_draw_window_offscreen(bContext *C, wmWindow *win, bool stereo)
 						}
 						else {
 							sview = STEREO_RIGHT_ID;
-							wm_draw_region_stereo_set(sa, ar, sview);
+							wm_draw_region_stereo_set(bmain, sa, ar, sview);
 						}
 
 						wm_draw_region_bind(ar, view);
@@ -537,10 +539,7 @@ static void wm_draw_window_offscreen(bContext *C, wmWindow *win, bool stereo)
 					wm_draw_region_unbind(ar, 0);
 				}
 
-				// armory - draw viewport constantly when game is running, implement this properly
-				if (ar->do_draw == -1) ar->do_draw = true;
-				else ar->do_draw = false;
-				// ar->do_draw = false;
+				ar->do_draw = false;
 				CTX_wm_region_set(C, NULL);
 			}
 		}
@@ -730,9 +729,8 @@ static void wm_draw_window(bContext *C, wmWindow *win)
 /* quick test to prevent changing window drawable */
 static bool wm_draw_update_test_window(wmWindow *win)
 {
-	struct WorkSpace *workspace = WM_window_get_active_workspace(win);
 	Scene *scene = WM_window_get_active_scene(win);
-	ViewLayer *view_layer = BKE_workspace_view_layer_get(workspace, scene);
+	ViewLayer *view_layer = WM_window_get_active_view_layer(win);
 	struct Depsgraph *depsgraph = BKE_scene_get_depsgraph(scene, view_layer, true);
 	bScreen *screen = WM_window_get_active_screen(win);
 	ARegion *ar;
@@ -758,7 +756,7 @@ static bool wm_draw_update_test_window(wmWindow *win)
 
 	if (do_draw)
 		return true;
-	
+
 	if (screen->do_refresh)
 		return true;
 	if (screen->do_draw)
@@ -769,7 +767,7 @@ static bool wm_draw_update_test_window(wmWindow *win)
 		return true;
 	if (screen->do_draw_drag)
 		return true;
-	
+
 	return false;
 }
 
@@ -783,6 +781,7 @@ void WM_paint_cursor_tag_redraw(wmWindow *win, ARegion *UNUSED(ar))
 
 void wm_draw_update(bContext *C)
 {
+	Main *bmain = CTX_data_main(C);
 	wmWindowManager *wm = CTX_wm_manager(C);
 	wmWindow *win;
 
@@ -790,8 +789,8 @@ void wm_draw_update(bContext *C)
 	BKE_subsurf_free_unused_buffers();
 #endif
 
-	GPU_free_unused_buffers();
-	
+	GPU_free_unused_buffers(bmain);
+
 	for (win = wm->windows.first; win; win = win->next) {
 #ifdef WIN32
 		GHOST_TWindowState state = GHOST_GetWindowState(win->ghostwin);
@@ -809,7 +808,7 @@ void wm_draw_update(bContext *C)
 			bScreen *screen = WM_window_get_active_screen(win);
 
 			CTX_wm_window_set(C, win);
-			
+
 			/* sets context window+screen */
 			wm_window_make_drawable(wm, win);
 
@@ -821,7 +820,7 @@ void wm_draw_update(bContext *C)
 			screen->do_draw_gesture = false;
 			screen->do_draw_paintcursor = false;
 			screen->do_draw_drag = false;
-		
+
 			wm_window_swap_buffers(win);
 
 			CTX_wm_window_set(C, NULL);
@@ -853,4 +852,3 @@ void WM_redraw_windows(bContext *C)
 	CTX_wm_area_set(C, area_prev);
 	CTX_wm_region_set(C, ar_prev);
 }
-

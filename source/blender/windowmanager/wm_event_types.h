@@ -92,7 +92,7 @@ enum {
 	WM_IME_COMPOSITE_EVENT      = 0x0015,
 /* IME event, GHOST_kEventImeCompositionEnd in ghost */
 	WM_IME_COMPOSITE_END   = 0x0016,
-	
+
 	/* Tablet/Pen Specific Events */
 	TABLET_STYLUS       = 0x001a,
 	TABLET_ERASER       = 0x001b,
@@ -339,8 +339,8 @@ enum {
 	EVT_DROP              = 0x5023,
 	EVT_BUT_CANCEL        = 0x5024,
 
-	/* could become manipulator callback */
-	EVT_MANIPULATOR_UPDATE     = 0x5025,
+	/* could become gizmo callback */
+	EVT_GIZMO_UPDATE     = 0x5025,
 	/* ********** End of Blender internal events. ********** */
 };
 
@@ -367,6 +367,13 @@ enum {
 
 /* test whether the event is a mouse button */
 #define ISMOUSE(event_type)  ((event_type) >= LEFTMOUSE && (event_type) <= BUTTON7MOUSE)
+
+#define ISMOUSE_WHEEL(event_type)  ((event_type) >= WHEELUPMOUSE && (event_type) <= WHEELOUTMOUSE)
+#define ISMOUSE_GESTURE(event_type)  ((event_type) >= MOUSEPAN && (event_type) <= MOUSEROTATE)
+#define ISMOUSE_BUTTON(event_type) \
+	(ELEM(event_type, \
+	      LEFTMOUSE, MIDDLEMOUSE, RIGHTMOUSE, ACTIONMOUSE, SELECTMOUSE, \
+	      BUTTON4MOUSE, BUTTON5MOUSE, BUTTON6MOUSE, BUTTON7MOUSE))
 
 /* test whether the event is tweak event */
 #define ISTWEAK(event_type)  ((event_type) >= EVT_TWEAK_L && (event_type) <= EVT_GESTURE)
@@ -453,4 +460,3 @@ enum {
 
 
 #endif	/* __WM_EVENT_TYPES_H__ */
-

@@ -352,10 +352,6 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 #define CALLBACK_INVOKE(check_id_super, cb_flag) \
 	FOREACH_CALLBACK_INVOKE(&data, check_id_super, cb_flag)
 
-	if (id->override_static != NULL) {
-		CALLBACK_INVOKE_ID(id->override_static->reference, IDWALK_CB_USER | IDWALK_CB_STATIC_OVERRIDE_REFERENCE);
-	}
-
 	for (; id != NULL; id = (flag & IDWALK_RECURSE) ? BLI_LINKSTACK_POP(data.ids_todo) : NULL) {
 		data.self_id = id;
 		data.cb_flag = ID_IS_LINKED(id) ? IDWALK_CB_INDIRECT_USAGE : 0;
@@ -370,6 +366,11 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 				FOREACH_CALLBACK_INVOKE_ID_PP(&data, entry->id_pointer, entry->usage_flag);
 			}
 			continue;
+		}
+
+		if (id->override_static != NULL) {
+			CALLBACK_INVOKE_ID(id->override_static->reference, IDWALK_CB_USER | IDWALK_CB_STATIC_OVERRIDE_REFERENCE);
+			CALLBACK_INVOKE_ID(id->override_static->storage, IDWALK_CB_USER | IDWALK_CB_STATIC_OVERRIDE_REFERENCE);
 		}
 
 		library_foreach_idproperty_ID_link(&data, id->properties, IDWALK_CB_USER);
@@ -416,7 +417,6 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 					SEQ_END
 				}
 
-				CALLBACK_INVOKE(scene->gpd, IDWALK_CB_USER);
 
 				for (CollectionObject *cob = scene->master_collection->gobject.first; cob; cob = cob->next) {
 					CALLBACK_INVOKE(cob->ob, IDWALK_CB_USER);
@@ -476,6 +476,9 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 					}
 					if (toolsett->uvsculpt) {
 						library_foreach_paint(&data, &toolsett->uvsculpt->paint);
+					}
+					if (toolsett->gp_paint) {
+						library_foreach_paint(&data, &toolsett->gp_paint->paint);
 					}
 				}
 
@@ -640,6 +643,10 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 				if (material->texpaintslot != NULL) {
 					CALLBACK_INVOKE(material->texpaintslot->ima, IDWALK_CB_NOP);
 				}
+				if (material->gp_style != NULL) {
+					CALLBACK_INVOKE(material->gp_style->sima, IDWALK_CB_USER);
+					CALLBACK_INVOKE(material->gp_style->ima, IDWALK_CB_USER);
+				}
 				break;
 			}
 
@@ -675,6 +682,15 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 			{
 				Camera *camera = (Camera *) id;
 				CALLBACK_INVOKE(camera->dof_ob, IDWALK_CB_NOP);
+				for (CameraBGImage *bgpic = camera->bg_images.first; bgpic; bgpic = bgpic->next) {
+					if (bgpic->source == CAM_BGIMG_SOURCE_IMAGE) {
+						CALLBACK_INVOKE(bgpic->ima, IDWALK_CB_USER);
+					}
+					else if (bgpic->source == CAM_BGIMG_SOURCE_MOVIE) {
+						CALLBACK_INVOKE(bgpic->clip, IDWALK_CB_USER);
+					}
+				}
+
 				break;
 			}
 
@@ -757,6 +773,9 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 				CALLBACK_INVOKE(brush->toggle_brush, IDWALK_CB_NOP);
 				CALLBACK_INVOKE(brush->clone.image, IDWALK_CB_NOP);
 				CALLBACK_INVOKE(brush->paint_curve, IDWALK_CB_USER);
+				if (brush->gpencil_settings) {
+					CALLBACK_INVOKE(brush->gpencil_settings->material, IDWALK_CB_USER);
+				}
 				library_foreach_mtex(&data, &brush->mtex);
 				library_foreach_mtex(&data, &brush->mask_mtex);
 				break;
@@ -805,6 +824,10 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 							}
 						}
 					}
+				}
+
+				for (ParticleDupliWeight *dw = psett->dupliweights.first; dw; dw = dw->next) {
+					CALLBACK_INVOKE(dw->ob, IDWALK_CB_NOP);
 				}
 				break;
 			}
@@ -931,19 +954,20 @@ void BKE_library_foreach_ID_link(Main *bmain, ID *id, LibraryIDLinkCallback call
 					/* allow callback to set a different screen */
 					BKE_workspace_layout_screen_set(layout, screen);
 				}
-
-				for (WorkSpaceSceneRelation *relation = workspace->scene_layer_relations.first; relation; relation = relation->next) {
-					CALLBACK_INVOKE(relation->scene, IDWALK_CB_NOP);
-				}
 				break;
 			}
 			case ID_GD:
 			{
 				bGPdata *gpencil = (bGPdata *) id;
-
-				for (bGPDlayer *gp_layer = gpencil->layers.first; gp_layer; gp_layer = gp_layer->next) {
-					CALLBACK_INVOKE(gp_layer->parent, IDWALK_CB_NOP);
+				/* materials */
+				for (i = 0; i < gpencil->totcol; i++) {
+					CALLBACK_INVOKE(gpencil->mat[i], IDWALK_CB_USER);
 				}
+
+				for (bGPDlayer *gplayer = gpencil->layers.first; gplayer != NULL; gplayer = gplayer->next) {
+					CALLBACK_INVOKE(gplayer->parent, IDWALK_CB_NOP);
+				}
+
 				break;
 			}
 
@@ -1071,7 +1095,7 @@ bool BKE_library_id_can_use_idtype(ID *id_owner, const short id_type_used)
 			return true;
 #endif
 		case ID_BR:
-			return ELEM(id_type_used, ID_BR, ID_IM, ID_PC, ID_TE);
+			return ELEM(id_type_used, ID_BR, ID_IM, ID_PC, ID_TE, ID_MA);
 		case ID_PA:
 			return ELEM(id_type_used, ID_OB, ID_GR, ID_TE);
 		case ID_MC:
@@ -1082,6 +1106,8 @@ bool BKE_library_id_can_use_idtype(ID *id_owner, const short id_type_used)
 			return (ELEM(id_type_used, ID_TE, ID_OB));
 		case ID_LP:
 			return ELEM(id_type_used, ID_IM);
+		case ID_GD:
+			return ELEM(id_type_used, ID_MA);
 		case ID_WS:
 			return ELEM(id_type_used, ID_SCR, ID_SCE);
 		case ID_IM:
@@ -1090,7 +1116,6 @@ bool BKE_library_id_can_use_idtype(ID *id_owner, const short id_type_used)
 		case ID_SO:
 		case ID_AR:
 		case ID_AC:
-		case ID_GD:
 		case ID_WM:
 		case ID_PAL:
 		case ID_PC:

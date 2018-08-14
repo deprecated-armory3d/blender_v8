@@ -44,6 +44,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
@@ -559,6 +560,8 @@ static void applyObjectConstraintRot(
 
 		/* on setup call, use first object */
 		if (td == NULL) {
+			BLI_assert(tc == NULL);
+			tc = TRANS_DATA_CONTAINER_FIRST_OK(t);
 			td = tc->data;
 		}
 
@@ -742,24 +745,24 @@ void drawConstraint(TransInfo *t)
 			drawLine(t, t->center_global, tc->mtx[1], 'Y', 0);
 			drawLine(t, t->center_global, tc->mtx[2], 'Z', 0);
 
-			depth_test_enabled = glIsEnabled(GL_DEPTH_TEST);
+			depth_test_enabled = GPU_depth_test_enabled();
 			if (depth_test_enabled)
-				glDisable(GL_DEPTH_TEST);
+				GPU_depth_test(false);
 
-			const uint shdr_pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+			const uint shdr_pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 			immBindBuiltinProgram(GPU_SHADER_3D_LINE_DASHED_UNIFORM_COLOR);
 
 			float viewport_size[4];
-			glGetFloatv(GL_VIEWPORT, viewport_size);
+			GPU_viewport_size_get_f(viewport_size);
 			immUniform2f("viewport_size", viewport_size[2], viewport_size[3]);
 
-			immUniform1i("num_colors", 0);  /* "simple" mode */
+			immUniform1i("colors_len", 0);  /* "simple" mode */
 			immUniformColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 			immUniform1f("dash_width", 2.0f);
 			immUniform1f("dash_factor", 0.5f);
 
-			immBegin(GWN_PRIM_LINES, 2);
+			immBegin(GPU_PRIM_LINES, 2);
 			immVertex3fv(shdr_pos, t->center_global);
 			immVertex3fv(shdr_pos, vec);
 			immEnd();
@@ -767,7 +770,7 @@ void drawConstraint(TransInfo *t)
 			immUnbindProgram();
 
 			if (depth_test_enabled)
-				glEnable(GL_DEPTH_TEST);
+				GPU_depth_test(true);
 		}
 
 		if (tc->mode & CON_AXIS0) {
@@ -799,13 +802,13 @@ void drawPropCircle(const struct bContext *C, TransInfo *t)
 			unit_m4(imat);
 		}
 
-		gpuPushMatrix();
+		GPU_matrix_push();
 
 		if (t->spacetype == SPACE_VIEW3D) {
 			/* pass */
 		}
 		else if (t->spacetype == SPACE_IMAGE) {
-			gpuScale2f(1.0f / t->aspect[0], 1.0f / t->aspect[1]);
+			GPU_matrix_scale_2f(1.0f / t->aspect[0], 1.0f / t->aspect[1]);
 		}
 		else if (ELEM(t->spacetype, SPACE_IPO, SPACE_ACTION)) {
 			/* only scale y */
@@ -815,14 +818,14 @@ void drawPropCircle(const struct bContext *C, TransInfo *t)
 			float ysize = BLI_rctf_size_y(datamask);
 			float xmask = BLI_rcti_size_x(mask);
 			float ymask = BLI_rcti_size_y(mask);
-			gpuScale2f(1.0f, (ysize / xsize) * (xmask / ymask));
+			GPU_matrix_scale_2f(1.0f, (ysize / xsize) * (xmask / ymask));
 		}
 
-		depth_test_enabled = glIsEnabled(GL_DEPTH_TEST);
+		depth_test_enabled = GPU_depth_test_enabled();
 		if (depth_test_enabled)
-			glDisable(GL_DEPTH_TEST);
+			GPU_depth_test(false);
 
-		unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+		uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 		immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 		immUniformThemeColor(TH_GRID);
@@ -834,9 +837,9 @@ void drawPropCircle(const struct bContext *C, TransInfo *t)
 		immUnbindProgram();
 
 		if (depth_test_enabled)
-			glEnable(GL_DEPTH_TEST);
+			GPU_depth_test(true);
 
-		gpuPopMatrix();
+		GPU_matrix_pop();
 	}
 }
 

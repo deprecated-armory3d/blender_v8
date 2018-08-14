@@ -64,6 +64,7 @@
 
 #include "GPU_immediate.h"
 #include "GPU_matrix.h"
+#include "GPU_state.h"
 
 /* *************************************************** */
 /* CURRENT FRAME DRAWING */
@@ -86,8 +87,8 @@ void ANIM_draw_cfra_number(const bContext *C, View2D *v2d, short flag)
 
 	/* because the frame number text is subject to the same scaling as the contents of the view */
 	UI_view2d_scale_get(v2d, &xscale, NULL);
-	gpuPushMatrix();
-	gpuScale2f(1.0f / xscale, 1.0f);
+	GPU_matrix_push();
+	GPU_matrix_scale_2f(1.0f / xscale, 1.0f);
 
 	/* get timecode string
 	 *	- padding on str-buf passed so that it doesn't sit on the frame indicator
@@ -127,7 +128,7 @@ void ANIM_draw_cfra_number(const bContext *C, View2D *v2d, short flag)
 	                         numstr, col);
 
 	/* restore view transform */
-	gpuPopMatrix();
+	GPU_matrix_pop();
 }
 
 /* General call for drawing current frame indicator in animation editor */
@@ -138,17 +139,17 @@ void ANIM_draw_cfra(const bContext *C, View2D *v2d, short flag)
 	const float time = scene->r.cfra + scene->r.subframe;
 	const float x = (float)(time * scene->r.framelen);
 
-	glLineWidth((flag & DRAWCFRA_WIDE) ? 3.0 : 2.0);
+	GPU_line_width((flag & DRAWCFRA_WIDE) ? 3.0 : 2.0);
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 	/* Draw a light green line to indicate current frame */
 	immUniformThemeColor(TH_CFRAME);
 
-	immBegin(GWN_PRIM_LINES, 2);
+	immBegin(GPU_PRIM_LINES, 2);
 	immVertex2f(pos, x, v2d->cur.ymin - 500.0f); /* XXX arbitrary... want it go to bottom */
 	immVertex2f(pos, x, v2d->cur.ymax);
 	immEnd();
@@ -166,11 +167,11 @@ void ANIM_draw_previewrange(const bContext *C, View2D *v2d, int end_frame_width)
 
 	/* only draw this if preview range is set */
 	if (PRVRANGEON) {
-		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-		glEnable(GL_BLEND);
+		GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
+		GPU_blend(true);
 
-		Gwn_VertFormat *format = immVertexFormat();
-		unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+		GPUVertFormat *format = immVertexFormat();
+		uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 		immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 		immUniformThemeColorShadeAlpha(TH_ANIM_ACTIVE, -25, -30);
@@ -187,7 +188,7 @@ void ANIM_draw_previewrange(const bContext *C, View2D *v2d, int end_frame_width)
 
 		immUnbindProgram();
 
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 	}
 }
 
@@ -199,11 +200,11 @@ void ANIM_draw_previewrange(const bContext *C, View2D *v2d, int end_frame_width)
 void ANIM_draw_framerange(Scene *scene, View2D *v2d)
 {
 	/* draw darkened area outside of active timeline frame range */
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glEnable(GL_BLEND);
+	GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
+	GPU_blend(true);
 
-	Gwn_VertFormat *format = immVertexFormat();
-	unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+	GPUVertFormat *format = immVertexFormat();
+	uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 	immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 	immUniformThemeColorShadeAlpha(TH_BACK, -25, -100);
@@ -216,12 +217,12 @@ void ANIM_draw_framerange(Scene *scene, View2D *v2d)
 		immRectf(pos, v2d->cur.xmin, v2d->cur.ymin, v2d->cur.xmax, v2d->cur.ymax);
 	}
 
-	glDisable(GL_BLEND);
+	GPU_blend(false);
 
 	/* thin lines where the actual frames are */
 	immUniformThemeColorShade(TH_BACK, -60);
 
-	immBegin(GWN_PRIM_LINES, 4);
+	immBegin(GPU_PRIM_LINES, 4);
 
 	immVertex2f(pos, (float)SFRA, v2d->cur.ymin);
 	immVertex2f(pos, (float)SFRA, v2d->cur.ymax);
@@ -551,11 +552,11 @@ static bool find_prev_next_keyframes(struct bContext *C, int *nextfra, int *prev
 
 	/* populate tree with keyframe nodes */
 	scene_to_keylist(&ads, scene, &keys, NULL);
-	gpencil_to_keylist(&ads, scene->gpd, &keys);
+	gpencil_to_keylist(&ads, scene->gpd, &keys, false);
 
 	if (ob) {
 		ob_to_keylist(&ads, ob, &keys, NULL);
-		gpencil_to_keylist(&ads, ob->gpd, &keys);
+		gpencil_to_keylist(&ads, ob->data, &keys, false);
 	}
 
 	if (mask) {

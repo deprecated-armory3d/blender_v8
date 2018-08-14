@@ -40,6 +40,7 @@
 #include "BLI_string_utf8.h"
 
 #include "GPU_immediate.h"
+#include "GPU_state.h"
 
 #include "BIF_gl.h"
 
@@ -81,11 +82,11 @@ static void console_draw_sel(const char *str, const int sel[2], const int xy[2],
 		const int sta = txt_utf8_offset_to_column(str, max_ii(sel[0], 0));
 		const int end = txt_utf8_offset_to_column(str, min_ii(sel[1], str_len_draw));
 
-		glEnable(GL_BLEND);
-		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		GPU_blend(true);
+		GPU_blend_set_func_separate(GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ONE, GPU_ONE_MINUS_SRC_ALPHA);
 
-		Gwn_VertFormat *format = immVertexFormat();
-		unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+		GPUVertFormat *format = immVertexFormat();
+		uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 		immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 		immUniformColor4ubv(bg_sel);
@@ -93,7 +94,7 @@ static void console_draw_sel(const char *str, const int sel[2], const int xy[2],
 
 		immUnbindProgram();
 
-		glDisable(GL_BLEND);
+		GPU_blend(false);
 	}
 }
 
@@ -190,8 +191,8 @@ static int console_draw_string(ConsoleDrawContext *cdc, const char *str, int str
 		cdc->sel[1] = str_len - sel_orig[0];
 
 		if (bg) {
-			Gwn_VertFormat *format = immVertexFormat();
-			unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+			GPUVertFormat *format = immVertexFormat();
+			uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 			immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 			immUniformColor3ubv(bg);
@@ -241,8 +242,8 @@ static int console_draw_string(ConsoleDrawContext *cdc, const char *str, int str
 	else { /* simple, no wrap */
 
 		if (bg) {
-			Gwn_VertFormat *format = immVertexFormat();
-			unsigned int pos = GWN_vertformat_attr_add(format, "pos", GWN_COMP_I32, 2, GWN_FETCH_INT_TO_FLOAT);
+			GPUVertFormat *format = immVertexFormat();
+			uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
 			immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
 			immUniformColor3ubv(bg);

@@ -203,7 +203,7 @@ ccl_device_intersect bool scene_intersect(KernelGlobals *kg,
 
 #ifdef __BVH_LOCAL__
 /* Note: ray is passed by value to work around a possible CUDA compiler bug. */
-ccl_device_intersect void scene_intersect_local(KernelGlobals *kg,
+ccl_device_intersect bool scene_intersect_local(KernelGlobals *kg,
                                                 const Ray ray,
                                                 LocalIntersection *local_isect,
                                                 int local_object,
@@ -212,21 +212,20 @@ ccl_device_intersect void scene_intersect_local(KernelGlobals *kg,
 {
 #ifdef __OBJECT_MOTION__
 	if(kernel_data.bvh.have_motion) {
-		bvh_intersect_local_motion(kg,
-		                           &ray,
-		                           local_isect,
-		                           local_object,
-		                           lcg_state,
-		                           max_hits);
-		return;
+		return bvh_intersect_local_motion(kg,
+		                                  &ray,
+		                                  local_isect,
+		                                  local_object,
+		                                  lcg_state,
+		                                  max_hits);
 	}
 #endif /* __OBJECT_MOTION__ */
-	bvh_intersect_local(kg,
-	                    &ray,
-	                    local_isect,
-	                    local_object,
-	                    lcg_state,
-	                    max_hits);
+	return bvh_intersect_local(kg,
+	                            &ray,
+	                            local_isect,
+	                            local_object,
+	                            lcg_state,
+	                            max_hits);
 }
 #endif
 

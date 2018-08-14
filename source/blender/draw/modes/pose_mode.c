@@ -72,20 +72,23 @@ typedef struct POSE_Data {
 
 typedef struct POSE_PrivateData {
 	DRWShadingGroup *bone_selection_shgrp;
+	DRWShadingGroup *bone_selection_invert_shgrp;
+	float blend_color[4];
+	float blend_color_invert[4];
+	bool transparent_bones;
 } POSE_PrivateData; /* Transient data */
 
 static struct {
 	struct GPUShader *bone_selection_sh;
 } e_data = {NULL};
 
-static float blend_color[4] = {0.0, 0.0, 0.0, 0.5};
 
 /* *********** FUNCTIONS *********** */
 static bool POSE_is_bone_selection_overlay_active(void)
 {
 	const DRWContextState *dcs = DRW_context_state_get();
 	const View3D *v3d = dcs->v3d;
-	return v3d && (v3d->overlay.flag & V3D_OVERLAY_BONE_SELECTION);
+	return v3d && (v3d->overlay.flag & V3D_OVERLAY_BONE_SELECT) && OBPOSE_FROM_OBACT(dcs->obact);
 }
 
 static void POSE_engine_init(void *UNUSED(vedata))
@@ -105,11 +108,15 @@ static void POSE_cache_init(void *vedata)
 {
 	POSE_PassList *psl = ((POSE_Data *)vedata)->psl;
 	POSE_StorageList *stl = ((POSE_Data *)vedata)->stl;
+	const DRWContextState *draw_ctx = DRW_context_state_get();
+	View3D *v3d = draw_ctx->v3d;
 
 	if (!stl->g_data) {
 		/* Alloc transient pointers */
-		stl->g_data = MEM_mallocN(sizeof(*stl->g_data), __func__);
+		stl->g_data = MEM_callocN(sizeof(*stl->g_data), __func__);
 	}
+	POSE_PrivateData *ppd = stl->g_data;
+	ppd->transparent_bones = (draw_ctx->v3d->overlay.arm_flag & V3D_OVERLAY_ARM_TRANSP_BONES) != 0;
 
 	{
 		/* Solid bones */
@@ -150,13 +157,18 @@ static void POSE_cache_init(void *vedata)
 
 	{
 		if (POSE_is_bone_selection_overlay_active()) {
+			copy_v4_fl4(ppd->blend_color, 0.0f, 0.0f, 0.0f, v3d->overlay.bone_select_alpha);
+			copy_v4_fl4(ppd->blend_color_invert, 0.0f, 0.0f, 0.0f, pow(v3d->overlay.bone_select_alpha, 4));
 			DRWShadingGroup *grp;
 			psl->bone_selection = DRW_pass_create(
 			        "Bone Selection",
 			        DRW_STATE_WRITE_COLOR | DRW_STATE_DEPTH_EQUAL | DRW_STATE_BLEND);
 			grp = DRW_shgroup_create(e_data.bone_selection_sh, psl->bone_selection);
-			DRW_shgroup_uniform_vec4(grp, "color", blend_color, 1);
+			DRW_shgroup_uniform_vec4(grp, "color", ppd->blend_color, 1);
 			stl->g_data->bone_selection_shgrp = grp;
+			grp = DRW_shgroup_create(e_data.bone_selection_sh, psl->bone_selection);
+			DRW_shgroup_uniform_vec4(grp, "color", ppd->blend_color_invert, 1);
+			stl->g_data->bone_selection_invert_shgrp = grp;
 		}
 	}
 }
@@ -185,13 +197,16 @@ static bool POSE_is_driven_by_active_armature(Object *ob)
 static void POSE_cache_populate(void *vedata, Object *ob)
 {
 	POSE_PassList *psl = ((POSE_Data *)vedata)->psl;
-	POSE_StorageList *stl = ((POSE_Data *)vedata)->stl;
+	POSE_PrivateData *ppd = ((POSE_Data *)vedata)->stl->g_data;
 	const DRWContextState *draw_ctx = DRW_context_state_get();
 
-	/* In the future this will allow us to implement face manipulators,
+	/* In the future this will allow us to implement face gizmos,
 	 * and similar functionalities. For now we handle only pose bones. */
 
 	if (ob->type == OB_ARMATURE) {
+		if (draw_ctx->v3d->overlay.flag & V3D_OVERLAY_HIDE_BONES) {
+			return;
+		}
 		if (DRW_pose_mode_armature(ob, draw_ctx->obact)) {
 			DRWArmaturePasses passes = {
 			    .bone_solid = psl->bone_solid,
@@ -201,17 +216,21 @@ static void POSE_cache_populate(void *vedata, Object *ob)
 			    .bone_axes = psl->bone_axes,
 			    .relationship_lines = psl->relationship,
 			};
-			DRW_shgroup_armature_pose(ob, passes);
+			DRW_shgroup_armature_pose(ob, passes, ppd->transparent_bones);
 		}
 	}
 	else if (ob->type == OB_MESH &&
 	         !DRW_state_is_select() &&
-	         POSE_is_bone_selection_overlay_active() &&
-	         POSE_is_driven_by_active_armature(ob))
+	         POSE_is_bone_selection_overlay_active())
 	{
-		struct Gwn_Batch *geom = DRW_cache_object_surface_get(ob);
+		struct GPUBatch *geom = DRW_cache_object_surface_get(ob);
 		if (geom) {
-			DRW_shgroup_call_object_add(stl->g_data->bone_selection_shgrp, geom, ob);
+			if (POSE_is_driven_by_active_armature(ob)) {
+				DRW_shgroup_call_object_add(ppd->bone_selection_shgrp, geom, ob);
+			}
+			else {
+				DRW_shgroup_call_object_add(ppd->bone_selection_invert_shgrp, geom, ob);
+			}
 		}
 	}
 }

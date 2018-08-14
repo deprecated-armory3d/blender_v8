@@ -39,28 +39,30 @@
 #include "BLI_utildefines.h"
 #include "BLI_math.h"
 
-#include "BKE_global.h"
+#include "BKE_animsys.h"
 #include "BKE_armature.h"
 #include "BKE_action.h"
 #include "BKE_constraint.h"
 #include "BKE_curve.h"
 #include "BKE_DerivedMesh.h"
-#include "BKE_animsys.h"
 #include "BKE_displist.h"
+#include "BKE_editmesh.h"
 #include "BKE_effect.h"
+#include "BKE_global.h"
+#include "BKE_image.h"
 #include "BKE_key.h"
 #include "BKE_lamp.h"
 #include "BKE_lattice.h"
 #include "BKE_library.h"
-#include "BKE_editmesh.h"
+#include "BKE_main.h"
+#include "BKE_material.h"
+#include "BKE_mball.h"
+#include "BKE_mesh.h"
 #include "BKE_object.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
 #include "BKE_scene.h"
-#include "BKE_material.h"
-#include "BKE_mball.h"
-#include "BKE_mesh.h"
-#include "BKE_image.h"
+#include "BKE_gpencil.h"
 
 #include "MEM_guardedalloc.h"
 
@@ -145,6 +147,7 @@ void BKE_object_eval_done(Depsgraph *depsgraph, Object *ob)
 		Object *ob_orig = DEG_get_original_object(ob);
 		copy_m4_m4(ob_orig->obmat, ob->obmat);
 		ob_orig->transflag = ob->transflag;
+		ob_orig->flag = ob->flag;
 	}
 }
 
@@ -164,7 +167,7 @@ void BKE_object_handle_data_update(
 	/* TODO(sergey): Only used by legacy depsgraph. */
 	if (adt) {
 		/* evaluate drivers - datalevel */
-		/* XXX: for mesh types, should we push this to derivedmesh instead? */
+		/* XXX: for mesh types, should we push this to evaluated mesh instead? */
 		BKE_animsys_evaluate_animdata(depsgraph, scene, data_id, adt, ctime, ADT_RECALC_DRIVERS);
 	}
 
@@ -240,7 +243,6 @@ void BKE_object_handle_data_update(
 	if (!(ob->mode & OB_MODE_EDIT) && ob->particlesystem.first) {
 		const bool use_render_params = (DEG_get_mode(depsgraph) == DAG_EVAL_RENDER);
 		ParticleSystem *tpsys, *psys;
-		DerivedMesh *dm;
 		ob->transflag &= ~OB_DUPLIPARTS;
 		psys = ob->particlesystem.first;
 		while (psys) {
@@ -264,18 +266,6 @@ void BKE_object_handle_data_update(
 			}
 			else
 				psys = psys->next;
-		}
-
-		if (use_render_params && ob->transflag & OB_DUPLIPARTS) {
-			/* this is to make sure we get render level duplis in groups:
-			 * the derivedmesh must be created before init_render_mesh,
-			 * since object_duplilist does dupliparticles before that */
-			CustomDataMask data_mask = CD_MASK_BAREMESH | CD_MASK_MFACE | CD_MASK_MTFACE | CD_MASK_MCOL;
-			dm = mesh_create_derived_render(depsgraph, scene, ob, data_mask);
-			dm->release(dm);
-
-			for (psys = ob->particlesystem.first; psys; psys = psys->next)
-				psys_get_modifier(ob, psys)->flag &= ~eParticleSystemFlag_psys_updated;
 		}
 	}
 
@@ -334,6 +324,9 @@ void BKE_object_eval_uber_data(Depsgraph *depsgraph,
 			break;
 		case OB_MBALL:
 			BKE_mball_batch_cache_dirty(ob->data, BKE_MBALL_BATCH_DIRTY_ALL);
+			break;
+		case OB_GPENCIL:
+			BKE_gpencil_batch_cache_dirty(ob->data);
 			break;
 	}
 }
@@ -412,7 +405,13 @@ void BKE_object_eval_flush_base_flags(Depsgraph *depsgraph,
 	object->base_flag = base->flag;
 	if (is_from_set) {
 		object->base_flag |= BASE_FROM_SET;
-		object->base_flag &= ~(BASE_SELECTED | BASE_SELECTABLED);
+		object->base_flag &= ~(BASE_SELECTED | BASE_SELECTABLE);
+	}
+
+	/* Copy to original object datablock if needed. */
+	if (DEG_is_active(depsgraph)) {
+		Object *object_orig = DEG_get_original_object(object);
+		object_orig->base_flag = object->base_flag;
 	}
 
 	if (object->mode == OB_MODE_PARTICLE_EDIT) {

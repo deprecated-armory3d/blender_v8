@@ -274,11 +274,15 @@ extern "C" {
 #define SQUARE(a)  ({ \
 	typeof(a) a_ = (a); \
 	((a_) * (a_)); })
+#define CUBE(a)  ({ \
+	typeof(a) a_ = (a); \
+	((a_) * (a_) * (a_)); })
 
 #else
 
 #define ABS(a)  ((a) < 0 ? (-(a)) : (a))
 #define SQUARE(a)  ((a) * (a))
+#define CUBE(a)  ((a) * (a) * (a))
 
 #endif
 
@@ -552,13 +556,13 @@ extern bool BLI_memory_is_zero(const void *arr, const size_t arr_size);
 
 
 /* UNUSED macro, for function argument */
-#if defined(__GNUC__) || defined(__clang__) 
+#if defined(__GNUC__) || defined(__clang__)
 #  define UNUSED(x) UNUSED_ ## x __attribute__((__unused__))
 #else
 #  define UNUSED(x) UNUSED_ ## x
 #endif
 
-#if defined(__GNUC__) || defined(__clang__) 
+#if defined(__GNUC__) || defined(__clang__)
 #  define UNUSED_FUNCTION(x) __attribute__((__unused__)) UNUSED_ ## x
 #else
 #  define UNUSED_FUNCTION(x) UNUSED_ ## x

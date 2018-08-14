@@ -56,6 +56,9 @@ void MATERIAL_OT_paste(struct wmOperatorType *ot);
 void SCENE_OT_view_layer_add(struct wmOperatorType *ot);
 void SCENE_OT_view_layer_remove(struct wmOperatorType *ot);
 
+void SCENE_OT_light_cache_bake(struct wmOperatorType *ot);
+void SCENE_OT_light_cache_free(struct wmOperatorType *ot);
+
 void SCENE_OT_render_view_add(struct wmOperatorType *ot);
 void SCENE_OT_render_view_remove(struct wmOperatorType *ot);
 
@@ -98,4 +101,3 @@ void RENDER_OT_view_cancel(struct wmOperatorType *ot);
 void RENDER_OT_opengl(struct wmOperatorType *ot);
 
 #endif /* __RENDER_INTERN_H__ */
-

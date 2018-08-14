@@ -36,6 +36,7 @@ struct ListBase;
 struct AnimData;
 
 struct bContext;
+struct Main;
 struct wmKeyConfig;
 struct ReportList;
 struct ScrArea;
@@ -82,6 +83,7 @@ typedef struct bAnimContext {
 	struct bDopeSheet *ads; /* dopesheet data for editor (or which is being used) */
 
 	struct Depsgraph *depsgraph; /* active dependency graph */
+	struct Main *bmain;     /* Current Main */
 	struct Scene *scene;    /* active scene */
 	struct ViewLayer *view_layer; /* active scene layer */
 	struct Object *obact;   /* active object */
@@ -194,6 +196,8 @@ typedef enum eAnim_ChannelType {
 
 	ANIMTYPE_NLATRACK,
 	ANIMTYPE_NLAACTION,
+
+	ANIMTYPE_PALETTE,
 
 	/* always as last item, the total number of channel types... */
 	ANIMTYPE_NUM_TYPES
@@ -344,6 +348,9 @@ typedef enum eAnimFilter_Flags {
 
 /* Movie clip only */
 #define EXPANDED_MCLIP(clip) (clip->flag & MCLIP_DATA_EXPAND)
+
+/* Palette only */
+#define EXPANDED_PALETTE(palette) (palette->flag & PALETTE_DATA_EXPAND)
 
 /* AnimData - NLA mostly... */
 #define SEL_ANIMDATA(adt) (adt->flag & ADT_UI_SELECTED)
@@ -682,12 +689,13 @@ float ANIM_unit_mapping_get_factor(struct Scene *scene, struct ID *id, struct FC
 /* --------- anim_deps.c, animation updates -------- */
 
 void ANIM_id_update(struct Scene *scene, struct ID *id);
-void ANIM_list_elem_update(struct Scene *scene, bAnimListElem *ale);
+void ANIM_list_elem_update(struct Main *bmain, struct Scene *scene, bAnimListElem *ale);
 
 /* data -> channels syncing */
 void ANIM_sync_animchannels_to_data(const struct bContext *C);
 
 void ANIM_center_frame(struct bContext *C, int smooth_viewtx);
+
 /* ************************************************* */
 /* OPERATORS */
 
@@ -714,7 +722,10 @@ void ED_animedit_unlink_action(struct bContext *C, struct ID *id,
                                struct AnimData *adt, struct bAction *act,
                                struct ReportList *reports, bool force_delete);
 
+
+/* Drivers Editor - Utility to set up UI correctly */
+void ED_drivers_editor_init(struct bContext *C, struct ScrArea *sa);
+
 /* ************************************************ */
 
 #endif /* __ED_ANIM_API_H__ */
-

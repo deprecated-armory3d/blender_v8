@@ -162,8 +162,10 @@ typedef struct ModifierTypeInfo {
 
 	/* Copy instance data for this modifier type. Should copy all user
 	 * level settings to the target modifier.
+	 *
+	 * \param flag  Copying options (see BKE_library.h's LIB_ID_COPY_... flags for more).
 	 */
-	void (*copyData)(const struct ModifierData *md, struct ModifierData *target);
+	void (*copyData)(const struct ModifierData *md, struct ModifierData *target, const int flag);
 
 
 	/********************* Deform modifier functions *********************/ /* DEPRECATED */
@@ -202,7 +204,7 @@ typedef struct ModifierTypeInfo {
 	 *
 	 * The derivedData argument should always be non-NULL; the modifier
 	 * should read the object data from the derived object instead of the
-	 * actual object data. 
+	 * actual object data.
 	 *
 	 * The modifier may reuse the derivedData argument (i.e. return it in
 	 * modified form), but must not release it.
@@ -212,7 +214,7 @@ typedef struct ModifierTypeInfo {
 
 	/* Like applyModifier but called during editmode (for supporting
 	 * modifiers).
-	 * 
+	 *
 	 * The derived object that is returned must support the operations that
 	 * are expected from editmode objects. The same qualifications regarding
 	 * derivedData apply as for applyModifier.
@@ -253,7 +255,7 @@ typedef struct ModifierTypeInfo {
 	 *
 	 * The mesh argument should always be non-NULL; the modifier
 	 * should read the object data from the mesh object instead of the
-	 * actual object data. 
+	 * actual object data.
 	 *
 	 * The modifier may reuse the mesh argument (i.e. return it in
 	 * modified form), but must not release it.
@@ -263,7 +265,7 @@ typedef struct ModifierTypeInfo {
 
 	/* Like applyModifier but called during editmode (for supporting
 	 * modifiers).
-	 * 
+	 *
 	 * The mesh object that is returned must support the operations that
 	 * are expected from editmode objects. The same qualifications regarding
 	 * mesh apply as for applyModifier.
@@ -277,7 +279,7 @@ typedef struct ModifierTypeInfo {
 
 	/* Initialize new instance data for this modifier type, this function
 	 * should set modifier variables to their default values.
-	 * 
+	 *
 	 * This function is optional.
 	 */
 	void (*initData)(struct ModifierData *md);
@@ -315,7 +317,7 @@ typedef struct ModifierTypeInfo {
 	 *
 	 * This function is optional (assumes never disabled if not present).
 	 */
-	bool (*isDisabled)(struct ModifierData *md, int userRenderParams);
+	bool (*isDisabled)(const struct Scene *scene, struct ModifierData *md, bool userRenderParams);
 
 	/* Add the appropriate relations to the dependency graph.
 	 *
@@ -323,7 +325,7 @@ typedef struct ModifierTypeInfo {
 	 */
 	void (*updateDepsgraph)(struct ModifierData *md,
 	                        const ModifierUpdateDepsgraphContext *ctx);
- 
+
 	/* Should return true if the modifier needs to be recalculated on time
 	 * changes.
 	 *
@@ -335,7 +337,7 @@ typedef struct ModifierTypeInfo {
 	/* True when a deform modifier uses normals, the requiredDataMask
 	 * cant be used here because that refers to a normal layer where as
 	 * in this case we need to know if the deform modifier uses normals.
-	 * 
+	 *
 	 * this is needed because applying 2 deform modifiers will give the
 	 * second modifier bogus normals.
 	 * */
@@ -387,7 +389,7 @@ void          modifier_free(struct ModifierData *md);
 
 bool          modifier_unique_name(struct ListBase *modifiers, struct ModifierData *md);
 
-void          modifier_copyData_generic(const struct ModifierData *md, struct ModifierData *target);
+void          modifier_copyData_generic(const struct ModifierData *md, struct ModifierData *target, const int flag);
 void          modifier_copyData(struct ModifierData *md, struct ModifierData *target);
 void          modifier_copyData_ex(struct ModifierData *md, struct ModifierData *target, const int flag);
 bool          modifier_dependsOnTime(struct ModifierData *md);
@@ -397,7 +399,7 @@ bool          modifier_couldBeCage(struct Scene *scene, struct ModifierData *md)
 bool          modifier_isCorrectableDeformed(struct ModifierData *md);
 bool          modifier_isSameTopology(ModifierData *md);
 bool          modifier_isNonGeometrical(ModifierData *md);
-bool          modifier_isEnabled(struct Scene *scene, struct ModifierData *md, int required_mode);
+bool          modifier_isEnabled(const struct Scene *scene, struct ModifierData *md, int required_mode);
 void          modifier_setError(struct ModifierData *md, const char *format, ...) ATTR_PRINTF_FORMAT(2, 3);
 bool          modifier_isPreview(struct ModifierData *md);
 
@@ -468,7 +470,7 @@ void modifier_mdef_compact_influences(struct ModifierData *md);
 
 void        modifier_path_init(char *path, int path_maxlen, const char *name);
 const char *modifier_path_relbase(struct Main *bmain, struct Object *ob);
-
+const char *modifier_path_relbase_from_global(struct Object *ob);
 
 /* wrappers for modifier callbacks that ensure valid normals */
 
@@ -561,4 +563,3 @@ struct Mesh *BKE_modifier_get_evaluated_mesh_from_evaluated_object(
         struct Object *ob_eval, bool *r_free_mesh);
 
 #endif
-

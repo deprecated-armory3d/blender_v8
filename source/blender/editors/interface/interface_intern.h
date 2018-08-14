@@ -105,7 +105,8 @@ typedef enum {
 	UI_WTYPE_PROGRESSBAR,
 } uiWidgetTypeEnum;
 
-#define UI_MENU_WIDTH_MIN (UI_UNIT_Y * 9)
+#define UI_MENU_WIDTH_MIN       (UI_UNIT_Y * 9)
+#define UI_MENU_SUBMENU_PADDING (6 * UI_DPI_FAC) /* some extra padding added to menus containing submenu icons */
 
 /* menu scrolling */
 #define UI_MENU_SCROLL_ARROW	12
@@ -349,6 +350,13 @@ struct PieMenuData {
 	float alphafac;
 };
 
+/* uiBlock.content_hints */
+enum eBlockContentHints {
+	/* In a menu block, if there is a single sub-menu button, we add some
+	 * padding to the right to put nicely aligned triangle icons there. */
+	BLOCK_CONTAINS_SUBMENU_BUT = (1 << 0),
+};
+
 struct uiBlock {
 	uiBlock *next, *prev;
 
@@ -395,11 +403,15 @@ struct uiBlock {
 
 	int flag;
 	short alignnr;
+	/* Hints about the buttons of this block. Used to avoid iterating over
+	 * buttons to find out if some criteria is met by any. Instead, check this
+	 * criteria when adding the button and set a flag here if it's met. */
+	short content_hints; /* eBlockContentHints */
 
 	char direction;
 	char dt; /* drawtype: UI_EMBOSS, UI_EMBOSS_NONE ... etc, copied to buttons */
 	bool auto_open;
-	char _pad[7];
+	char _pad[5];
 	double auto_open_last;
 
 	const char *lockstr;
@@ -444,8 +456,6 @@ typedef struct uiSafetyRct {
 
 void ui_fontscale(short *points, float aspect);
 
-extern bool ui_block_is_menu(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
-extern bool ui_block_is_pie_menu(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
 extern void ui_block_to_window_fl(const struct ARegion *ar, uiBlock *block, float *x, float *y);
 extern void ui_block_to_window(const struct ARegion *ar, uiBlock *block, int *x, int *y);
 extern void ui_block_to_window_rctf(const struct ARegion *ar, uiBlock *block, rctf *rct_dst, const rctf *rct_src);
@@ -652,7 +662,7 @@ void ui_pie_menu_level_create(
         const EnumPropertyItem *items, int totitem, int context, int flag);
 
 /* interface_region_popup.c */
-void ui_popup_translate(struct bContext *C, struct ARegion *ar, const int mdiff[2]);
+void ui_popup_translate(struct ARegion *ar, const int mdiff[2]);
 void ui_popup_block_free(struct bContext *C, uiPopupBlockHandle *handle);
 void ui_popup_block_scrolltest(struct uiBlock *block);
 
@@ -696,17 +706,12 @@ extern void ui_but_text_password_hide(char password_str[UI_MAX_DRAW_STR], uiBut 
 extern uiBut *ui_but_find_select_in_enum(uiBut *but, int direction);
 extern uiBut *ui_but_find_active_in_region(struct ARegion *ar);
 extern uiBut *ui_but_find_mouse_over(struct ARegion *ar, const struct wmEvent *event);
-bool ui_but_is_editable(const uiBut *but);
-bool ui_but_is_editable_as_text(const uiBut *but);
-bool ui_but_is_toggle(const uiBut *but);
-bool ui_but_is_popover_once_compat(const uiBut *but);
 void ui_but_pie_dir_visual(RadialDirection dir, float vec[2]);
 void ui_but_pie_dir(RadialDirection dir, float vec[2]);
 float ui_block_calc_pie_segment(struct uiBlock *block, const float event_xy[2]);
 
 void ui_but_add_shortcut(uiBut *but, const char *key_str, const bool do_strip);
 void ui_but_clipboard_free(void);
-void ui_panel_menu(struct bContext *C, ARegion *ar, Panel *pa);
 uiBut *ui_but_find_old(uiBlock *block_old, const uiBut *but_new);
 uiBut *ui_but_find_new(uiBlock *block_old, const uiBut *but_new);
 
@@ -747,23 +752,24 @@ enum {
 	ROUNDBOX_TRIA_MAX, /* don't use */
 };
 
-struct Gwn_Batch *ui_batch_roundbox_get(bool filled, bool antialiased);
-struct Gwn_Batch *ui_batch_roundbox_widget_get(int tria);
-struct Gwn_Batch *ui_batch_roundbox_shadow_get(void);
+struct GPUBatch *ui_batch_roundbox_get(bool filled, bool antialiased);
+struct GPUBatch *ui_batch_roundbox_widget_get(int tria);
+struct GPUBatch *ui_batch_roundbox_shadow_get(void);
 
-void ui_draw_anti_roundbox(int mode, float minx, float miny, float maxx, float maxy,
-                           float rad, bool use_alpha, const float color[4]);
+void ui_draw_anti_tria_rect(const rctf *rect, char dir, const float color[4]);
 void ui_draw_menu_back(struct uiStyle *style, uiBlock *block, rcti *rect);
 void ui_draw_popover_back(ARegion *ar, struct uiStyle *style, uiBlock *block, rcti *rect);
 void ui_draw_pie_center(uiBlock *block);
-uiWidgetColors *ui_tooltip_get_theme(void);
-void ui_draw_tooltip_background(uiStyle *UNUSED(style), uiBlock *block, rcti *rect);
-void ui_draw_search_back(struct uiStyle *style, uiBlock *block, rcti *rect);
+struct uiWidgetColors *ui_tooltip_get_theme(void);
+
+void ui_draw_widget_back_color(
+        uiWidgetTypeEnum type, bool use_shadow, const rcti *rect,
+        const float color[4]);
+void ui_draw_widget_back(
+        uiWidgetTypeEnum type, bool use_shadow, const rcti *rect);
+void ui_draw_tooltip_background(struct uiStyle *UNUSED(style), uiBlock *block, rcti *rect);
 
 extern void ui_draw_but(const struct bContext *C, ARegion *ar, struct uiStyle *style, uiBut *but, rcti *rect);
-/* theme color init */
-struct ThemeUI;
-void ui_widget_color_init(struct ThemeUI *tui);
 
 void ui_draw_menu_item(struct uiFontStyle *fstyle, rcti *rect, const char *name, int iconid, int state, bool use_sep);
 void ui_draw_preview_item(struct uiFontStyle *fstyle, rcti *rect, const char *name, int iconid, int state);
@@ -774,7 +780,7 @@ void ui_draw_preview_item(struct uiFontStyle *fstyle, rcti *rect, const char *na
 #define UI_POPUP_MENU_TOP (int)(8 * UI_DPI_FAC)
 
 #define UI_PIXEL_AA_JITTER 8
-const float ui_pixel_jitter[UI_PIXEL_AA_JITTER][2];
+extern const float ui_pixel_jitter[UI_PIXEL_AA_JITTER][2];
 
 /* interface_style.c */
 void uiStyleInit(void);
@@ -783,8 +789,13 @@ void uiStyleInit(void);
 void ui_icon_ensure_deferred(const struct bContext *C, const int icon_id, const bool big);
 int ui_id_icon_get(const struct bContext *C, struct ID *id, const bool big);
 
+/* interface_icons_event.c */
+void icon_draw_rect_input(
+        float x, float y, int w, int h, float alpha,
+        short event_type, short event_value);
+
 /* resources.c */
-void init_userdef_do_versions(void);
+void init_userdef_do_versions(struct Main *bmain);
 void ui_theme_init_default(void);
 void ui_style_init_default(void);
 void ui_resources_init(void);
@@ -810,12 +821,31 @@ bool ui_but_anim_expression_set(uiBut *but, const char *str);
 bool ui_but_anim_expression_create(uiBut *but, const char *str);
 void ui_but_anim_autokey(struct bContext *C, uiBut *but, struct Scene *scene, float cfra);
 
+void ui_but_anim_decorate_cb(struct bContext *C, void *arg_but, void *arg_dummy);
+void ui_but_anim_decorate_update_from_flag(uiBut *but);
+
+/* interface_query.c */
+bool ui_but_is_editable(const uiBut *but);
+bool ui_but_is_editable_as_text(const uiBut *but);
+bool ui_but_is_toggle(const uiBut *but);
+bool ui_but_is_popover_once_compat(const uiBut *but);
+
+extern bool ui_block_is_menu(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
+extern bool ui_block_is_popover(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
+extern bool ui_block_is_pie_menu(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
+extern bool ui_block_is_popup_any(const uiBlock *block) ATTR_WARN_UNUSED_RESULT;
+
+/* interface_context_menu.c */
+bool ui_popup_context_menu_for_button(struct bContext *C, uiBut *but);
+void ui_popup_context_menu_for_panel(struct bContext *C, struct ARegion *ar, struct Panel *pa);
+
 /* interface_eyedropper.c */
 struct wmKeyMap *eyedropper_modal_keymap(struct wmKeyConfig *keyconf);
 struct wmKeyMap *eyedropper_colorband_modal_keymap(struct wmKeyConfig *keyconf);
 
 /* interface_eyedropper_color.c */
 void UI_OT_eyedropper_color(struct wmOperatorType *ot);
+void UI_OT_eyedropper_color_crypto(struct wmOperatorType *ot);
 
 /* interface_eyedropper_colorband.c */
 void UI_OT_eyedropper_colorband(struct wmOperatorType *ot);

@@ -65,7 +65,6 @@ static struct {
 } e_data = {NULL}; /* Engine data */
 
 extern char datatoc_bsdf_common_lib_glsl[];
-extern char datatoc_bsdf_direct_lib_glsl[];
 extern char datatoc_common_uniforms_lib_glsl[];
 extern char datatoc_common_view_lib_glsl[];
 extern char datatoc_octahedron_lib_glsl[];
@@ -92,7 +91,6 @@ static void eevee_create_shader_volumes(void)
 	        datatoc_common_view_lib_glsl,
 	        datatoc_common_uniforms_lib_glsl,
 	        datatoc_bsdf_common_lib_glsl,
-	        datatoc_bsdf_direct_lib_glsl,
 	        datatoc_octahedron_lib_glsl,
 	        datatoc_irradiance_lib_glsl,
 	        datatoc_lamps_lib_glsl,
@@ -351,6 +349,7 @@ void EEVEE_volumes_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
 	EEVEE_StorageList *stl = vedata->stl;
 	EEVEE_TextureList *txl = vedata->txl;
 	EEVEE_EffectsInfo *effects = stl->effects;
+	LightCache *lcache = stl->g_data->light_cache;
 	EEVEE_CommonUniformBuffer *common_data = &sldata->common_data;
 
 	if ((effects->enabled_effects & EFFECT_VOLUMETRIC) != 0) {
@@ -398,6 +397,12 @@ void EEVEE_volumes_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
 
 			if (grp) {
 				DRW_shgroup_uniform_block(grp, "common_block", sldata->common_ubo);
+				/* TODO (fclem): remove thoses (need to clean the GLSL files). */
+				DRW_shgroup_uniform_block(grp, "grid_block", sldata->grid_ubo);
+				DRW_shgroup_uniform_block(grp, "probe_block", sldata->probe_ubo);
+				DRW_shgroup_uniform_block(grp, "planar_block", sldata->planar_ubo);
+				DRW_shgroup_uniform_block(grp, "light_block", sldata->light_ubo);
+				DRW_shgroup_uniform_block(grp, "shadow_block", sldata->shadow_ubo);
 			}
 		}
 
@@ -419,7 +424,7 @@ void EEVEE_volumes_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
 		psl->volumetric_scatter_ps = DRW_pass_create("Volumetric Scattering", DRW_STATE_WRITE_COLOR);
 		grp = DRW_shgroup_empty_tri_batch_create(scatter_sh, psl->volumetric_scatter_ps,
 		                                         common_data->vol_tex_size[2]);
-		DRW_shgroup_uniform_texture_ref(grp, "irradianceGrid", &sldata->irradiance_pool);
+		DRW_shgroup_uniform_texture_ref(grp, "irradianceGrid", &lcache->grid_tx.tex);
 		DRW_shgroup_uniform_texture_ref(grp, "shadowCubeTexture", &sldata->shadow_cube_pool);
 		DRW_shgroup_uniform_texture_ref(grp, "shadowCascadeTexture", &sldata->shadow_cascade_pool);
 		DRW_shgroup_uniform_texture_ref(grp, "volumeScattering", &txl->volume_prop_scattering);
@@ -475,6 +480,13 @@ void EEVEE_volumes_cache_object_add(EEVEE_ViewLayerData *sldata, EEVEE_Data *ved
 	invert_m4_m4(ob->imat, ob->obmat);
 
 	BKE_mesh_texspace_get_reference((struct Mesh *)ob->data, NULL, &texcoloc, NULL, &texcosize);
+
+	/* TODO(fclem) remove thoses "unecessary" UBOs */
+	DRW_shgroup_uniform_block(grp, "planar_block", sldata->planar_ubo);
+	DRW_shgroup_uniform_block(grp, "probe_block", sldata->probe_ubo);
+	DRW_shgroup_uniform_block(grp, "shadow_block", sldata->shadow_ubo);
+	DRW_shgroup_uniform_block(grp, "light_block", sldata->light_ubo);
+	DRW_shgroup_uniform_block(grp, "grid_block", sldata->grid_ubo);
 
 	DRW_shgroup_uniform_block(grp, "common_block", sldata->common_ubo);
 	DRW_shgroup_uniform_mat4(grp, "volumeObjectMatrix", ob->imat);

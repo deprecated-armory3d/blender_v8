@@ -48,7 +48,6 @@ extern "C" {
 #include "DNA_modifier_types.h"
 #include "DNA_userdef_types.h"
 
-#include "BKE_DerivedMesh.h"
 #include "BKE_fcurve.h"
 #include "BKE_animsys.h"
 #include "BLI_path_util.h"
@@ -102,7 +101,7 @@ private:
 	friend class ArmatureExporter;
 	void exportHierarchy(bContext *C, struct Depsgraph *depsgraph, Scene *sce);
 	void writeNodes(bContext *C, struct Depsgraph *depsgraph, Object *ob, Scene *sce);
-	
+
 	ArmatureExporter *arm_exporter;
 	const ExportSettings *export_settings;
 };

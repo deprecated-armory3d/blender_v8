@@ -65,6 +65,7 @@
 #include "file_intern.h"    // own include
 #include "fsmenu.h"
 #include "filelist.h"
+#include "GPU_framebuffer.h"
 
 /* ******************** default callbacks for file space ***************** */
 
@@ -297,8 +298,7 @@ static void file_refresh(const bContext *C, ScrArea *sa)
 	ED_area_tag_redraw(sa);
 }
 
-static void file_listener(bScreen *UNUSED(sc), ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene),
-                          WorkSpace *UNUSED(workspace))
+static void file_listener(wmWindow *UNUSED(win), ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene))
 {
 	SpaceFile *sfile = (SpaceFile *)sa->spacedata.first;
 
@@ -338,7 +338,7 @@ static void file_main_region_init(wmWindowManager *wm, ARegion *ar)
 }
 
 static void file_main_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -408,8 +408,8 @@ static void file_main_region_draw(const bContext *C, ARegion *ar)
 
 	/* clear and setup matrix */
 	UI_GetThemeColor3fv(TH_BACK, col);
-	glClearColor(col[0], col[1], col[2], 0.0);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear_color(col[0], col[1], col[2], 0.0);
+	GPU_clear(GPU_COLOR_BIT);
 
 	/* Allow dynamically sliders to be set, saves notifiers etc. */
 
@@ -461,7 +461,7 @@ static void file_operatortypes(void)
 {
 	WM_operatortype_append(FILE_OT_select);
 	WM_operatortype_append(FILE_OT_select_walk);
-	WM_operatortype_append(FILE_OT_select_all_toggle);
+	WM_operatortype_append(FILE_OT_select_all);
 	WM_operatortype_append(FILE_OT_select_border);
 	WM_operatortype_append(FILE_OT_select_bookmark);
 	WM_operatortype_append(FILE_OT_highlight);
@@ -505,6 +505,7 @@ static void file_keymap(struct wmKeyConfig *keyconf)
 	kmi = WM_keymap_add_item(keymap, "WM_OT_context_toggle", HKEY, KM_PRESS, 0, 0);
 	RNA_string_set(kmi->ptr, "data_path", "space_data.params.show_hidden");
 	WM_keymap_add_item(keymap, "FILE_OT_directory_new", IKEY, KM_PRESS, 0, 0);
+
 	WM_keymap_add_item(keymap, "FILE_OT_delete", XKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "FILE_OT_delete", DELKEY, KM_PRESS, 0, 0);
 
@@ -586,7 +587,7 @@ static void file_keymap(struct wmKeyConfig *keyconf)
 	WM_keymap_add_item(keymap, "FILE_OT_previous", BUTTON4MOUSE, KM_CLICK, 0, 0);
 	WM_keymap_add_item(keymap, "FILE_OT_next", BUTTON5MOUSE, KM_CLICK, 0, 0);
 
-	WM_keymap_add_item(keymap, "FILE_OT_select_all_toggle", AKEY, KM_PRESS, 0, 0);
+	WM_keymap_add_item(keymap, "FILE_OT_select_all", AKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "FILE_OT_select_border", BKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "FILE_OT_select_border", EVT_TWEAK_L, KM_ANY, 0, 0);
 	WM_keymap_add_item(keymap, "FILE_OT_rename", LEFTMOUSE, KM_PRESS, KM_CTRL, 0);
@@ -636,11 +637,11 @@ static void file_tools_region_init(wmWindowManager *wm, ARegion *ar)
 
 static void file_tools_region_draw(const bContext *C, ARegion *ar)
 {
-	ED_region_panels(C, ar, NULL, -1, true);
+	ED_region_panels(C, ar);
 }
 
 static void file_tools_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *UNUSED(ar),
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *UNUSED(ar),
         wmNotifier *UNUSED(wmn), const Scene *UNUSED(scene))
 {
 #if 0
@@ -687,8 +688,8 @@ static void file_ui_region_draw(const bContext *C, ARegion *ar)
 	float col[3];
 	/* clear */
 	UI_GetThemeColor3fv(TH_BACK, col);
-	glClearColor(col[0], col[1], col[2], 0.0);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear_color(col[0], col[1], col[2], 0.0);
+	GPU_clear(GPU_COLOR_BIT);
 
 	/* scrolling here is just annoying, disable it */
 	ar->v2d.cur.ymax = BLI_rctf_size_y(&ar->v2d.cur);
@@ -704,7 +705,7 @@ static void file_ui_region_draw(const bContext *C, ARegion *ar)
 }
 
 static void file_ui_region_listener(
-        bScreen *UNUSED(sc), ScrArea *UNUSED(sa), ARegion *ar,
+        wmWindow *UNUSED(win), ScrArea *UNUSED(sa), ARegion *ar,
         wmNotifier *wmn, const Scene *UNUSED(scene))
 {
 	/* context changes */
@@ -719,7 +720,7 @@ static void file_ui_region_listener(
 	}
 }
 
-static int filepath_drop_poll(bContext *C, wmDrag *drag, const wmEvent *UNUSED(event))
+static bool filepath_drop_poll(bContext *C, wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
 	if (drag->type == WM_DRAG_PATH) {
 		SpaceFile *sfile = CTX_wm_space_file(C);
@@ -854,4 +855,3 @@ void ED_file_read_bookmarks(void)
 		fsmenu_read_bookmarks(ED_fsmenu_get(), name);
 	}
 }
-

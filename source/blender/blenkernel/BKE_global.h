@@ -50,11 +50,11 @@ typedef struct Global {
 
 	/* active pointers */
 	struct Main *main;
-	
+
 	/* strings: lastsaved */
 	char ima[1024], lib[1024]; /* 1024 = FILE_MAX */
 
-	/* when set: G.main->name contains valid relative base path */
+	/* when set: G_MAIN->name contains valid relative base path */
 	bool relbase_valid;
 	bool file_loaded;
 	bool save_over;
@@ -179,12 +179,12 @@ enum {
 /* On write, make backup `.blend1`, `.blend2` ... files, when the users preference is enabled */
 #define G_FILE_HISTORY           (1 << 25)
 /* BMesh option to save as older mesh format */
-#define G_FILE_MESH_COMPAT       (1 << 26)
+// #define G_FILE_MESH_COMPAT       (1 << 26)
 /* On write, restore paths after editing them (G_FILE_RELATIVE_REMAP) */
 #define G_FILE_SAVE_COPY         (1 << 27)
 #define G_FILE_GLSL_NO_ENV_LIGHTING (1 << 28)
 
-#define G_FILE_FLAGS_RUNTIME (G_FILE_NO_UI | G_FILE_RELATIVE_REMAP | G_FILE_MESH_COMPAT | G_FILE_SAVE_COPY)
+#define G_FILE_FLAGS_RUNTIME (G_FILE_NO_UI | G_FILE_RELATIVE_REMAP | G_FILE_SAVE_COPY)
 
 /* ENDIAN_ORDER: indicates what endianness the platform where the file was
  * written had. */
@@ -210,8 +210,13 @@ enum {
 /* Memory is allocated where? blender.c */
 extern Global G;
 
+/**
+ * Stupid macro to hide the few *valid* usages of G.main (from startup/exit code e.g.), helps with cleanup task.
+ */
+#define G_MAIN (G).main
+
 #ifdef __cplusplus
 }
 #endif
-	
+
 #endif

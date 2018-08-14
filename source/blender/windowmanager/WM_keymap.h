@@ -58,16 +58,21 @@ void        WM_keyconfig_update_operatortype(void);
 void		WM_keymap_init		(struct bContext *C);
 void		WM_keymap_free		(struct wmKeyMap *keymap);
 
-wmKeyMapItem *WM_keymap_verify_item(struct wmKeyMap *keymap, const char *idname, int type, 
+wmKeyMapItem *WM_keymap_verify_item(struct wmKeyMap *keymap, const char *idname, int type,
                                     int val, int modifier, int keymodifier);
-wmKeyMapItem *WM_keymap_add_item(struct wmKeyMap *keymap, const char *idname, int type, 
+wmKeyMapItem *WM_keymap_add_item(struct wmKeyMap *keymap, const char *idname, int type,
                                  int val, int modifier, int keymodifier);
 wmKeyMapItem *WM_keymap_add_menu(struct wmKeyMap *keymap, const char *idname, int type,
                                  int val, int modifier, int keymodifier);
 wmKeyMapItem *WM_keymap_add_menu_pie(struct wmKeyMap *keymap, const char *idname, int type,
                                      int val, int modifier, int keymodifier);
+wmKeyMapItem *WM_keymap_add_panel(struct wmKeyMap *keymap, const char *idname, int type, int val, int modifier, int keymodifier);
 wmKeyMapItem *WM_keymap_add_tool(struct wmKeyMap *keymap, const char *idname, int type,
                                  int val, int modifier, int keymodifier);
+
+void WM_keymap_add_context_enum_set_items(
+        wmKeyMap *keymap, const struct EnumPropertyItem *items, const char *data_path,
+        int type_start, int val, int modifier, int keymodifier);
 
 bool        WM_keymap_remove_item(struct wmKeyMap *keymap, struct wmKeyMapItem *kmi);
 int         WM_keymap_item_to_string(wmKeyMapItem *kmi, const bool compact, char *result, const int result_len);
@@ -79,9 +84,9 @@ wmKeyMap	*WM_keymap_active(struct wmWindowManager *wm, struct wmKeyMap *keymap);
 wmKeyMap	*WM_keymap_guess_opname(const struct bContext *C, const char *opname);
 bool		 WM_keymap_remove(struct wmKeyConfig *keyconfig, struct wmKeyMap *keymap);
 bool         WM_keymap_poll(struct bContext *C, struct wmKeyMap *keymap);
-	
+
 wmKeyMapItem *WM_keymap_item_find_id(struct wmKeyMap *keymap, int id);
-int			WM_keymap_item_compare(struct wmKeyMapItem *k1, struct wmKeyMapItem *k2);
+bool          WM_keymap_item_compare(struct wmKeyMapItem *k1, struct wmKeyMapItem *k2);
 
 /* Modal Keymap */
 
@@ -127,9 +132,14 @@ char *WM_key_event_operator_string(
 
 const char *WM_bool_as_string(bool test);
 
+/* Minimal keymap, see: T55666, will eventually remove.
+ * Keep this until final design is settled on. */
+#if 0
+#define USE_WM_KEYMAP_27X
+#endif
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* __WM_KEYMAP_H__ */
-

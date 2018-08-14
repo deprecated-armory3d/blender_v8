@@ -138,8 +138,8 @@ typedef struct SpaceButs {
 	short space_subtype;
 
 	short mainb, mainbo, mainbuser; /* context tabs */
-	short re_align, align;          /* align for panels */
 	short preview;                  /* preview is signal to refresh */
+	short pad[2];
 	char flag;
 	char collection_context;
 
@@ -196,7 +196,9 @@ typedef enum eSpaceButtons_Context {
 	BCONTEXT_CONSTRAINT = 11,
 	BCONTEXT_BONE_CONSTRAINT = 12,
 	BCONTEXT_VIEW_LAYER = 13,
+	BCONTEXT_TOOL = 14,
 	BCONTEXT_WORKSPACE = 15,
+	BCONTEXT_SHADERFX = 16,
 
 	/* always as last... */
 	BCONTEXT_TOT
@@ -211,20 +213,6 @@ typedef enum eSpaceButtons_Flag {
 	SB_TEX_USER_LIMITED = (1 << 3), /* Do not add materials, particles, etc. in TemplateTextureUser list. */
 	SB_SHADING_CONTEXT = (1 << 4),
 } eSpaceButtons_Flag;
-
-/* SpaceButs.align */
-typedef enum eSpaceButtons_Align {
-	BUT_FREE = 0,
-	BUT_HORIZONTAL = 1,
-	BUT_VERTICAL = 2,
-	BUT_AUTO = 3,
-} eSpaceButtons_Align;
-
-/* SpaceButs.flag */
-typedef enum eSpaceButtons_SubType {
-	SB_SUBTYPE_DATA = 0,
-	SB_SUBTYPE_TOOL = 1,
-} eSpaceButtons_SubType;
 
 /** \} */
 
@@ -279,7 +267,7 @@ typedef enum eSpaceOutliner_Flag {
 
 /* SpaceOops.filter */
 typedef enum eSpaceOutliner_Filter {
-	SO_FILTER_SEARCH           = (1 << 0),
+	SO_FILTER_SEARCH           = (1 << 0), /* Run-time flag. */
 	/* SO_FILTER_ENABLE           = (1 << 1), */ /* Deprecated */
 	SO_FILTER_NO_OBJECT        = (1 << 2),
 	SO_FILTER_NO_OB_CONTENT    = (1 << 3), /* Not only mesh, but modifiers, constraints, ... */
@@ -625,7 +613,7 @@ typedef struct FileSelectParams {
 	char renamefile[256];
 	char renameedit[256]; /* annoying but the first is only used for initialization */
 
-	char filter_glob[256]; /* list of filetypes to filter */
+	char filter_glob[256]; /* FILE_MAXFILE */ /* list of filetypes to filter */
 
 	char filter_search[64];  /* text items' name must match to be shown. */
 	int filter_id;  /* same as filter, but for ID types (aka library groups). */
@@ -1359,7 +1347,7 @@ typedef enum eSpaceClip_Flag {
 	SC_SHOW_GRID                = (1 << 9),
 	SC_SHOW_STABLE              = (1 << 10),
 	SC_MANUAL_CALIBRATION       = (1 << 11),
-	SC_SHOW_GPENCIL             = (1 << 12),
+	SC_SHOW_ANNOTATION          = (1 << 12),
 	SC_SHOW_FILTERS             = (1 << 13),
 	SC_SHOW_GRAPH_FRAMES        = (1 << 14),
 	SC_SHOW_GRAPH_TRACKS_MOTION = (1 << 15),

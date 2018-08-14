@@ -79,7 +79,7 @@ float bvhtree_sphereray_tri_intersection(
         const BVHTreeRay *ray, float radius, const float m_dist,
         const float v0[3], const float v1[3], const float v2[3])
 {
-	
+
 	float idist;
 	float p1[3];
 	float hit_point[3];
@@ -110,7 +110,7 @@ static void mesh_faces_nearest_point(void *userdata, int index, const float co[3
 	t2 = vert[face->v3].co;
 	t3 = face->v4 ? vert[face->v4].co : NULL;
 
-	
+
 	do {
 		float nearest_tmp[3], dist_sq;
 
@@ -194,7 +194,7 @@ static void mesh_faces_spherecast(void *userdata, int index, const BVHTreeRay *r
 	t2 = vert[face->v3].co;
 	t3 = face->v4 ? vert[face->v4].co : NULL;
 
-	
+
 	do {
 		float dist;
 		if (ray->radius == 0.0f)
@@ -287,7 +287,7 @@ static void mesh_edges_nearest_point(void *userdata, int index, const float co[3
 
 	closest_to_line_segment_v3(nearest_tmp, co, t0, t1);
 	dist_sq = len_squared_v3v3(nearest_tmp, co);
-	
+
 	if (dist_sq < nearest->dist_sq) {
 		nearest->index = index;
 		nearest->dist_sq = dist_sq;
@@ -495,12 +495,39 @@ BVHTree *bvhtree_from_editmesh_verts_ex(
 
 BVHTree *bvhtree_from_editmesh_verts(
         BVHTreeFromEditMesh *data, BMEditMesh *em,
-        float epsilon, int tree_type, int axis)
+        float epsilon, int tree_type, int axis, BVHCache **bvh_cache)
 {
-	return bvhtree_from_editmesh_verts_ex(
-	        data, em,
-	        NULL, -1,
-	        epsilon, tree_type, axis);
+	if (bvh_cache) {
+		BLI_rw_mutex_lock(&cache_rwlock, THREAD_LOCK_READ);
+		data->cached = bvhcache_find(*bvh_cache, BVHTREE_FROM_EM_VERTS, &data->tree);
+		BLI_rw_mutex_unlock(&cache_rwlock);
+
+		if (data->cached == false) {
+			BLI_rw_mutex_lock(&cache_rwlock, THREAD_LOCK_WRITE);
+			data->cached = bvhcache_find(
+			        *bvh_cache, BVHTREE_FROM_EM_VERTS, &data->tree);
+			if (data->cached == false) {
+				data->tree = bvhtree_from_editmesh_verts_ex(
+				        data, em,
+				        NULL, -1,
+				        epsilon, tree_type, axis);
+
+				/* Save on cache for later use */
+				/* printf("BVHTree built and saved on cache\n"); */
+				bvhcache_insert(
+				        bvh_cache, data->tree, BVHTREE_FROM_EM_VERTS);
+			}
+			BLI_rw_mutex_unlock(&cache_rwlock);
+		}
+	}
+	else {
+		data->tree = bvhtree_from_editmesh_verts_ex(
+		        data, em,
+		        NULL, -1,
+		        epsilon, tree_type, axis);
+	}
+
+	return data->tree;
 }
 
 /**
@@ -649,12 +676,39 @@ BVHTree *bvhtree_from_editmesh_edges_ex(
 
 BVHTree *bvhtree_from_editmesh_edges(
         BVHTreeFromEditMesh *data, BMEditMesh *em,
-        float epsilon, int tree_type, int axis)
+        float epsilon, int tree_type, int axis, BVHCache **bvh_cache)
 {
-	return bvhtree_from_editmesh_edges_ex(
-	        data, em,
-	        NULL, -1,
-	        epsilon, tree_type, axis);
+	if (bvh_cache) {
+		BLI_rw_mutex_lock(&cache_rwlock, THREAD_LOCK_READ);
+		data->cached = bvhcache_find(*bvh_cache, BVHTREE_FROM_EM_EDGES, &data->tree);
+		BLI_rw_mutex_unlock(&cache_rwlock);
+
+		if (data->cached == false) {
+			BLI_rw_mutex_lock(&cache_rwlock, THREAD_LOCK_WRITE);
+			data->cached = bvhcache_find(
+			        *bvh_cache, BVHTREE_FROM_EM_EDGES, &data->tree);
+			if (data->cached == false) {
+				data->tree = bvhtree_from_editmesh_edges_ex(
+				        data, em,
+				        NULL, -1,
+				        epsilon, tree_type, axis);
+
+				/* Save on cache for later use */
+				/* printf("BVHTree built and saved on cache\n"); */
+				bvhcache_insert(
+				        bvh_cache, data->tree, BVHTREE_FROM_EM_EDGES);
+			}
+			BLI_rw_mutex_unlock(&cache_rwlock);
+		}
+	}
+	else {
+		data->tree = bvhtree_from_editmesh_edges_ex(
+		        data, em,
+		        NULL, -1,
+		        epsilon, tree_type, axis);
+	}
+
+	return data->tree;
 }
 
 /**
@@ -1406,6 +1460,11 @@ BVHTree *BKE_bvhtree_from_mesh_get(
 				}
 				BLI_rw_mutex_unlock(&cache_rwlock);
 			}
+			break;
+		case BVHTREE_FROM_EM_VERTS:
+		case BVHTREE_FROM_EM_EDGES:
+		case BVHTREE_FROM_EM_LOOPTRI:
+			BLI_assert(false);
 			break;
 	}
 

@@ -50,8 +50,8 @@
 #include "BLI_utildefines.h"
 
 #include "GPU_immediate.h"
+#include "GPU_state.h"
 
-#include "BKE_DerivedMesh.h"
 #include "BKE_global.h"
 #include "BKE_object.h"
 #include "BKE_anim.h"  /* for duplis */
@@ -124,13 +124,13 @@ int BIF_snappingSupported(Object *obedit)
 }
 #endif
 
-bool validSnap(TransInfo *t)
+bool validSnap(const TransInfo *t)
 {
 	return (t->tsnap.status & (POINT_INIT | TARGET_INIT)) == (POINT_INIT | TARGET_INIT) ||
 	       (t->tsnap.status & (MULTI_POINTS | TARGET_INIT)) == (MULTI_POINTS | TARGET_INIT);
 }
 
-bool activeSnap(TransInfo *t)
+bool activeSnap(const TransInfo *t)
 {
 	return ((t->modifiers & (MOD_SNAP | MOD_SNAP_INVERT)) == MOD_SNAP) ||
 	       ((t->modifiers & (MOD_SNAP | MOD_SNAP_INVERT)) == MOD_SNAP_INVERT);
@@ -155,18 +155,17 @@ void drawSnapping(const struct bContext *C, TransInfo *t)
 	if (t->spacetype == SPACE_VIEW3D) {
 		if (validSnap(t)) {
 			TransSnapPoint *p;
-			View3D *v3d = CTX_wm_view3d(C);
 			RegionView3D *rv3d = CTX_wm_region_view3d(C);
 			float imat[4][4];
 			float size;
 
-			glDisable(GL_DEPTH_TEST);
+			GPU_depth_test(false);
 
 			size = 2.5f * UI_GetThemeValuef(TH_VERTEX_SIZE);
 
 			invert_m4_m4(imat, rv3d->viewmat);
 
-			unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 3, GWN_FETCH_FLOAT);
+			uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
 			immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
@@ -191,7 +190,7 @@ void drawSnapping(const struct bContext *C, TransInfo *t)
 			if (usingSnappingNormal(t) && validSnappingNormal(t)) {
 				immUniformColor4ubv(activeCol);
 
-				immBegin(GWN_PRIM_LINES, 2);
+				immBegin(GPU_PRIM_LINES, 2);
 				immVertex3f(pos, t->tsnap.snapPoint[0], t->tsnap.snapPoint[1], t->tsnap.snapPoint[2]);
 				immVertex3f(pos, t->tsnap.snapPoint[0] + t->tsnap.snapNormal[0],
 				            t->tsnap.snapPoint[1] + t->tsnap.snapNormal[1],
@@ -201,8 +200,7 @@ void drawSnapping(const struct bContext *C, TransInfo *t)
 
 			immUnbindProgram();
 
-			if (v3d->zbuf)
-				glEnable(GL_DEPTH_TEST);
+			GPU_depth_test(true);
 		}
 	}
 	else if (t->spacetype == SPACE_IMAGE) {
@@ -219,9 +217,9 @@ void drawSnapping(const struct bContext *C, TransInfo *t)
 
 			size = 2.5f * UI_GetThemeValuef(TH_VERTEX_SIZE);
 
-			glEnable(GL_BLEND);
+			GPU_blend(true);
 
-			unsigned int pos = GWN_vertformat_attr_add(immVertexFormat(), "pos", GWN_COMP_F32, 2, GWN_FETCH_FLOAT);
+			uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
 			immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
 
@@ -244,7 +242,7 @@ void drawSnapping(const struct bContext *C, TransInfo *t)
 
 			immUnbindProgram();
 
-			glDisable(GL_BLEND);
+			GPU_blend(false);
 		}
 	}
 }
@@ -453,12 +451,12 @@ void resetSnapping(TransInfo *t)
 	t->tsnap.snapNodeBorder = 0;
 }
 
-bool usingSnappingNormal(TransInfo *t)
+bool usingSnappingNormal(const TransInfo *t)
 {
 	return t->tsnap.align;
 }
 
-bool validSnappingNormal(TransInfo *t)
+bool validSnappingNormal(const TransInfo *t)
 {
 	if (validSnap(t)) {
 		if (!is_zero_v3(t->tsnap.snapNormal)) {
@@ -500,6 +498,7 @@ static bool bm_face_is_snap_target(BMFace *f, void *UNUSED(user_data))
 
 static void initSnappingMode(TransInfo *t)
 {
+	Main *bmain = CTX_data_main(t->context);
 	ToolSettings *ts = t->settings;
 	/* All obedit types will match. */
 	const int obedit_type = t->data_container->obedit ? t->data_container->obedit->type : -1;
@@ -587,7 +586,7 @@ static void initSnappingMode(TransInfo *t)
 	if (t->spacetype == SPACE_VIEW3D) {
 		if (t->tsnap.object_context == NULL) {
 			t->tsnap.object_context = ED_transform_snap_object_context_create_view3d(
-			        t->scene, t->depsgraph, 0, t->ar, t->view);
+			        bmain, t->scene, t->depsgraph, 0, t->ar, t->view);
 
 			ED_transform_snap_object_context_set_editmesh_callbacks(
 			        t->tsnap.object_context,
@@ -790,7 +789,7 @@ void removeSnapPoint(TransInfo *t)
 	}
 }
 
-void getSnapPoint(TransInfo *t, float vec[3])
+void getSnapPoint(const TransInfo *t, float vec[3])
 {
 	if (t->tsnap.points.first) {
 		TransSnapPoint *p;
@@ -1463,7 +1462,7 @@ void snapSequenceBounds(TransInfo *t, const int mval[2])
 	float xmouse, ymouse;
 	int frame;
 	int mframe;
-	TransSeq *ts = t->custom.type.data;
+	TransSeq *ts = TRANS_DATA_CONTAINER_FIRST_SINGLE(t)->custom.type.data;
 	/* reuse increment, strictly speaking could be another snap mode, but leave as is */
 	if (!(t->modifiers & MOD_SNAP_INVERT))
 		return;

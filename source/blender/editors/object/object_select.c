@@ -41,6 +41,7 @@
 #include "DNA_armature_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_workspace_types.h"
+#include "DNA_gpencil_types.h"
 
 #include "BLI_math.h"
 #include "BLI_listbase.h"
@@ -88,8 +89,8 @@
  * this takes into account the 'restrict selection in 3d view' flag.
  * deselect works always, the restriction just prevents selection */
 
-/* Note: send a NC_SCENE|ND_OB_SELECT notifier yourself! (or
- * or a NC_SCENE|ND_OB_VISIBLE in case of visibility toggling */
+ /* Note: send a NC_SCENE|ND_OB_SELECT notifier yourself! (or
+  * or a NC_SCENE|ND_OB_VISIBLE in case of visibility toggling */
 
 void ED_object_base_select(Base *base, eObjectSelect_Mode mode)
 {
@@ -100,7 +101,7 @@ void ED_object_base_select(Base *base, eObjectSelect_Mode mode)
 	if (base) {
 		switch (mode) {
 			case BA_SELECT:
-				if ((base->flag & BASE_SELECTABLED) != 0) {
+				if ((base->flag & BASE_SELECTABLE) != 0) {
 					base->flag |= BASE_SELECTED;
 				}
 				break;
@@ -129,11 +130,12 @@ void ED_object_base_activate(bContext *C, Base *base)
 	else {
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_ACTIVE, NULL);
 	}
+	DEG_id_tag_update(&CTX_data_scene(C)->id, DEG_TAG_SELECT_UPDATE);
 }
 
 /********************** Selection Operators **********************/
 
-static int objects_selectable_poll(bContext *C)
+static bool objects_selectable_poll(bContext *C)
 {
 	/* we don't check for linked scenes here, selection is
 	 * still allowed then for inspection of scene */
@@ -172,7 +174,9 @@ static int object_select_by_type_exec(bContext *C, wmOperator *op)
 	}
 	CTX_DATA_END;
 
-	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+	Scene *scene = CTX_data_scene(C);
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
 	return OPERATOR_FINISHED;
 }
@@ -226,7 +230,7 @@ static bool object_select_all_by_obdata(bContext *C, void *obdata)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			if (base->object->data == obdata) {
 				ED_object_base_select(base, BA_SELECT);
 				changed = true;
@@ -244,7 +248,7 @@ static bool object_select_all_by_material(bContext *C, Material *mat)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			Object *ob = base->object;
 			Material *mat1;
 			int a;
@@ -271,7 +275,7 @@ static bool object_select_all_by_dup_group(bContext *C, Object *ob)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			Collection *dup_group_other = (base->object->transflag & OB_DUPLICOLLECTION) ? base->object->dup_group : NULL;
 			if (dup_group == dup_group_other) {
 				ED_object_base_select(base, BA_SELECT);
@@ -291,7 +295,7 @@ static bool object_select_all_by_particle(bContext *C, Object *ob)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			/* loop through other particles*/
 			ParticleSystem *psys;
 
@@ -319,7 +323,7 @@ static bool object_select_all_by_library(bContext *C, Library *lib)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			if (lib == base->object->id.lib) {
 				ED_object_base_select(base, BA_SELECT);
 				changed = true;
@@ -337,7 +341,7 @@ static bool object_select_all_by_library_obdata(bContext *C, Library *lib)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			if (base->object->data && lib == ((ID *)base->object->data)->lib) {
 				ED_object_base_select(base, BA_SELECT);
 				changed = true;
@@ -365,7 +369,9 @@ void ED_object_select_linked_by_id(bContext *C, ID *id)
 	}
 
 	if (changed) {
-		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+		Scene *scene = CTX_data_scene(C);
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 	}
 }
 
@@ -439,6 +445,7 @@ static int object_select_linked_exec(bContext *C, wmOperator *op)
 		return OPERATOR_CANCELLED;
 
 	if (changed) {
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 		return OPERATOR_FINISHED;
 	}
@@ -479,7 +486,7 @@ enum {
 	OBJECT_GRPSEL_PASS               =  8,
 	OBJECT_GRPSEL_COLOR              =  9,
 	OBJECT_GRPSEL_KEYINGSET          = 10,
-	OBJECT_GRPSEL_LAMP_TYPE          = 11,
+	OBJECT_GRPSEL_LIGHT_TYPE          = 11,
 };
 
 static const EnumPropertyItem prop_select_grouped_types[] = {
@@ -493,7 +500,7 @@ static const EnumPropertyItem prop_select_grouped_types[] = {
 	{OBJECT_GRPSEL_PASS, "PASS", 0, "Pass", "Render pass Index"},
 	{OBJECT_GRPSEL_COLOR, "COLOR", 0, "Color", "Object Color"},
 	{OBJECT_GRPSEL_KEYINGSET, "KEYINGSET", 0, "Keying Set", "Objects included in active Keying Set"},
-	{OBJECT_GRPSEL_LAMP_TYPE, "LAMP_TYPE", 0, "Lamp Type", "Matching lamp types"},
+	{OBJECT_GRPSEL_LIGHT_TYPE, "LIGHT_TYPE", 0, "Light Type", "Matching light types"},
 	{0, NULL, 0, NULL, NULL}
 };
 
@@ -562,7 +569,7 @@ static bool select_grouped_collection(bContext *C, Object *ob)  /* Select object
 		collection = ob_collections[0];
 		CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 		{
-			if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+			if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 				if (BKE_collection_has_object(collection, base->object)) {
 					ED_object_base_select(base, BA_SELECT);
 					changed = true;
@@ -797,9 +804,9 @@ static int object_select_grouped_exec(bContext *C, wmOperator *op)
 		case OBJECT_GRPSEL_KEYINGSET:
 			changed |= select_grouped_keyingset(C, ob, op->reports);
 			break;
-		case OBJECT_GRPSEL_LAMP_TYPE:
+		case OBJECT_GRPSEL_LIGHT_TYPE:
 			if (ob->type != OB_LAMP) {
-				BKE_report(op->reports, RPT_ERROR, "Active object must be a lamp");
+				BKE_report(op->reports, RPT_ERROR, "Active object must be a light");
 				break;
 			}
 			changed |= select_grouped_lamptype(C, ob);
@@ -809,6 +816,7 @@ static int object_select_grouped_exec(bContext *C, wmOperator *op)
 	}
 
 	if (changed) {
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 		return OPERATOR_FINISHED;
 	}
@@ -878,7 +886,9 @@ static int object_select_all_exec(bContext *C, wmOperator *op)
 	}
 	CTX_DATA_END;
 
-	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+	Scene *scene = CTX_data_scene(C);
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
 	return OPERATOR_FINISHED;
 }
@@ -922,7 +932,7 @@ static int object_select_same_collection_exec(bContext *C, wmOperator *op)
 
 	CTX_DATA_BEGIN (C, Base *, base, visible_bases)
 	{
-		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLED) != 0)) {
+		if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
 			if (BKE_collection_has_object(collection, base->object)) {
 				ED_object_base_select(base, BA_SELECT);
 			}
@@ -930,7 +940,9 @@ static int object_select_same_collection_exec(bContext *C, wmOperator *op)
 	}
 	CTX_DATA_END;
 
-	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+	Scene *scene = CTX_data_scene(C);
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
 	return OPERATOR_FINISHED;
 }
@@ -986,6 +998,7 @@ static int object_select_mirror_exec(bContext *C, wmOperator *op)
 	CTX_DATA_END;
 
 	/* undo? */
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
 	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
 	return OPERATOR_FINISHED;
@@ -1073,7 +1086,9 @@ static int object_select_more_exec(bContext *C, wmOperator *UNUSED(op))
 	bool changed = object_select_more_less(C, true);
 
 	if (changed) {
-		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+		Scene *scene = CTX_data_scene(C);
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 		return OPERATOR_FINISHED;
 	}
 	else {
@@ -1101,7 +1116,9 @@ static int object_select_less_exec(bContext *C, wmOperator *UNUSED(op))
 	bool changed = object_select_more_less(C, false);
 
 	if (changed) {
-		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+		Scene *scene = CTX_data_scene(C);
+		DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+		WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 		return OPERATOR_FINISHED;
 	}
 	else {
@@ -1147,7 +1164,9 @@ static int object_select_random_exec(bContext *C, wmOperator *op)
 
 	BLI_rng_free(rng);
 
-	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, CTX_data_scene(C));
+	Scene *scene = CTX_data_scene(C);
+	DEG_id_tag_update(&scene->id, DEG_TAG_SELECT_UPDATE);
+	WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
 	return OPERATOR_FINISHED;
 }

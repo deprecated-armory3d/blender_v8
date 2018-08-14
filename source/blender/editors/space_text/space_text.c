@@ -59,6 +59,7 @@
 
 #include "text_format.h"
 #include "text_intern.h"  /* own include */
+#include "GPU_framebuffer.h"
 
 /* ******************** default callbacks for text space ***************** */
 
@@ -125,8 +126,7 @@ static SpaceLink *text_duplicate(SpaceLink *sl)
 	return (SpaceLink *)stextn;
 }
 
-static void text_listener(bScreen *UNUSED(sc), ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene),
-                          WorkSpace *UNUSED(workspace))
+static void text_listener(wmWindow *UNUSED(win), ScrArea *sa, wmNotifier *wmn, Scene *UNUSED(scene))
 {
 	SpaceText *st = sa->spacedata.first;
 
@@ -299,7 +299,11 @@ static void text_keymap(struct wmKeyConfig *keyconf)
 	RNA_string_set(kmi->ptr, "data_path", "space_data.font_size");
 	RNA_boolean_set(kmi->ptr, "reverse", true);
 
+#ifdef USE_WM_KEYMAP_27X
 	WM_keymap_add_item(keymap, "TEXT_OT_new", NKEY, KM_PRESS, KM_CTRL, 0);
+#else
+	WM_keymap_add_item(keymap, "TEXT_OT_new", NKEY, KM_PRESS, KM_ALT, 0);
+#endif
 	WM_keymap_add_item(keymap, "TEXT_OT_open", OKEY, KM_PRESS, KM_ALT, 0);
 	WM_keymap_add_item(keymap, "TEXT_OT_reload", RKEY, KM_PRESS, KM_ALT, 0);
 	WM_keymap_add_item(keymap, "TEXT_OT_save", SKEY, KM_PRESS, KM_ALT, 0);
@@ -441,7 +445,7 @@ static void text_main_region_draw(const bContext *C, ARegion *ar)
 
 	/* clear and setup matrix */
 	UI_ThemeClearColor(TH_BACK);
-	glClear(GL_COLOR_BUFFER_BIT);
+	GPU_clear(GPU_COLOR_BIT);
 
 	// UI_view2d_view_ortho(v2d);
 
@@ -470,7 +474,7 @@ static void text_cursor(wmWindow *win, ScrArea *sa, ARegion *ar)
 
 /* ************* dropboxes ************* */
 
-static int text_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
+static bool text_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
 	if (drag->type == WM_DRAG_PATH) {
 		/* rule might not work? */
@@ -487,18 +491,15 @@ static void text_drop_copy(wmDrag *drag, wmDropBox *drop)
 	RNA_string_set(drop->ptr, "filepath", drag->path);
 }
 
-static int text_drop_paste_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
+static bool text_drop_paste_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event), const char **UNUSED(tooltip))
 {
-	if (drag->type == WM_DRAG_ID)
-		return true;
-
-	return false;
+	return (drag->type == WM_DRAG_ID);
 }
 
 static void text_drop_paste(wmDrag *drag, wmDropBox *drop)
 {
 	char *text;
-	ID *id = drag->poin;
+	ID *id = WM_drag_ID(drag, 0);
 
 	/* copy drag path to properties */
 	text = RNA_path_full_ID_py(id);
@@ -551,7 +552,7 @@ static void text_properties_region_draw(const bContext *C, ARegion *ar)
 {
 	SpaceText *st = CTX_wm_space_text(C);
 
-	ED_region_panels(C, ar, NULL, -1, true);
+	ED_region_panels(C, ar);
 
 	/* this flag trick is make sure buttons have been added already */
 	if (st->flags & ST_FIND_ACTIVATE) {
@@ -640,4 +641,3 @@ void ED_spacetype_text(void)
 	ED_text_format_register_pov();
 	ED_text_format_register_pov_ini();
 }
-

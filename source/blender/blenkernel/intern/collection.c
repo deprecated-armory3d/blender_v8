@@ -57,9 +57,9 @@
 
 /******************************** Prototypes ********************************/
 
-static bool collection_child_add(Collection *parent, Collection *collection, int flag, const bool add_us);
+static bool collection_child_add(Collection *parent, Collection *collection, const int flag, const bool add_us);
 static bool collection_child_remove(Collection *parent, Collection *collection);
-static bool collection_object_add(Collection *collection, Object *ob, int flag, const bool add_us);
+static bool collection_object_add(Main *bmain, Collection *collection, Object *ob, int flag, const bool add_us);
 static bool collection_object_remove(Main *bmain, Collection *collection, Object *ob, const bool free_us);
 
 static CollectionChild *collection_find_child(Collection *parent, Collection *collection);
@@ -163,7 +163,7 @@ bool BKE_collection_delete(Main *bmain, Collection *collection, bool hierarchy)
 			/* Link child object into parent collections. */
 			for (CollectionParent *cparent = collection->parents.first; cparent; cparent = cparent->next) {
 				Collection *parent = cparent->collection;
-				collection_object_add(parent, cob->ob, 0, true);
+				collection_object_add(bmain, parent, cob->ob, 0, true);
 			}
 
 			/* Remove child object. */
@@ -190,7 +190,7 @@ bool BKE_collection_delete(Main *bmain, Collection *collection, bool hierarchy)
  * \param flag  Copying options (see BKE_library.h's LIB_ID_COPY_... flags for more).
  */
 void BKE_collection_copy_data(
-        Main *UNUSED(bmain), Collection *collection_dst, const Collection *collection_src, const int flag)
+        Main *bmain, Collection *collection_dst, const Collection *collection_src, const int flag)
 {
 	/* Do not copy collection's preview (same behavior as for objects). */
 	if ((flag & LIB_ID_COPY_NO_PREVIEW) == 0 && false) {  /* XXX TODO temp hack */
@@ -211,7 +211,7 @@ void BKE_collection_copy_data(
 		collection_child_add(collection_dst, child->collection, flag, false);
 	}
 	for (CollectionObject *cob = collection_src->gobject.first; cob; cob = cob->next) {
-		collection_object_add(collection_dst, cob->ob, flag, false);
+		collection_object_add(bmain, collection_dst, cob->ob, flag, false);
 	}
 }
 
@@ -297,20 +297,6 @@ void BKE_collection_new_name_get(Collection *collection_parent, char *rname)
 	MEM_freeN(name);
 }
 
-/************************* Dependencies ****************************/
-
-bool BKE_collection_is_animated(Collection *collection, Object *UNUSED(parent))
-{
-	FOREACH_COLLECTION_OBJECT_RECURSIVE_BEGIN(collection, object)
-	{
-		if (object->proxy) {
-			return true;
-		}
-	}
-	FOREACH_COLLECTION_OBJECT_RECURSIVE_END;
-	return false;
-}
-
 /* **************** Object List Cache *******************/
 
 static void collection_object_cache_fill(ListBase *lb, Collection *collection, int parent_restrict)
@@ -323,20 +309,21 @@ static void collection_object_cache_fill(ListBase *lb, Collection *collection, i
 		if (base == NULL) {
 			base = MEM_callocN(sizeof(Base), "Object Base");
 			base->object = cob->ob;
-
-			if ((child_restrict & COLLECTION_RESTRICT_VIEW) == 0) {
-				base->flag |= BASE_VISIBLED | BASE_VISIBLE_VIEWPORT;
-
-				if ((child_restrict & COLLECTION_RESTRICT_SELECT) == 0) {
-					base->flag |= BASE_SELECTABLED;
-				}
-			}
-
-			if ((child_restrict & COLLECTION_RESTRICT_RENDER) == 0) {
-				base->flag |= BASE_VISIBLE_RENDER;
-			}
-
 			BLI_addtail(lb, base);
+		}
+
+		int object_restrict = base->object->restrictflag;
+
+		if (((child_restrict & COLLECTION_RESTRICT_VIEW) == 0) &&
+		    ((object_restrict & OB_RESTRICT_VIEW) == 0))
+		{
+			base->flag |= BASE_ENABLED_VIEWPORT;
+		}
+
+		if (((child_restrict & COLLECTION_RESTRICT_RENDER) == 0) &&
+		    ((object_restrict & OB_RESTRICT_RENDER) == 0))
+		{
+			base->flag |= BASE_ENABLED_RENDER;
 		}
 	}
 
@@ -377,36 +364,13 @@ void BKE_collection_object_cache_free(Collection *collection)
 	collection_object_cache_free(collection);
 }
 
-Base *BKE_collection_or_layer_objects(Depsgraph *depsgraph,
-                                      const Scene *scene,
-                                      const ViewLayer *view_layer,
-                                      Collection *collection)
+Base *BKE_collection_or_layer_objects(const ViewLayer *view_layer, Collection *collection)
 {
-	// TODO: this is used by physics to get objects from a collection, but the
-	// the physics systems are not all using the depsgraph correctly which means
-	// we try different things. Instead we should explicitly get evaluated or
-	// non-evaluated data and always have the depsgraph available when needed
-
 	if (collection) {
 		return BKE_collection_object_cache_get(collection).first;
 	}
-	else if (depsgraph) {
-		view_layer = DEG_get_evaluated_view_layer(depsgraph);
-
-		if (view_layer) {
-			return FIRSTBASE(view_layer);
-		}
-		else {
-			view_layer = DEG_get_input_view_layer(depsgraph);
-			return FIRSTBASE(view_layer);
-		}
-	}
-	else if (view_layer) {
-		return FIRSTBASE(view_layer);
-	}
 	else {
-		/* depsgraph is NULL during deg build */
-		return FIRSTBASE(BKE_view_layer_context_active_PLACEHOLDER(scene));
+		return FIRSTBASE(view_layer);
 	}
 }
 
@@ -505,11 +469,11 @@ Collection *BKE_collection_object_find(Main *bmain, Collection *collection, Obje
 
 /********************** Collection Objects *********************/
 
-static bool collection_object_add(Collection *collection, Object *ob, int flag, const bool add_us)
+static bool collection_object_add(Main *bmain, Collection *collection, Object *ob, int flag, const bool add_us)
 {
 	if (ob->dup_group) {
 		/* Cyclic dependency check. */
-		if (collection_find_child_recursive(collection, ob->dup_group)) {
+		if (collection_find_child_recursive(ob->dup_group, collection)) {
 			return false;
 		}
 	}
@@ -526,6 +490,10 @@ static bool collection_object_add(Collection *collection, Object *ob, int flag, 
 
 	if (add_us && (flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0) {
 		id_us_plus(&ob->id);
+	}
+
+	if ((flag & LIB_ID_CREATE_NO_MAIN) == 0) {
+		DEG_id_tag_update_ex(bmain, &collection->id, DEG_TAG_COPY_ON_WRITE);
 	}
 
 	return true;
@@ -548,6 +516,8 @@ static bool collection_object_remove(Main *bmain, Collection *collection, Object
 		id_us_min(&ob->id);
 	}
 
+	DEG_id_tag_update_ex(bmain, &collection->id, DEG_TAG_COPY_ON_WRITE);
+
 	return true;
 }
 
@@ -560,7 +530,7 @@ bool BKE_collection_object_add(Main *bmain, Collection *collection, Object *ob)
 		return false;
 	}
 
-	if (!collection_object_add(collection, ob, 0, true)) {
+	if (!collection_object_add(bmain, collection, ob, 0, true)) {
 		return false;
 	}
 
@@ -580,7 +550,7 @@ void BKE_collection_object_add_from(Main *bmain, Scene *scene, Object *ob_src, O
 	FOREACH_SCENE_COLLECTION_BEGIN(scene, collection)
 	{
 		if (BKE_collection_has_object(collection, ob_src)) {
-			collection_object_add(collection, ob_dst, 0, true);
+			collection_object_add(bmain, collection, ob_dst, 0, true);
 		}
 	}
 	FOREACH_SCENE_COLLECTION_END;
@@ -617,7 +587,7 @@ static bool scene_collections_object_remove(Main *bmain, Scene *scene, Object *o
 {
 	bool removed = false;
 
-	BKE_scene_remove_rigidbody_object(scene, ob);
+	BKE_scene_remove_rigidbody_object(bmain, scene, ob);
 
 	FOREACH_SCENE_COLLECTION_BEGIN(scene, collection)
 	{
@@ -910,7 +880,7 @@ static bool collection_objects_select(ViewLayer *view_layer, Collection *collect
 				}
 			}
 			else {
-				if ((base->flag & BASE_SELECTABLED) && !(base->flag & BASE_SELECTED)) {
+				if ((base->flag & BASE_SELECTABLE) && !(base->flag & BASE_SELECTED)) {
 					base->flag |= BASE_SELECTED;
 					changed = true;
 				}

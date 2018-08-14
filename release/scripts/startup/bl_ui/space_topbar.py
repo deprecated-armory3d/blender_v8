@@ -91,20 +91,6 @@ class TOPBAR_HT_lower_bar(Header):
 
     def draw_left(self, context):
         layout = self.layout
-        layer = context.view_layer
-        object = layer.objects.active
-
-        # Object Mode
-        # -----------
-        object_mode = 'OBJECT' if object is None else object.mode
-        act_mode_item = bpy.types.Object.bl_rna.properties['mode'].enum_items[object_mode]
-
-        layout.operator_menu_enum("object.mode_set", "mode", text=act_mode_item.name, icon=act_mode_item.icon)
-
-        layout.template_header_3D_mode()
-
-    def draw_center(self, context):
-        layout = self.layout
         mode = context.mode
 
         # Active Tool
@@ -142,6 +128,11 @@ class TOPBAR_HT_lower_bar(Header):
             pass
         elif mode == 'PARTICLE':
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".paint_common", category="")
+        elif mode == 'GPENCIL_PAINT':
+            layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".greasepencil_paint", category="")
+
+    def draw_center(self, context):
+        pass
 
     def draw_right(self, context):
         layout = self.layout
@@ -158,8 +149,14 @@ class TOPBAR_HT_lower_bar(Header):
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".weightpaint", category="")
         elif mode == 'PAINT_TEXTURE':
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".imagepaint", category="")
+        elif mode == 'EDIT_TEXT':
+            layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".text_edit", category="")
         elif mode == 'EDIT_ARMATURE':
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".armature_edit", category="")
+        elif mode == 'EDIT_METABALL':
+            layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".mball_edit", category="")
+        elif mode == 'EDIT_LATTICE':
+            layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".lattice_edit", category="")
         elif mode == 'EDIT_CURVE':
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".curve_edit", category="")
         elif mode == 'EDIT_MESH':
@@ -168,110 +165,17 @@ class TOPBAR_HT_lower_bar(Header):
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".posemode", category="")
         elif mode == 'PARTICLE':
             layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".particlemode", category="")
+        elif mode == 'OBJECT':
+            layout.popover_group(space_type='PROPERTIES', region_type='WINDOW', context=".objectmode", category="")
+        elif mode == 'GPENCIL_PAINT':
+            layout.prop(context.tool_settings, "gpencil_stroke_placement_view3d", text='')
+            if context.tool_settings.gpencil_stroke_placement_view3d in ('ORIGIN', 'CURSOR'):
+                layout.prop(context.tool_settings.gpencil_sculpt, "lockaxis", text='')
+            layout.prop(context.tool_settings, "use_gpencil_draw_onback", text="", icon='ORTHO')
+            layout.prop(context.tool_settings, "use_gpencil_additive_drawing", text="", icon='FREEZE')
 
-        # 3D View Options, tsk. maybe users aren't always using 3D view?
-        toolsettings = context.tool_settings
-        scene = context.scene
-        obj = context.active_object
-
-        object_mode = 'OBJECT' if obj is None else obj.mode
-
-        # Pivot & Orientation
-        pivot_point = context.tool_settings.transform_pivot_point
-        act_pivot_point = bpy.types.ToolSettings.bl_rna.properties['transform_pivot_point'].enum_items[pivot_point]
-
-        row = layout.row(align=True)
-        row.popover(
-            space_type='TOPBAR',
-            region_type='HEADER',
-            panel_type="TOPBAR_PT_pivot_point",
-            icon=act_pivot_point.icon,
-            text="",
-        )
-
-        if obj:
-            # Proportional editing
-            if context.gpencil_data and context.gpencil_data.use_stroke_edit_mode:
-                row = layout.row(align=True)
-                row.prop(toolsettings, "proportional_edit", icon_only=True)
-
-                sub = row.row(align=True)
-                sub.active = toolsettings.proportional_edit != 'DISABLED'
-                sub.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
-
-            elif object_mode in {'EDIT', 'PARTICLE_EDIT'}:
-                row = layout.row(align=True)
-                row.prop(toolsettings, "proportional_edit", icon_only=True)
-                sub = row.row(align=True)
-                sub.active = toolsettings.proportional_edit != 'DISABLED'
-                sub.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
-
-            elif object_mode == 'OBJECT':
-                row = layout.row(align=True)
-                row.prop(toolsettings, "use_proportional_edit_objects", icon_only=True)
-                sub = row.row(align=True)
-                sub.active = toolsettings.use_proportional_edit_objects
-                sub.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
-        else:
-            # Proportional editing
-            if context.gpencil_data and context.gpencil_data.use_stroke_edit_mode:
-                row = layout.row(align=True)
-                row.prop(toolsettings, "proportional_edit", icon_only=True)
-                sub = row.row(align=True)
-                sub.active = toolsettings.proportional_edit != 'DISABLED'
-                sub.prop(toolsettings, "proportional_edit_falloff", icon_only=True)
-
-        # Snap
-        show_snap = False
-        if obj is None:
-            show_snap = True
-        else:
-            if object_mode not in {'SCULPT', 'VERTEX_PAINT', 'WEIGHT_PAINT', 'TEXTURE_PAINT'}:
-                show_snap = True
-            else:
-
-                from .properties_paint_common import UnifiedPaintPanel
-                paint_settings = UnifiedPaintPanel.paint_settings(context)
-
-                if paint_settings:
-                    brush = paint_settings.brush
-                    if brush and brush.stroke_method == 'CURVE':
-                        show_snap = True
-
-        if show_snap:
-            snap_items = bpy.types.ToolSettings.bl_rna.properties['snap_elements'].enum_items
-            for elem in toolsettings.snap_elements:
-                # TODO: Display multiple icons.
-                # (Currently only one of the enabled modes icons is displayed)
-                icon = snap_items[elem].icon
-                break
-            else:
-                icon = 'NONE'
-
-            row = layout.row(align=True)
-            row.prop(toolsettings, "use_snap", text="")
-
-            sub = row.row(align=True)
-            sub.popover(
-                space_type='TOPBAR',
-                region_type='HEADER',
-                panel_type="TOPBAR_PT_snapping",
-                icon=icon,
-                text=""
-            )
-
-        layout.prop(scene, "transform_orientation", text="")
-
-        # Command Settings (redo)
-        op = context.active_operator
-        row = layout.row()
-        row.enabled = op is not None
-        row.popover(
-            space_type='TOPBAR',
-            region_type='HEADER',
-            panel_type="TOPBAR_PT_redo",
-            text=op.name + " Settings" if op else "Command Settings",
-        )
+        elif mode == 'GPENCIL_SCULPT':
+            layout.prop(context.tool_settings.gpencil_sculpt, "lockaxis", text='')
 
 
 class _draw_left_context_mode:
@@ -320,75 +224,27 @@ class _draw_left_context_mode:
         UnifiedPaintPanel.prop_unified_size(layout, context, brush, "size", slider=True, text="Radius")
         UnifiedPaintPanel.prop_unified_strength(layout, context, brush, "strength", slider=True, text="Strength")
 
+    def PARTICLE(context, layout):
+        # See: 'VIEW3D_PT_tools_brush', basically a duplicate
+        settings = context.tool_settings.particle_edit
+        brush = settings.brush
+        tool = settings.tool
+        if tool != 'NONE':
+            layout.prop(brush, "size", slider=True)
+            if tool == 'ADD':
+                layout.prop(brush, "count")
+            else:
+                layout.prop(brush, "strength", slider=True)
 
-class TOPBAR_PT_pivot_point(Panel):
-    bl_space_type = 'TOPBAR'
-    bl_region_type = 'HEADER'
-    bl_label = "Pivot Point"
-
-    def draw(self, context):
-        toolsettings = context.tool_settings
-        obj = context.active_object
-        mode = context.mode
-
-        layout = self.layout
-        col = layout.column()
-        col.label("Pivot Point")
-        col.prop(toolsettings, "transform_pivot_point", expand=True)
-
-        col.separator()
-
-        if (obj is None) or (mode in {'OBJECT', 'POSE', 'WEIGHT_PAINT'}):
-            col.prop(
-                toolsettings,
-                "use_transform_pivot_point_align",
-                text="Center Points Only",
-            )
-
-
-class TOPBAR_PT_snapping(Panel):
-    bl_space_type = 'TOPBAR'
-    bl_region_type = 'HEADER'
-    bl_label = "Snapping"
-
-    def draw(self, context):
-        toolsettings = context.tool_settings
-        snap_elements = toolsettings.snap_elements
-        obj = context.active_object
-        mode = context.mode
-        object_mode = 'OBJECT' if obj is None else obj.mode
-
-        layout = self.layout
-        col = layout.column()
-        col.label("Snapping")
-        col.prop(toolsettings, "snap_elements", expand=True)
-
-        col.separator()
-        if 'INCREMENT' in snap_elements:
-            col.prop(toolsettings, "use_snap_grid_absolute")
-
-        if snap_elements != {'INCREMENT'}:
-            col.label("Target")
-            row = col.row(align=True)
-            row.prop(toolsettings, "snap_target", expand=True)
-
-            if obj:
-                if object_mode == 'EDIT':
-                    col.prop(toolsettings, "use_snap_self")
-                if object_mode in {'OBJECT', 'POSE', 'EDIT'}:
-                    col.prop(toolsettings, "use_snap_align_rotation", text="Align Rotation")
-
-            if 'FACE' in snap_elements:
-                col.prop(toolsettings, "use_snap_project", text="Project Elements")
-
-            if 'VOLUME' in snap_elements:
-                col.prop(toolsettings, "use_snap_peel_object")
-
-        # Auto-Merge Editing
-        if obj:
-            if (object_mode == 'EDIT' and obj.type == 'MESH'):
-                col.prop(toolsettings, "use_mesh_automerge", icon='AUTOMERGE_ON')
-
+            if tool == 'ADD':
+                layout.prop(settings, "use_default_interpolate")
+                layout.prop(brush, "steps", slider=True)
+                layout.prop(settings, "default_key_count", slider=True)
+            elif tool == 'LENGTH':
+                layout.row().prop(brush, "length_mode", expand=True)
+            elif tool == 'PUFF':
+                layout.row().prop(brush, "puff_mode", expand=True)
+                layout.prop(brush, "use_puff_volume")
 
 class INFO_MT_editor_menus(Menu):
     bl_idname = "INFO_MT_editor_menus"
@@ -417,10 +273,10 @@ class INFO_MT_file(Menu):
         layout.operator_context = 'INVOKE_AREA'
         layout.operator("wm.read_homefile", text="New", icon='NEW')
         layout.operator("wm.open_mainfile", text="Open...", icon='FILE_FOLDER')
-        layout.menu("INFO_MT_file_open_recent", icon='OPEN_RECENT')
-        layout.operator("wm.revert_mainfile", icon='FILE_REFRESH')
-        layout.operator("wm.recover_last_session", icon='RECOVER_LAST')
-        layout.operator("wm.recover_auto_save", text="Recover Auto Save...", icon='RECOVER_AUTO')
+        layout.menu("INFO_MT_file_open_recent")
+        layout.operator("wm.revert_mainfile")
+        layout.operator("wm.recover_last_session")
+        layout.operator("wm.recover_auto_save", text="Recover Auto Save...")
 
         layout.separator()
 
@@ -428,21 +284,21 @@ class INFO_MT_file(Menu):
         layout.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
 
         layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.save_as_mainfile", text="Save As...", icon='SAVE_AS')
+        layout.operator("wm.save_as_mainfile", text="Save As...")
         layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.save_as_mainfile", text="Save Copy...", icon='SAVE_COPY').copy = True
+        layout.operator("wm.save_as_mainfile", text="Save Copy...").copy = True
 
         layout.separator()
 
         layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.save_homefile", icon='SAVE_PREFS')
-        layout.operator("wm.read_factory_settings", icon='LOAD_FACTORY')
+        layout.operator("wm.save_homefile")
+        layout.operator("wm.read_factory_settings")
 
         layout.separator()
 
         layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.link", text="Link", icon='LINK_BLEND')
-        layout.operator("wm.append", text="Append", icon='APPEND_BLEND')
+        layout.operator("wm.link", text="Link...", icon='LINK_BLEND')
+        layout.operator("wm.append", text="Append...", icon='APPEND_BLEND')
         layout.menu("INFO_MT_file_previews")
 
         layout.separator()
@@ -452,7 +308,7 @@ class INFO_MT_file(Menu):
 
         layout.separator()
 
-        layout.menu("INFO_MT_file_external_data", icon='EXTERNAL_DATA')
+        layout.menu("INFO_MT_file_external_data")
 
         layout.separator()
 
@@ -559,26 +415,20 @@ class INFO_MT_render(Menu):
         props = layout.operator("render.render", text="Render Animation", icon='RENDER_ANIMATION')
         props.animation = True
         props.use_viewport = True
-        layout.operator("sound.mixdown", text="Render Audio", icon='PLAY_AUDIO')
 
         layout.separator()
 
-        layout.prop_menu_enum(rd, "display_mode", text="Display Mode", icon='IMAGE_COL')
+        layout.operator("sound.mixdown", text="Render Audio...")
+
+        layout.separator()
+
+        layout.operator("render.view_show", text="View Render")
+        layout.operator("render.play_rendered_anim", text="View Animation")
+        layout.prop_menu_enum(rd, "display_mode", text="Display Mode")
+
+        layout.separator()
+
         layout.prop(rd, "use_lock_interface", text="Lock Interface")
-
-        layout.separator()
-
-        props = layout.operator("render.opengl", text="OpenGL Render Image", icon='RENDER_STILL')
-        props.view_context = False
-        props = layout.operator("render.opengl", text="OpenGL Render Animation", icon='RENDER_ANIMATION')
-        props.view_context = False
-        props.animation = True
-        layout.menu("INFO_MT_opengl_render", icon='SETTINGS')
-
-        layout.separator()
-
-        layout.operator("render.view_show")
-        layout.operator("render.play_rendered_anim", icon='PLAY')
 
 
 class INFO_MT_opengl_render(Menu):
@@ -606,12 +456,26 @@ class INFO_MT_edit(Menu):
 
         layout.separator()
 
-        layout.operator("ed.undo_history")
+        layout.operator("ed.undo_history", text="Undo History...")
 
         layout.separator()
 
         layout.operator("screen.repeat_last")
-        layout.operator("screen.repeat_history")
+        layout.operator("screen.repeat_history", text="Repeat History...")
+
+        layout.separator()
+
+        layout.operator("screen.redo_last", text="Adjust Last Operation...")
+
+        layout.separator()
+
+        layout.operator("wm.search_menu", text="Operator Search...")
+
+        layout.separator()
+
+        # Should move elsewhere (impacts outliner & 3D view).
+        tool_settings = context.tool_settings
+        layout.prop(tool_settings, "lock_object_mode")
 
         layout.separator()
 
@@ -627,12 +491,20 @@ class INFO_MT_window(Menu):
         layout = self.layout
 
         layout.operator("wm.window_new")
+        layout.operator("wm.window_new_main")
+
+        layout.separator()
+
         layout.operator("wm.window_fullscreen_toggle", icon='FULLSCREEN_ENTER')
 
         layout.separator()
 
+        layout.operator("screen.workspace_cycle", text="Next Workspace").direction = 'NEXT'
+        layout.operator("screen.workspace_cycle", text="Previous Workspace").direction = 'PREV'
+
+        layout.separator()
+
         layout.operator("screen.screenshot")
-        layout.operator("screen.screencast")
 
         if sys.platform[:3] == "win":
             layout.separator()
@@ -640,7 +512,7 @@ class INFO_MT_window(Menu):
 
         if context.scene.render.use_multiview:
             layout.separator()
-            layout.operator("wm.set_stereo_3d", icon='CAMERA_STEREO')
+            layout.operator("wm.set_stereo_3d")
 
 
 class INFO_MT_help(Menu):
@@ -649,12 +521,25 @@ class INFO_MT_help(Menu):
     def draw(self, context):
         layout = self.layout
 
+        show_developer = context.user_preferences.view.show_developer_ui
+
         layout.operator(
             "wm.url_open", text="Manual", icon='HELP',
         ).url = "https://docs.blender.org/manual/en/dev/"
+
         layout.operator(
-            "wm.url_open", text="Release Log", icon='URL',
-        ).url = "http://wiki.blender.org/index.php/Dev:Ref/Release_Notes/%d.%d" % bpy.app.version[:2]
+            "wm.url_open", text="Report a Bug", icon='URL',
+        ).url = "https://developer.blender.org/maniphest/task/edit/form/1"
+
+        layout.separator()
+
+        layout.operator(
+            "wm.url_open", text="User Communities", icon='URL',
+        ).url = "https://www.blender.org/community/"
+        layout.operator(
+            "wm.url_open", text="Developer Community", icon='URL',
+        ).url = "https://www.blender.org/get-involved/developers/"
+
         layout.separator()
 
         layout.operator(
@@ -663,34 +548,80 @@ class INFO_MT_help(Menu):
         layout.operator(
             "wm.url_open", text="Blender Store", icon='URL',
         ).url = "https://store.blender.org"
-        layout.operator(
-            "wm.url_open", text="Developer Community", icon='URL',
-        ).url = "https://www.blender.org/get-involved/"
-        layout.operator(
-            "wm.url_open", text="User Community", icon='URL',
-        ).url = "https://www.blender.org/support/user-community"
-        layout.separator()
-        layout.operator(
-            "wm.url_open", text="Report a Bug", icon='URL',
-        ).url = "https://developer.blender.org/maniphest/task/edit/form/1"
-        layout.separator()
 
         layout.operator(
-            "wm.url_open", text="Python API Reference", icon='URL',
-        ).url = bpy.types.WM_OT_doc_view._prefix
+            "wm.url_open", text="Release Notes", icon='URL',
+        ).url = "https://www.blender.org/download/releases/%d-%d/" % bpy.app.version[:2]
 
-        layout.operator("wm.operator_cheat_sheet", icon='TEXT')
-        layout.operator("wm.sysinfo", icon='TEXT')
+        layout.separator()
+
+        if show_developer:
+            layout.operator(
+                "wm.url_open", text="Python API Reference", icon='URL',
+            ).url = bpy.types.WM_OT_doc_view._prefix
+
+            layout.operator("wm.operator_cheat_sheet", icon='TEXT')
+
+        layout.operator("wm.sysinfo")
+
         layout.separator()
 
         layout.operator("wm.splash", icon='BLENDER')
 
 
+class TOPBAR_MT_file_specials(Menu):
+    bl_label = "File Context Menu"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.operator_context = 'INVOKE_AREA'
+        layout.operator("wm.read_homefile", text="New", icon='NEW')
+        layout.operator("wm.open_mainfile", text="Open...", icon='FILE_FOLDER')
+
+        layout.separator()
+
+        layout.operator("wm.link", text="Link...", icon='LINK_BLEND')
+        layout.operator("wm.append", text="Append...", icon='APPEND_BLEND')
+
+        layout.separator()
+
+        layout.menu("INFO_MT_file_import", icon='IMPORT')
+        layout.menu("INFO_MT_file_export", icon='EXPORT')
+
+
+class TOPBAR_MT_window_specials(Menu):
+    bl_label = "Window Context Menu"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.operator_context = 'EXEC_AREA'
+
+        layout.operator("wm.window_new")
+        layout.operator("wm.window_new_main")
+
+        layout.operator_context = 'INVOKE_AREA'
+
+        layout.operator("screen.area_dupli")
+
+        layout.operator("wm.window_fullscreen_toggle", icon='FULLSCREEN_ENTER')
+
+        layout.separator()
+
+        layout.operator("screen.area_split", text="Horizontal Split").direction = 'HORIZONTAL'
+        layout.operator("screen.area_split", text="Vertical Split").direction = 'VERTICAL'
+
+        layout.separator()
+
+        layout.operator("screen.userpref_show", text="User Preferences...", icon='PREFERENCES')
+
+
 classes = (
     TOPBAR_HT_upper_bar,
     TOPBAR_HT_lower_bar,
-    TOPBAR_PT_pivot_point,
-    TOPBAR_PT_snapping,
+    TOPBAR_MT_file_specials,
+    TOPBAR_MT_window_specials,
     INFO_MT_editor_menus,
     INFO_MT_file,
     INFO_MT_file_import,
@@ -700,7 +631,6 @@ classes = (
     INFO_MT_edit,
     INFO_MT_game,
     INFO_MT_render,
-    INFO_MT_opengl_render,
     INFO_MT_window,
     INFO_MT_help,
 )
