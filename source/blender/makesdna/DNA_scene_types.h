@@ -1744,6 +1744,7 @@ enum {
 extern const char *RE_engine_id_BLENDER_EEVEE;
 extern const char *RE_engine_id_BLENDER_OPENGL;
 extern const char *RE_engine_id_CYCLES;
+extern const char *RE_engine_id_ARMORY;
 
 /* **************** SCENE ********************* */
 
