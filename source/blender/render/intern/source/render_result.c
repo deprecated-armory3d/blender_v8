@@ -1372,6 +1372,14 @@ void render_result_rect_get_pixels(RenderResult *rr, unsigned int *rect, int rec
 {
 	RenderView *rv = RE_RenderViewGetById(rr, view_id);
 
+	/* TODO: armory */
+	if (rv == NULL) {
+		/* else fill with black */
+		memset(rect, 0, sizeof(int) * rectx * recty);
+		return;
+	}
+	/**/
+
 	if (rv->rect32)
 		memcpy(rect, rv->rect32, sizeof(int) * rr->rectx * rr->recty);
 	else if (rv->rectf)
