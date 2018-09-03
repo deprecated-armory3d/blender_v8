@@ -83,12 +83,6 @@
 #include "engines/workbench/workbench_engine.h"
 #include "engines/external/external_engine.h"
 
-// armory
-#include "engines/armory/armory_engine.h"
-#include "engines/armory/Krom.h"
-#include "BKE_main.h"
-// armory
-
 #include "GPU_context.h"
 
 #include "DEG_depsgraph.h"
@@ -157,6 +151,9 @@ struct DRWTextStore *DRW_text_cache_ensure(void)
 bool DRW_object_is_renderable(Object *ob)
 {
 	BLI_assert(BKE_object_is_visible(ob, OB_VISIBILITY_CHECK_UNKNOWN_RENDER_MODE));
+
+	if (ob->dt < OB_SOLID)
+		return false;
 
 	if (ob->type == OB_MESH) {
 		if ((ob == DST.draw_ctx.object_edit) || BKE_object_is_in_editmode(ob)) {
@@ -884,6 +881,19 @@ void DRW_drawdata_free(ID *id)
 	BLI_freelistN((ListBase *)drawdata);
 }
 
+/* Unlink (but don't free) the drawdata from the DrawDataList if the ID is an OB from dupli. */
+static void drw_drawdata_unlink_dupli(ID *id)
+{
+	if ((GS(id->name) == ID_OB) && (((Object *)id)->base_flag & BASE_FROMDUPLI) != 0) {
+		DrawDataList *drawdata = DRW_drawdatalist_from_id(id);
+
+		if (drawdata == NULL)
+			return;
+
+		BLI_listbase_clear((ListBase *)drawdata);
+	}
+}
+
 /** \} */
 
 
@@ -947,6 +957,12 @@ static void drw_engines_cache_populate(Object *ob)
 {
 	DST.ob_state = NULL;
 
+	/* HACK: DrawData is copied by COW from the duplicated object.
+	 * This is valid for IDs that cannot be instanciated but this
+	 * is not what we want in this case so we clear the pointer
+	 * ourselves here. */
+	drw_drawdata_unlink_dupli((ID *)ob);
+
 	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
 		DrawEngineType *engine = link->data;
 		ViewportEngineData *data = drw_viewport_engine_data_ensure(engine);
@@ -959,6 +975,10 @@ static void drw_engines_cache_populate(Object *ob)
 			engine->cache_populate(data, ob);
 		}
 	}
+
+	/* ... and clearing it here too because theses draw data are
+	 * from a mempool and must not be free individually by depsgraph. */
+	drw_drawdata_unlink_dupli((ID *)ob);
 }
 
 static void drw_engines_cache_finish(void)
@@ -997,16 +1017,10 @@ static void drw_engines_draw_background(void)
 	}
 }
 
-bool hasArmory = false; // armory
-bool hadArmory = false; // armory
-ListBase ar_handlers; // armory
 static void drw_engines_draw_scene(void)
 {
 	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
 		DrawEngineType *engine = link->data;
-
-		if (hasArmory && strcmp(engine->idname, "Armory") != 0) continue; // armory
-
 		ViewportEngineData *data = drw_viewport_engine_data_ensure(engine);
 		PROFILE_START(stime);
 
@@ -1248,11 +1262,9 @@ static void drw_engines_enable_from_mode(int mode)
 	use_drw_engine(&draw_engine_gpencil_type);
 }
 
-static void drw_engines_enable_from_overlays(int overlay_flag)
+static void drw_engines_enable_from_overlays(int UNUSED(overlay_flag))
 {
-	if (overlay_flag) {
-		use_drw_engine(&draw_engine_overlay_type);
-	}
+	use_drw_engine(&draw_engine_overlay_type);
 }
 /**
  * Use for select and depth-drawing.
@@ -1468,42 +1480,9 @@ void DRW_draw_render_loop_ex(
 	/* Start Drawing */
 	DRW_state_reset();
 
-
-	// armory
-	hadArmory = hasArmory;
-	hasArmory = false;
-	for (LinkData *link = DST.enabled_engines.first; link; link = link->next) {
-		DrawEngineType *engine = link->data;
-		if (strcmp(engine->idname, "Armory") == 0) {
-			hasArmory = true;
-			break;
-		}
-	}
-	if (!hadArmory && hasArmory && DST.draw_ctx.evil_C) {
-		const DRWContextState *draw_ctx = DRW_context_state_get();
-		const bContext *C = DST.draw_ctx.evil_C;
-		ARegion *ar = DST.draw_ctx.ar;
-		int w = ar->winrct.xmax - ar->winrct.xmin;
-		int h = ar->winrct.ymax - ar->winrct.ymin;
-		Main *main = CTX_data_main(C);
-		ar_handlers = ar->handlers; // Keep only game input in the area
-		ListBase lb = {NULL, NULL};
-		ar->handlers = lb;
-		armoryBegin(main->name, w, h);
-	}
-	if (hadArmory && !hasArmory) {
-		const DRWContextState *draw_ctx = DRW_context_state_get();
-		const bContext *C = DST.draw_ctx.evil_C;
-		ARegion *ar = DST.draw_ctx.ar;
-		ar->handlers = ar_handlers; // Restore handlers
-		armoryEnd();
-	}
-	
 	DRW_hair_update();
 
-	// armory
-	if (!hasArmory) drw_engines_draw_background();
-	// drw_engines_draw_background();
+	drw_engines_draw_background();
 
 	/* WIP, single image drawn over the camera view (replace) */
 	bool do_bg_image = false;
@@ -1517,10 +1496,11 @@ void DRW_draw_render_loop_ex(
 		}
 	}
 
+	GPU_framebuffer_bind(DST.default_framebuffer);
+
 	if (do_bg_image) {
 		ED_view3d_draw_bgpic_test(scene, depsgraph, ar, v3d, false, true);
 	}
-
 
 	DRW_draw_callbacks_pre_scene();
 	if (DST.draw_ctx.evil_C) {
@@ -1553,8 +1533,7 @@ void DRW_draw_render_loop_ex(
 	drw_engines_draw_text();
 	glEnable(GL_DEPTH_TEST);
 
-	if (!hasArmory && DST.draw_ctx.evil_C) { // armory
-	// if (DST.draw_ctx.evil_C) {
+	if (DST.draw_ctx.evil_C) {
 		/* needed so gizmo isn't obscured */
 		if (((v3d->flag2 & V3D_RENDER_OVERRIDE) == 0) &&
 		    ((v3d->gizmo_flag & V3D_GIZMO_HIDE) == 0))
@@ -1691,7 +1670,7 @@ void DRW_render_gpencil(struct RenderEngine *engine, struct Depsgraph *depsgraph
 	/* This function is only valid for Cycles
 	 * Eevee done all work in the Eevee render directly.
 	 * Maybe it can be done equal for both engines?
-	*/
+	 */
 	if (STREQ(engine->type->name, "Eevee")) {
 		return;
 	}
@@ -2392,8 +2371,8 @@ bool DRW_state_is_scene_render(void)
 }
 
 /**
-* Whether we are rendering simple opengl render
-*/
+ * Whether we are rendering simple opengl render
+ */
 bool DRW_state_is_opengl_render(void)
 {
 	return DST.options.is_image_render && !DST.options.is_scene_render;
@@ -2468,7 +2447,6 @@ void DRW_engines_register(void)
 {
 	RE_engines_register(&DRW_engine_viewport_eevee_type);
 	RE_engines_register(&DRW_engine_viewport_opengl_type);
-	RE_engines_register(&DRW_engine_viewport_armory_type);
 
 	DRW_engine_register(&draw_engine_workbench_solid);
 	DRW_engine_register(&draw_engine_workbench_transparent);
@@ -2494,40 +2472,40 @@ void DRW_engines_register(void)
 	/* setup callbacks */
 	{
 		/* BKE: mball.c */
-		extern void *BKE_mball_batch_cache_dirty_cb;
+		extern void *BKE_mball_batch_cache_dirty_tag_cb;
 		extern void *BKE_mball_batch_cache_free_cb;
 		/* BKE: curve.c */
-		extern void *BKE_curve_batch_cache_dirty_cb;
+		extern void *BKE_curve_batch_cache_dirty_tag_cb;
 		extern void *BKE_curve_batch_cache_free_cb;
 		/* BKE: mesh.c */
-		extern void *BKE_mesh_batch_cache_dirty_cb;
+		extern void *BKE_mesh_batch_cache_dirty_tag_cb;
 		extern void *BKE_mesh_batch_cache_free_cb;
 		/* BKE: lattice.c */
-		extern void *BKE_lattice_batch_cache_dirty_cb;
+		extern void *BKE_lattice_batch_cache_dirty_tag_cb;
 		extern void *BKE_lattice_batch_cache_free_cb;
 		/* BKE: particle.c */
-		extern void *BKE_particle_batch_cache_dirty_cb;
+		extern void *BKE_particle_batch_cache_dirty_tag_cb;
 		extern void *BKE_particle_batch_cache_free_cb;
 		/* BKE: gpencil.c */
-		extern void *BKE_gpencil_batch_cache_dirty_cb;
+		extern void *BKE_gpencil_batch_cache_dirty_tag_cb;
 		extern void *BKE_gpencil_batch_cache_free_cb;
 
-		BKE_mball_batch_cache_dirty_cb = DRW_mball_batch_cache_dirty;
+		BKE_mball_batch_cache_dirty_tag_cb = DRW_mball_batch_cache_dirty_tag;
 		BKE_mball_batch_cache_free_cb = DRW_mball_batch_cache_free;
 
-		BKE_curve_batch_cache_dirty_cb = DRW_curve_batch_cache_dirty;
+		BKE_curve_batch_cache_dirty_tag_cb = DRW_curve_batch_cache_dirty_tag;
 		BKE_curve_batch_cache_free_cb = DRW_curve_batch_cache_free;
 
-		BKE_mesh_batch_cache_dirty_cb = DRW_mesh_batch_cache_dirty;
+		BKE_mesh_batch_cache_dirty_tag_cb = DRW_mesh_batch_cache_dirty_tag;
 		BKE_mesh_batch_cache_free_cb = DRW_mesh_batch_cache_free;
 
-		BKE_lattice_batch_cache_dirty_cb = DRW_lattice_batch_cache_dirty;
+		BKE_lattice_batch_cache_dirty_tag_cb = DRW_lattice_batch_cache_dirty_tag;
 		BKE_lattice_batch_cache_free_cb = DRW_lattice_batch_cache_free;
 
-		BKE_particle_batch_cache_dirty_cb = DRW_particle_batch_cache_dirty;
+		BKE_particle_batch_cache_dirty_tag_cb = DRW_particle_batch_cache_dirty_tag;
 		BKE_particle_batch_cache_free_cb = DRW_particle_batch_cache_free;
 
-		BKE_gpencil_batch_cache_dirty_cb = DRW_gpencil_batch_cache_dirty;
+		BKE_gpencil_batch_cache_dirty_tag_cb = DRW_gpencil_batch_cache_dirty_tag;
 		BKE_gpencil_batch_cache_free_cb = DRW_gpencil_batch_cache_free;
 	}
 }

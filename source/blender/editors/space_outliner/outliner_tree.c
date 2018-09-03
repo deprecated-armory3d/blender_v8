@@ -39,8 +39,8 @@
 #include "DNA_constraint_types.h"
 #include "DNA_camera_types.h"
 #include "DNA_cachefile_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_gpencil_types.h"
-#include "DNA_group_types.h"
 #include "DNA_key_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_material_types.h"
@@ -1945,7 +1945,7 @@ void outliner_build_tree(Main *mainvar, Scene *scene, ViewLayer *view_layer, Spa
 	else
 		soops->search_flags &= ~SO_SEARCH_RECURSIVE;
 
-	if (soops->treehash && (soops->storeflag & SO_TREESTORE_REBUILD)) {
+	if (soops->treehash && (soops->storeflag & SO_TREESTORE_REBUILD) && soops->treestore) {
 		soops->storeflag &= ~SO_TREESTORE_REBUILD;
 		BKE_outliner_treehash_rebuild_from_treestore(soops->treehash, soops->treestore);
 	}

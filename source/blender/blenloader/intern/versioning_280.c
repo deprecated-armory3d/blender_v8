@@ -40,9 +40,10 @@
 
 #include "DNA_object_types.h"
 #include "DNA_camera_types.h"
+#include "DNA_cloth_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_gpu_types.h"
-#include "DNA_group_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_layer_types.h"
 #include "DNA_lightprobe_types.h"
@@ -80,6 +81,9 @@
 #include "BKE_gpencil.h"
 #include "BKE_paint.h"
 #include "BKE_object.h"
+#include "BKE_cloth.h"
+
+#include "BLT_translation.h"
 
 #include "BLO_readfile.h"
 #include "readfile.h"
@@ -408,7 +412,7 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
 
 					BLI_snprintf(name,
 					             sizeof(collection_master->id.name),
-					             "Collection %d",
+					             DATA_("Collection %d"),
 					             layer + 1);
 
 					Collection *collection = BKE_collection_add(bmain, collection_master, name);
@@ -564,6 +568,21 @@ static void do_version_layers_to_collections(Main *bmain, Scene *scene)
 	scene->basact = NULL;
 }
 
+static void do_version_collection_propagate_lib_to_children(Collection *collection)
+{
+	if (collection->id.lib != NULL) {
+		for (CollectionChild *collection_child = collection->children.first;
+		     collection_child != NULL;
+		     collection_child = collection_child->next)
+		{
+			if (collection_child->collection->id.lib == NULL) {
+				collection_child->collection->id.lib = collection->id.lib;
+			}
+			do_version_collection_propagate_lib_to_children(collection_child->collection);
+		}
+	}
+}
+
 void do_versions_after_linking_280(Main *bmain)
 {
 	bool use_collection_compat_28 = true;
@@ -580,22 +599,41 @@ void do_versions_after_linking_280(Main *bmain)
 				continue;
 			}
 
-			Collection *collection_hidden = NULL;
+			Collection *hidden_collection_array[20] = {NULL};
 			for (CollectionObject *cob = collection->gobject.first, *cob_next = NULL; cob; cob = cob_next) {
 				cob_next = cob->next;
 				Object *ob = cob->ob;
 
 				if (!(ob->lay & collection->layer)) {
-					if (collection_hidden == NULL) {
-						collection_hidden = BKE_collection_add(bmain, collection, "Hidden");
-						collection_hidden->id.lib = collection->id.lib;
-						collection_hidden->flag |= COLLECTION_RESTRICT_VIEW | COLLECTION_RESTRICT_RENDER;
+					/* Find or create hidden collection matching object's first layer. */
+					Collection **collection_hidden = NULL;
+					int coll_idx = 0;
+					for (; coll_idx < 20; coll_idx++) {
+						if (ob->lay & (1 << coll_idx)) {
+							collection_hidden = &hidden_collection_array[coll_idx];
+							break;
+						}
+					}
+					BLI_assert(collection_hidden != NULL);
+
+					if (*collection_hidden == NULL) {
+						char name[MAX_ID_NAME];
+						BLI_snprintf(name, sizeof(name), DATA_("Hidden %d"), coll_idx + 1);
+						*collection_hidden = BKE_collection_add(bmain, collection, name);
+						(*collection_hidden)->flag |= COLLECTION_RESTRICT_VIEW | COLLECTION_RESTRICT_RENDER;
 					}
 
-					BKE_collection_object_add(bmain, collection_hidden, ob);
+					BKE_collection_object_add(bmain, *collection_hidden, ob);
 					BKE_collection_object_remove(bmain, collection, ob, true);
 				}
 			}
+		}
+
+		/* We need to assign lib pointer to generated hidden collections *after* all have been created, otherwise we'll
+		 * end up with several datablocks sharing same name/library, which is FORBIDDEN!
+		 * Note: we need this to be recursive, since a child collection may be sorted before its parent in bmain... */
+		for (Collection *collection = bmain->collection.first; collection != NULL; collection = collection->id.next) {
+			do_version_collection_propagate_lib_to_children(collection);
 		}
 
 		/* Convert layers to collections. */
@@ -1840,12 +1878,13 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
 	}
 
 	{
+		/* Versioning code for Subsurf modifier. */
 		if (!DNA_struct_elem_find(fd->filesdna, "SubsurfModifier", "short", "uv_smooth")) {
 			for (Object *object = bmain->object.first; object != NULL; object = object->id.next) {
 				for (ModifierData *md = object->modifiers.first; md; md = md->next) {
 					if (md->type == eModifierType_Subsurf) {
 						SubsurfModifierData *smd = (SubsurfModifierData *)md;
-						if (smd->flags & eSubsurfModifierFlag_SubsurfUv) {
+						if (smd->flags & eSubsurfModifierFlag_SubsurfUv_DEPRECATED) {
 							smd->uv_smooth = SUBSURF_UV_SMOOTH_PRESERVE_CORNERS;
 						}
 						else {
@@ -1862,6 +1901,45 @@ void blo_do_versions_280(FileData *fd, Library *UNUSED(lib), Main *bmain)
 					if (md->type == eModifierType_Subsurf) {
 						SubsurfModifierData *smd = (SubsurfModifierData *)md;
 						smd->quality = 3;
+					}
+				}
+			}
+		}
+		/* Versioning code for Multires modifier. */
+		if (!DNA_struct_elem_find(fd->filesdna, "MultiresModifier", "short", "quality")) {
+			for (Object *object = bmain->object.first; object != NULL; object = object->id.next) {
+				for (ModifierData *md = object->modifiers.first; md; md = md->next) {
+					if (md->type == eModifierType_Multires) {
+						MultiresModifierData *mmd = (MultiresModifierData *)md;
+						mmd->quality = 3;
+						if (mmd->flags & eMultiresModifierFlag_PlainUv_DEPRECATED) {
+							mmd->uv_smooth = SUBSURF_UV_SMOOTH_NONE;
+						}
+						else {
+							mmd->uv_smooth = SUBSURF_UV_SMOOTH_PRESERVE_CORNERS;
+						}
+					}
+				}
+			}
+		}
+
+		if (!DNA_struct_elem_find(fd->filesdna, "ClothSimSettings", "short", "bending_model")) {
+			for (Object *ob = bmain->object.first; ob; ob = ob->id.next) {
+				for (ModifierData *md = ob->modifiers.first; md; md = md->next) {
+					if (md->type == eModifierType_Cloth) {
+						ClothModifierData *clmd = (ClothModifierData *)md;
+
+						clmd->sim_parms->bending_model = CLOTH_BENDING_LINEAR;
+						clmd->sim_parms->tension = clmd->sim_parms->structural;
+						clmd->sim_parms->compression = clmd->sim_parms->structural;
+						clmd->sim_parms->shear = clmd->sim_parms->structural;
+						clmd->sim_parms->max_tension = clmd->sim_parms->max_struct;
+						clmd->sim_parms->max_compression = clmd->sim_parms->max_struct;
+						clmd->sim_parms->max_shear = clmd->sim_parms->max_struct;
+						clmd->sim_parms->vgroup_shear = clmd->sim_parms->vgroup_struct;
+						clmd->sim_parms->tension_damp = clmd->sim_parms->Cdis;
+						clmd->sim_parms->compression_damp = clmd->sim_parms->Cdis;
+						clmd->sim_parms->shear_damp = clmd->sim_parms->Cdis;
 					}
 				}
 			}

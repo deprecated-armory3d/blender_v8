@@ -50,6 +50,8 @@
 #include "RNA_access.h"
 
 #include "ED_gpencil.h"
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 #include "ED_object.h"
 #include "ED_transform.h"
 
@@ -61,7 +63,7 @@
 /* Generic Drawing Keymap - Annotations */
 static void ed_keymap_gpencil_general(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* Draw  --------------------------------------- */
@@ -128,7 +130,8 @@ static bool gp_stroke_paintmode_draw_poll(bContext *C)
 	bGPdata *gpd = CTX_data_gpencil_data(C);
 	ToolSettings *ts = CTX_data_tool_settings(C);
 	Brush *brush = BKE_brush_getactive_gpencil(ts);
-	return (gpd && (gpd->flag & GP_DATA_STROKE_PAINTMODE) && (brush) &&
+	return ((gpd) && (gpd->flag & GP_DATA_STROKE_PAINTMODE) &&
+	        (brush && brush->gpencil_settings) &&
 	        (brush->gpencil_settings->brush_type == GP_BRUSH_TYPE_DRAW));
 }
 
@@ -139,7 +142,8 @@ static bool gp_stroke_paintmode_erase_poll(bContext *C)
 	bGPdata *gpd = CTX_data_gpencil_data(C);
 	ToolSettings *ts = CTX_data_tool_settings(C);
 	Brush *brush = BKE_brush_getactive_gpencil(ts);
-	return (gpd && (gpd->flag & GP_DATA_STROKE_PAINTMODE) && (brush) &&
+	return ((gpd) && (gpd->flag & GP_DATA_STROKE_PAINTMODE) &&
+	        (brush && brush->gpencil_settings) &&
 	        (brush->gpencil_settings->brush_type == GP_BRUSH_TYPE_ERASE));
 }
 
@@ -150,7 +154,8 @@ static bool gp_stroke_paintmode_fill_poll(bContext *C)
 	bGPdata *gpd = CTX_data_gpencil_data(C);
 	ToolSettings *ts = CTX_data_tool_settings(C);
 	Brush *brush = BKE_brush_getactive_gpencil(ts);
-	return (gpd && (gpd->flag & GP_DATA_STROKE_PAINTMODE) && (brush) &&
+	return ((gpd) && (gpd->flag & GP_DATA_STROKE_PAINTMODE) &&
+	        (brush && brush->gpencil_settings) &&
 	        (brush->gpencil_settings->brush_type == GP_BRUSH_TYPE_FILL));
 }
 
@@ -193,13 +198,7 @@ static void ed_keymap_gpencil_selection(wmKeyMap *keymap)
 	wmKeyMapItem *kmi;
 
 	/* select all */
-	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-
-	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "GPENCIL_OT_select_all");
 
 	/* circle select */
 	WM_keymap_add_item(keymap, "GPENCIL_OT_select_circle", CKEY, KM_PRESS, 0, 0);
@@ -213,10 +212,11 @@ static void ed_keymap_gpencil_selection(wmKeyMap *keymap)
 	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_lasso", EVT_TWEAK_A, KM_ANY, KM_SHIFT | KM_CTRL, 0);
 	RNA_boolean_set(kmi->ptr, "deselect", true);
 
-	/* In the Node Editor, lasso select needs ALT modifier too (as somehow CTRL+LMB drag gets taken for "cut" quite early)
-	* There probably isn't too much harm adding this for other editors too as part of standard GP editing keymap. This hotkey
-	* combo doesn't seem to see much use under standard scenarios?
-	*/
+	/* In the Node Editor, lasso select needs ALT modifier too
+	 * (as somehow CTRL+LMB drag gets taken for "cut" quite early)
+	 * There probably isn't too much harm adding this for other editors too as part of standard GP editing keymap.
+	 * This hotkey combo doesn't seem to see much use under standard scenarios?
+	 */
 	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_lasso", EVT_TWEAK_A, KM_ANY, KM_CTRL | KM_ALT, 0);
 	RNA_boolean_set(kmi->ptr, "deselect", false);
 	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_select_lasso", EVT_TWEAK_A, KM_ANY, KM_SHIFT | KM_CTRL | KM_ALT, 0);
@@ -271,11 +271,11 @@ static void ed_keymap_gpencil_sculpt(wmKeyMap *keymap)
 	/* Sculpting ------------------------------------- */
 
 	/* Brush-Based Editing:
-	*   EKEY + LMB                          = Single stroke, draw immediately
-	*        + Other Modifiers (Ctrl/Shift) = Invert, Smooth, etc.
-	*
-	* For the modal version, use D+E -> Sculpt
-	*/
+	 *   EKEY + LMB                          = Single stroke, draw immediately
+	 *        + Other Modifiers (Ctrl/Shift) = Invert, Smooth, etc.
+	 *
+	 * For the modal version, use D+E -> Sculpt
+	 */
 	/* GPXX: disabled to make toolsystem works */
 	//kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_brush_paint", LEFTMOUSE, KM_PRESS, 0, 0);
 	//RNA_boolean_set(kmi->ptr, "wait_for_input", false);
@@ -308,11 +308,11 @@ static void ed_keymap_gpencil_weight(wmKeyMap *keymap)
 
 
 	/* Brush-Based Editing:
-	*   EKEY + LMB                          = Single stroke, draw immediately
-	*        + Other Modifiers (Ctrl/Shift) = Invert, Smooth, etc.
-	*
-	* For the modal version, use D+E -> Sculpt
-	*/
+	 *   EKEY + LMB                          = Single stroke, draw immediately
+	 *        + Other Modifiers (Ctrl/Shift) = Invert, Smooth, etc.
+	 *
+	 * For the modal version, use D+E -> Sculpt
+	 */
 	/* GPXX: disabled to make toolsystem works */
 	//kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_brush_paint", LEFTMOUSE, KM_PRESS, 0, 0);
 	//RNA_boolean_set(kmi->ptr, "wait_for_input", false);
@@ -331,7 +331,7 @@ static void ed_keymap_gpencil_weight(wmKeyMap *keymap)
 /* Stroke Editing Keymap - Only when editmode is enabled */
 static void ed_keymap_gpencil_editing(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Edit Mode", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Edit Mode", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback - so that this keymap only gets enabled when stroke editmode is enabled */
@@ -459,7 +459,7 @@ static void ed_keymap_gpencil_editing(wmKeyConfig *keyconf)
 /* keys for draw with a drawing brush (no fill) */
 static void ed_keymap_gpencil_painting_draw(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Paint (Draw brush)", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Paint (Draw brush)", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback */
@@ -490,8 +490,8 @@ static void ed_keymap_gpencil_painting_draw(wmKeyConfig *keyconf)
 
 	/* Tablet Mappings for Drawing ------------------ */
 	/* For now, only support direct drawing using the eraser, as most users using a tablet
-	* may still want to use that as their primary pointing device!
-	*/
+	 * may still want to use that as their primary pointing device!
+	 */
 #if 0
 	kmi = WM_keymap_add_item(keymap, "GPENCIL_OT_draw", TABLET_STYLUS, KM_PRESS, 0, 0);
 	RNA_enum_set(kmi->ptr, "mode", GP_PAINTMODE_DRAW);
@@ -514,7 +514,7 @@ static void ed_keymap_gpencil_painting_draw(wmKeyConfig *keyconf)
 /* keys for draw with a eraser brush (erase) */
 static void ed_keymap_gpencil_painting_erase(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Paint (Erase)", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Paint (Erase)", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback */
@@ -541,7 +541,7 @@ static void ed_keymap_gpencil_painting_erase(wmKeyConfig *keyconf)
 /* keys for draw with a fill brush */
 static void ed_keymap_gpencil_painting_fill(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Paint (Fill)", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Paint (Fill)", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback */
@@ -573,7 +573,7 @@ static void ed_keymap_gpencil_painting_fill(wmKeyConfig *keyconf)
 /* Stroke Painting Keymap - Only when paintmode is enabled */
 static void ed_keymap_gpencil_painting(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Paint Mode", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Paint Mode", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback - so that this keymap only gets enabled when stroke paintmode is enabled */
@@ -598,7 +598,7 @@ static void ed_keymap_gpencil_painting(wmKeyConfig *keyconf)
 /* Stroke Sculpting Keymap - Only when sculptmode is enabled */
 static void ed_keymap_gpencil_sculpting(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Sculpt Mode", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Sculpt Mode", 0, 0);
 
 	/* set poll callback - so that this keymap only gets enabled when stroke sculptmode is enabled */
 	keymap->poll = gp_stroke_sculptmode_poll;
@@ -616,7 +616,7 @@ static void ed_keymap_gpencil_sculpting(wmKeyConfig *keyconf)
 /* Stroke Weight Paint Keymap - Only when weight is enabled */
 static void ed_keymap_gpencil_weightpainting(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Grease Pencil Stroke Weight Mode", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Grease Pencil Stroke Weight Mode", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* set poll callback - so that this keymap only gets enabled when stroke sculptmode is enabled */
@@ -714,6 +714,7 @@ void ED_operatortypes_gpencil(void)
 	WM_operatortype_append(GPENCIL_OT_layer_remove);
 	WM_operatortype_append(GPENCIL_OT_layer_move);
 	WM_operatortype_append(GPENCIL_OT_layer_duplicate);
+	WM_operatortype_append(GPENCIL_OT_layer_duplicate_object);
 
 	WM_operatortype_append(GPENCIL_OT_hide);
 	WM_operatortype_append(GPENCIL_OT_reveal);
@@ -728,6 +729,7 @@ void ED_operatortypes_gpencil(void)
 	WM_operatortype_append(GPENCIL_OT_active_frames_delete_all);
 	WM_operatortype_append(GPENCIL_OT_frame_duplicate);
 	WM_operatortype_append(GPENCIL_OT_frame_clean_fill);
+	WM_operatortype_append(GPENCIL_OT_frame_clean_loose);
 
 	WM_operatortype_append(GPENCIL_OT_convert);
 
@@ -779,6 +781,8 @@ void ED_operatortypes_gpencil(void)
 	/* convert old 2.7 files to 2.8 */
 	WM_operatortype_append(GPENCIL_OT_convert_old_files);
 
+	/* armatures */
+	WM_operatortype_append(GPENCIL_OT_generate_weights);
 }
 
 void ED_operatormacros_gpencil(void)

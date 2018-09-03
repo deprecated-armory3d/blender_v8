@@ -236,7 +236,7 @@ typedef enum eGPDframe_Flag {
 typedef struct bGPDlayer_runtime {
 	struct GHash *derived_data;     /* runtime data created by modifiers */
 	int icon_id;                    /* id for dynamic icon used to show annotation color preview for layer */
-	char pad[4];
+	int batch_index;                /* batch used for dupli instances */
 } bGPDlayer_runtime;
 
 /* Grease-Pencil Annotations - 'Layer' */
@@ -315,9 +315,9 @@ typedef struct bGPdata_runtime {
 	short bfill_style;          /* buffer style for filling areas (used to select shader type) */
 
 	/* Stroke Buffer data (only used during paint-session)
-	* 	- buffer must be initialized before use, but freed after
-	*	  whole paint operation is over
-	*/
+	 * - buffer must be initialized before use, but freed after
+	 *   whole paint operation is over
+	 */
 	short sbuffer_size;			/* number of elements currently in cache */
 	short sbuffer_sflag;		/* flags for stroke that cache represents */
 	char pad_[6];
@@ -359,9 +359,10 @@ typedef struct bGPdata {
 	/* stats */
 	short totlayer;
 	short totframe;
-	short totstroke;
-	short totpoint;
 	char pad_2[6];
+	int   totstroke;
+	int   totpoint;
+	char pad_3[4];
 	bGPdata_runtime runtime;
 } bGPdata;
 
@@ -420,6 +421,14 @@ typedef enum eGPdata_Flag {
 
 	/* Allow edit several frames at the same time */
 	GP_DATA_STROKE_MULTIEDIT = (1 << 16),
+
+	/* Force fill recalc if use deformation modifiers.
+	 * this is required if the stroke is deformed and the triangulation data is
+	 * not valid.
+	 */
+	GP_DATA_STROKE_FORCE_RECALC = (1 << 17),
+	/* Special mode drawing polygons */
+	GP_DATA_STROKE_POLYGON = (1 << 18),
 } eGPdata_Flag;
 
 /* gpd->onion_flag */

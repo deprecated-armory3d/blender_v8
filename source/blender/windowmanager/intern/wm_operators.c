@@ -1493,7 +1493,7 @@ static uiBlock *wm_block_create_splash(bContext *C, ARegion *ar, void *UNUSED(ar
 	UI_block_func_set(block, wm_block_splash_refreshmenu, block, NULL);
 
 	/* label for 'a' bugfix releases, or 'Release Candidate 1'...
-	 *  avoids recreating splash for version updates */
+	 * avoids recreating splash for version updates */
 	if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "alpha")) {
 		version_suffix = "Alpha 2";
 	}
@@ -1570,24 +1570,17 @@ static uiBlock *wm_block_create_splash(bContext *C, ARegion *ar, void *UNUSED(ar
 	uiItemL(col, IFACE_("Links"), ICON_NONE);
 	uiItemStringO(col, IFACE_("Join the Development Fund"), ICON_URL, "WM_OT_url_open", "url",
 	              "https://www.blender.org/foundation/development-fund/");
-	uiItemStringO(col, IFACE_("Donations"), ICON_URL, "WM_OT_url_open", "url",
-	              "http://www.blender.org/foundation/donation-payment/");
-	uiItemStringO(col, IFACE_("Credits"), ICON_URL, "WM_OT_url_open", "url",
-	              "http://www.blender.org/about/credits/");
-	BLI_snprintf(url, sizeof(url), "https://wiki.blender.org/wiki/Reference/Release_Notes/%d.%d",
-	             BLENDER_VERSION / 100, BLENDER_VERSION % 100);
-	uiItemStringO(col, IFACE_("Release Log"), ICON_URL, "WM_OT_url_open", "url", url);
+	uiItemStringO(col, IFACE_("Donate"), ICON_URL, "WM_OT_url_open", "url",
+	              "https://www.blender.org/foundation/donation-payment/");
+	uiItemS(col);
 	uiItemStringO(col, IFACE_("Manual"), ICON_URL, "WM_OT_url_open", "url",
 	              "https://docs.blender.org/manual/en/dev/");
-	uiItemStringO(col, IFACE_("Blender Website"), ICON_URL, "WM_OT_url_open", "url", "http://www.blender.org");
-	if (STREQ(STRINGIFY(BLENDER_VERSION_CYCLE), "release")) {
-		BLI_snprintf(url, sizeof(url), "https://docs.blender.org/api/%d.%d"STRINGIFY(BLENDER_VERSION_CHAR),
-		             BLENDER_VERSION / 100, BLENDER_VERSION % 100);
-	}
-	else {
-		BLI_snprintf(url, sizeof(url), "https://docs.blender.org/api/master");
-	}
-	uiItemStringO(col, IFACE_("Python API Reference"), ICON_URL, "WM_OT_url_open", "url", url);
+	BLI_snprintf(url, sizeof(url), "https://wiki.blender.org/wiki/Reference/Release_Notes/%d.%d",
+	             BLENDER_VERSION / 100, BLENDER_VERSION % 100);
+	uiItemStringO(col, IFACE_("Release Notes"), ICON_URL, "WM_OT_url_open", "url", url);
+	uiItemStringO(col, IFACE_("Blender Website"), ICON_URL, "WM_OT_url_open", "url", "https://www.blender.org");
+	uiItemStringO(col, IFACE_("Credits"), ICON_URL, "WM_OT_url_open", "url",
+	              "https://www.blender.org/about/credits/");
 	uiItemL(col, "", ICON_NONE);
 
 	col = uiLayoutColumn(split, false);
@@ -3218,7 +3211,6 @@ void wm_operatortypes_register(void)
 	WM_operatortype_append(WM_OT_read_factory_settings);
 	WM_operatortype_append(WM_OT_save_homefile);
 	WM_operatortype_append(WM_OT_save_userpref);
-	WM_operatortype_append(WM_OT_save_workspace_file);
 	WM_operatortype_append(WM_OT_userpref_autoexec_path_add);
 	WM_operatortype_append(WM_OT_userpref_autoexec_path_remove);
 	WM_operatortype_append(WM_OT_window_fullscreen_toggle);
@@ -3452,7 +3444,7 @@ static void gesture_zoom_border_modal_keymap(wmKeyConfig *keyconf)
 /* default keymap for windows and screens, only call once per WM */
 void wm_window_keymap(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Window", 0, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Window", 0, 0);
 	wmKeyMapItem *kmi;
 
 	/* note, this doesn't replace existing keymap items */
@@ -3462,7 +3454,7 @@ void wm_window_keymap(wmKeyConfig *keyconf)
 
 #ifdef __APPLE__
 	WM_keymap_add_item(keymap, "WM_OT_read_homefile", NKEY, KM_PRESS, KM_OSKEY, 0);
-	WM_keymap_add_menu(keymap, "INFO_MT_file_open_recent", OKEY, KM_PRESS, KM_SHIFT | KM_OSKEY, 0);
+	WM_keymap_add_menu(keymap, "TOPBAR_MT_file_open_recent", OKEY, KM_PRESS, KM_SHIFT | KM_OSKEY, 0);
 	WM_keymap_add_item(keymap, "WM_OT_open_mainfile", OKEY, KM_PRESS, KM_OSKEY, 0);
 	WM_keymap_add_item(keymap, "WM_OT_save_mainfile", SKEY, KM_PRESS, KM_OSKEY, 0);
 	WM_keymap_add_item(keymap, "WM_OT_save_as_mainfile", SKEY, KM_PRESS, KM_SHIFT | KM_OSKEY, 0);
@@ -3472,7 +3464,7 @@ void wm_window_keymap(wmKeyConfig *keyconf)
 #ifdef USE_WM_KEYMAP_27X
 	WM_keymap_add_item(keymap, "WM_OT_save_homefile", UKEY, KM_PRESS, KM_CTRL, 0);
 #endif
-	WM_keymap_add_menu(keymap, "INFO_MT_file_open_recent", OKEY, KM_PRESS, KM_SHIFT | KM_CTRL, 0);
+	WM_keymap_add_menu(keymap, "TOPBAR_MT_file_open_recent", OKEY, KM_PRESS, KM_SHIFT | KM_CTRL, 0);
 	WM_keymap_add_item(keymap, "WM_OT_open_mainfile", OKEY, KM_PRESS, KM_CTRL, 0);
 #ifdef USE_WM_KEYMAP_27X
 	WM_keymap_add_item(keymap, "WM_OT_open_mainfile", F1KEY, KM_PRESS, 0, 0);

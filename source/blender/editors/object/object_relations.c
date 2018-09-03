@@ -37,8 +37,8 @@
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_mesh_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_constraint_types.h"
-#include "DNA_group_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_lattice_types.h"
 #include "DNA_material_types.h"
@@ -109,6 +109,7 @@
 
 #include "ED_armature.h"
 #include "ED_curve.h"
+#include "ED_gpencil.h"
 #include "ED_keyframing.h"
 #include "ED_object.h"
 #include "ED_mesh.h"
@@ -789,6 +790,23 @@ bool ED_object_parent_set(ReportList *reports, const bContext *C, Scene *scene, 
 				else if (partype == PAR_ARMATURE_AUTO) {
 					WM_cursor_wait(1);
 					ED_object_vgroup_calc_from_armature(reports, depsgraph, scene, ob, par, ARM_GROUPS_AUTO, xmirror);
+					WM_cursor_wait(0);
+				}
+				/* get corrected inverse */
+				ob->partype = PAROBJECT;
+				BKE_object_workob_calc_parent(depsgraph, scene, ob, &workob);
+
+				invert_m4_m4(ob->parentinv, workob.obmat);
+			}
+			else if (pararm && (ob->type == OB_GPENCIL) && (par->type == OB_ARMATURE)) {
+				if (partype == PAR_ARMATURE_NAME) {
+					ED_gpencil_add_armature_weights(C, reports, ob, par, GP_PAR_ARMATURE_NAME);
+				}
+				else if ((partype == PAR_ARMATURE_AUTO) ||
+				         (partype == PAR_ARMATURE_ENVELOPE))
+				{
+					WM_cursor_wait(1);
+					ED_gpencil_add_armature_weights(C, reports, ob, par, GP_PAR_ARMATURE_AUTO);
 					WM_cursor_wait(0);
 				}
 				/* get corrected inverse */
@@ -2225,6 +2243,14 @@ static void make_override_static_tag_object(Object *obact, Object *ob)
 	}
 }
 
+static void make_override_static_tag_collections(Collection *collection)
+{
+	collection->id.tag |= LIB_TAG_DOIT;
+	for (CollectionChild *coll_child = collection->children.first; coll_child != NULL; coll_child = coll_child->next) {
+		make_override_static_tag_collections(coll_child->collection);
+	}
+}
+
 /* Set the object to override. */
 static int make_override_static_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
@@ -2273,14 +2299,15 @@ static int make_override_static_exec(bContext *C, wmOperator *op)
 	bool success = false;
 
 	if (!ID_IS_LINKED(obact) && obact->dup_group != NULL && ID_IS_LINKED(obact->dup_group)) {
-		const ListBase dup_collection_objects = BKE_collection_object_cache_get(obact->dup_group);
-		Base *base = BLI_findlink(&dup_collection_objects, RNA_enum_get(op->ptr, "object"));
 		Object *obcollection = obact;
-		obact = base->object;
 		Collection *collection = obcollection->dup_group;
 
-		/* First, we make a static override of the linked collection itself. */
-		collection->id.tag |= LIB_TAG_DOIT;
+		const ListBase dup_collection_objects = BKE_collection_object_cache_get(collection);
+		Base *base = BLI_findlink(&dup_collection_objects, RNA_enum_get(op->ptr, "object"));
+		obact = base->object;
+
+		/* First, we make a static override of the linked collection itself, and all its children. */
+		make_override_static_tag_collections(collection);
 
 		/* Then, we make static override of the whole set of objects in the Collection. */
 		FOREACH_COLLECTION_OBJECT_RECURSIVE_BEGIN(collection, ob)
@@ -2308,6 +2335,8 @@ static int make_override_static_exec(bContext *C, wmOperator *op)
 		Scene *scene = CTX_data_scene(C);
 		ViewLayer *view_layer = CTX_data_view_layer(C);
 		Collection *new_collection = (Collection *)collection->id.newid;
+
+		BKE_collection_child_add(bmain, scene->master_collection, new_collection);
 		FOREACH_COLLECTION_OBJECT_RECURSIVE_BEGIN(new_collection, new_ob)
 		{
 			if (new_ob != NULL && new_ob->id.override_static != NULL) {

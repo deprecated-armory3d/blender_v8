@@ -23,9 +23,9 @@
  * ***** END GPL LICENSE BLOCK *****
  */
 
-/** \file blender/editors/gpencil/gpencil_fill.c
- *  \ingroup edgpencil
- */
+ /** \file blender/editors/gpencil/gpencil_fill.c
+  *  \ingroup edgpencil
+  */
 
 #include <stdio.h>
 
@@ -47,6 +47,7 @@
 
 #include "BKE_main.h"
 #include "BKE_brush.h"
+#include "BKE_deform.h"
 #include "BKE_image.h"
 #include "BKE_gpencil.h"
 #include "BKE_material.h"
@@ -84,7 +85,7 @@
 #define LEAK_VERT 1
 
 
-/* Temporary fill operation data (op->customdata) */
+  /* Temporary fill operation data (op->customdata) */
 typedef struct tGPDfill {
 	struct Main *bmain;
 	struct Depsgraph *depsgraph;
@@ -124,10 +125,10 @@ typedef struct tGPDfill {
 } tGPDfill;
 
 
- /* draw a given stroke using same thickness and color for all points */
+/* draw a given stroke using same thickness and color for all points */
 static void gp_draw_basic_stroke(
-        tGPDfill *tgpf, bGPDstroke *gps, const float diff_mat[4][4],
-        bool cyclic, float ink[4], int flag, float thershold)
+	tGPDfill *tgpf, bGPDstroke *gps, const float diff_mat[4][4],
+	bool cyclic, float ink[4], int flag, float thershold)
 {
 	bGPDspoint *points = gps->points;
 
@@ -218,7 +219,7 @@ static void gp_draw_datablock(tGPDfill *tgpf, float ink[4])
 			continue;
 
 		/* get frame to draw */
-		bGPDframe *gpf = BKE_gpencil_layer_getframe(gpl, cfra_eval, 0);
+		bGPDframe *gpf = BKE_gpencil_layer_getframe(gpl, cfra_eval, GP_GETFRAME_USE_PREV);
 		if (gpf == NULL)
 			continue;
 
@@ -266,7 +267,7 @@ static void gp_draw_datablock(tGPDfill *tgpf, float ink[4])
 	glDisable(GL_BLEND);
 }
 
- /* draw strokes in offscreen buffer */
+/* draw strokes in offscreen buffer */
 static void gp_render_offscreen(tGPDfill *tgpf)
 {
 	bool is_ortho = false;
@@ -298,8 +299,8 @@ static void gp_render_offscreen(tGPDfill *tgpf)
 	int bwiny = tgpf->ar->winy;
 	rcti brect = tgpf->ar->winrct;
 
-	tgpf->ar->winx = (short) tgpf->sizex;
-	tgpf->ar->winy = (short) tgpf->sizey;
+	tgpf->ar->winx = (short)tgpf->sizex;
+	tgpf->ar->winy = (short)tgpf->sizey;
 	tgpf->ar->winrct.xmin = 0;
 	tgpf->ar->winrct.ymin = 0;
 	tgpf->ar->winrct.xmax = tgpf->sizex;
@@ -314,8 +315,8 @@ static void gp_render_offscreen(tGPDfill *tgpf)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	ED_view3d_update_viewmat(
-	        tgpf->depsgraph, tgpf->scene, tgpf->v3d, tgpf->ar,
-	        NULL, winmat, NULL);
+		tgpf->depsgraph, tgpf->scene, tgpf->v3d, tgpf->ar,
+		NULL, winmat, NULL);
 	/* set for opengl */
 	GPU_matrix_projection_set(tgpf->rv3d->winmat);
 	GPU_matrix_set(tgpf->rv3d->viewmat);
@@ -419,7 +420,7 @@ static bool is_leak_narrow(ImBuf *ibuf, const int maxpixel, int limit, int index
 			if (pt <= maxpixel) {
 				get_pixel(ibuf, pt, rgba);
 				if (rgba[0] == 1.0f) {
-					t_a =  true;
+					t_a = true;
 					break;
 				}
 			}
@@ -447,8 +448,7 @@ static bool is_leak_narrow(ImBuf *ibuf, const int maxpixel, int limit, int index
 
 	/* Vertical leak (check horizontal pixels)
 	 *
-	 *  XXXxB7XX
-	 *
+	 * XXXxB7XX
 	 */
 	if (type == LEAK_VERT) {
 		/* get pixel range of the row */
@@ -514,17 +514,17 @@ static void gpencil_boundaryfill_area(tGPDfill *tgpf)
 	}
 
 	/* the fill use a stack to save the pixel list instead of the common recursive
-	* 4-contact point method.
-	* The problem with recursive calls is that for big fill areas, we can get max limit
-	* of recursive calls and STACK_OVERFLOW error.
-	*
-	* The 4-contact point analyze the pixels to the left, right, bottom and top
-	*      -----------
-	*      |    X    |
-	*      |   XoX   |
-	*      |    X    |
-	*      -----------
-	*/
+	 * 4-contact point method.
+	 * The problem with recursive calls is that for big fill areas, we can get max limit
+	 * of recursive calls and STACK_OVERFLOW error.
+	 *
+	 * The 4-contact point analyze the pixels to the left, right, bottom and top
+	 *      -----------
+	 *      |    X    |
+	 *      |   XoX   |
+	 *      |    X    |
+	 *      -----------
+	 */
 	while (!BLI_stack_is_empty(stack)) {
 		int v;
 		BLI_stack_pop(stack, &v);
@@ -736,8 +736,8 @@ static void gpencil_get_depth_array(tGPDfill *tgpf)
 	}
 
 	/* for surface sketching, need to set the right OpenGL context stuff so that
-	* the conversions will project the values correctly...
-	*/
+	 * the conversions will project the values correctly...
+	 */
 	if (ts->gpencil_v3d_align & GP_PROJECT_DEPTH_VIEW) {
 		/* need to restore the original projection settings before packing up */
 		view3d_region_operator_needs_opengl(tgpf->win, tgpf->ar);
@@ -803,7 +803,7 @@ static void gpencil_points_from_stack(tGPDfill *tgpf)
 		point2D->y = v[1];
 
 		point2D->pressure = 1.0f;
-		point2D->strength = 1.0f;;
+		point2D->strength = 1.0f;
 		point2D->time = 0.0f;
 		point2D++;
 	}
@@ -822,7 +822,7 @@ static void gpencil_stroke_from_buffer(tGPDfill *tgpf)
 	}
 
 	bGPDspoint *pt;
-	MDeformVert *dvert;
+	MDeformVert *dvert = NULL;
 	tGPspoint *point2D;
 
 	if (tgpf->sbuffer_size == 0) {
@@ -842,11 +842,15 @@ static void gpencil_stroke_from_buffer(tGPDfill *tgpf)
 	gps->flag |= GP_STROKE_3DSPACE;
 
 	gps->mat_nr = BKE_gpencil_get_material_index(tgpf->ob, tgpf->mat) - 1;
+	if (gps->mat_nr < 0) {
+		BKE_object_material_slot_add(tgpf->bmain, tgpf->ob);
+		assign_material(tgpf->bmain, tgpf->ob, tgpf->mat, tgpf->ob->totcol, BKE_MAT_ASSIGN_USERPREF);
+		gps->mat_nr = tgpf->ob->totcol - 1;
+	}
 
 	/* allocate memory for storage points */
 	gps->totpoints = tgpf->sbuffer_size;
 	gps->points = MEM_callocN(sizeof(bGPDspoint) * tgpf->sbuffer_size, "gp_stroke_points");
-	gps->dvert = MEM_callocN(sizeof(MDeformVert) * tgpf->sbuffer_size, "gp_stroke_weights");
 
 	/* initialize triangle memory to dummy data */
 	gps->tot_triangles = 0;
@@ -863,22 +867,43 @@ static void gpencil_stroke_from_buffer(tGPDfill *tgpf)
 
 	/* add points */
 	pt = gps->points;
-	dvert = gps->dvert;
 	point2D = (tGPspoint *)tgpf->sbuffer;
-	for (int i = 0; i < tgpf->sbuffer_size && point2D; i++, point2D++, pt++, dvert++) {
+
+	const int def_nr = tgpf->ob->actdef - 1;
+	const bool have_weight = (bool)BLI_findlink(&tgpf->ob->defbase, def_nr);
+
+	if ((ts->gpencil_flags & GP_TOOL_FLAG_CREATE_WEIGHTS) && (have_weight)) {
+		BKE_gpencil_dvert_ensure(gps);
+		dvert = gps->dvert;
+	}
+
+	for (int i = 0; i < tgpf->sbuffer_size && point2D; i++, point2D++, pt++) {
 		/* convert screen-coordinates to 3D coordinates */
 		gp_stroke_convertcoords_tpoint(
-		        tgpf->scene, tgpf->ar, tgpf->v3d, tgpf->ob,
-		        tgpf->gpl, point2D,
-		        tgpf->depth_arr ? tgpf->depth_arr + i : NULL,
-		        &pt->x);
+			tgpf->scene, tgpf->ar, tgpf->v3d, tgpf->ob,
+			tgpf->gpl, point2D,
+			tgpf->depth_arr ? tgpf->depth_arr + i : NULL,
+			&pt->x);
 
 		pt->pressure = 1.0f;
-		pt->strength = 1.0f;;
+		pt->strength = 1.0f;
 		pt->time = 0.0f;
 
-		dvert->totweight = 0;
-		dvert->dw = NULL;
+		if ((ts->gpencil_flags & GP_TOOL_FLAG_CREATE_WEIGHTS) && (have_weight)) {
+			MDeformWeight *dw = defvert_verify_index(dvert, def_nr);
+			if (dw) {
+				dw->weight = ts->vgroup_weight;
+			}
+
+			dvert++;
+		}
+		else {
+			if (dvert != NULL) {
+				dvert->totweight = 0;
+				dvert->dw = NULL;
+				dvert++;
+			}
+		}
 	}
 
 	/* smooth stroke */

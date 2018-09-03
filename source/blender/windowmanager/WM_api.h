@@ -29,12 +29,12 @@
 /** \file blender/windowmanager/WM_api.h
  *  \ingroup wm
  *
- *  \page wmpage windowmanager
- *  \section wmabout About windowmanager
- *  \ref wm handles events received from \ref GHOST and manages
- *  the screens, areas and input for Blender
- *  \section wmnote NOTE
- *  \todo document
+ * \page wmpage windowmanager
+ * \section wmabout About windowmanager
+ * \ref wm handles events received from \ref GHOST and manages
+ * the screens, areas and input for Blender
+ * \section wmnote NOTE
+ * \todo document
  */
 
 /* dna-savable wmStructs here */
@@ -82,6 +82,9 @@ typedef struct wmGizmoMap wmGizmoMap;
 typedef struct wmGizmoMapType wmGizmoMapType;
 
 /* general API */
+void		WM_init_state_app_template_set(const char *app_template);
+const char *WM_init_state_app_template_get(void);
+
 void		WM_init_state_size_set		(int stax, int stay, int sizx, int sizy);
 void		WM_init_state_fullscreen_set(void);
 void		WM_init_state_normal_set(void);
@@ -364,6 +367,7 @@ void        WM_operator_properties_select_action(struct wmOperatorType *ot, int 
 void        WM_operator_properties_select_action_simple(struct wmOperatorType *ot, int default_action);
 void        WM_operator_properties_select_random(struct wmOperatorType *ot);
 int         WM_operator_properties_select_random_seed_increment_get(wmOperator *op);
+void        WM_operator_properties_select_operation(struct wmOperatorType *ot);
 struct CheckerIntervalParams {
 	int nth;  /* bypass when set to zero */
 	int skip;
@@ -375,14 +379,6 @@ void        WM_operator_properties_checker_interval_from_op(
 bool        WM_operator_properties_checker_interval_test(
         const struct CheckerIntervalParams *op_params, int depth);
 
-
-/* MOVE THIS SOMEWHERE ELSE */
-#define	SEL_TOGGLE		0
-#define	SEL_SELECT		1
-#define SEL_DESELECT	2
-#define SEL_INVERT		3
-
-
 /* flags for WM_operator_properties_filesel */
 #define WM_FILESEL_RELPATH		(1 << 0)
 
@@ -390,7 +386,6 @@ bool        WM_operator_properties_checker_interval_test(
 #define WM_FILESEL_FILENAME		(1 << 2)
 #define WM_FILESEL_FILEPATH		(1 << 3)
 #define WM_FILESEL_FILES		(1 << 4)
-
 
 		/* operator as a python command (resultuing string must be freed) */
 char		*WM_operator_pystring_ex(struct bContext *C, struct wmOperator *op,

@@ -595,7 +595,6 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		bf_editor_space_clip
 
 		bf_editor_transform
-		bf_editor_util
 		bf_editor_uvedit
 		bf_editor_curve
 		bf_editor_interface
@@ -616,6 +615,7 @@ function(SETUP_BLENDER_SORTED_LIBS)
 		bf_editor_datafiles
 		bf_editor_mask
 		bf_editor_io
+		bf_editor_util
 
 		bf_render
 		bf_python
@@ -704,6 +704,7 @@ function(SETUP_BLENDER_SORTED_LIBS)
 
 		bf_intern_glew_mx
 		bf_intern_clog
+		bf_intern_opensubdiv
 	)
 
 	if(NOT WITH_SYSTEM_GLOG)
@@ -774,10 +775,6 @@ function(SETUP_BLENDER_SORTED_LIBS)
 
 	if(WIN32)
 		list(APPEND BLENDER_SORTED_LIBS bf_intern_gpudirect)
-	endif()
-
-	if(WITH_OPENSUBDIV OR WITH_CYCLES_OPENSUBDIV)
-		list(APPEND BLENDER_SORTED_LIBS bf_intern_opensubdiv)
 	endif()
 
 	if(WITH_OPENVDB)

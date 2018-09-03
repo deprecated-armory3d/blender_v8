@@ -251,7 +251,7 @@ class DATA_PT_camera_dof_aperture(CameraButtonsPanel, Panel):
             col.prop(dof_options, "ratio")
         else:
             col = flow.column()
-            col.label("Viewport")
+            col.label(text="Viewport")
             col.prop(dof_options, "fstop")
             col.prop(dof_options, "blades")
 
@@ -284,13 +284,18 @@ class DATA_PT_camera_background_image(CameraButtonsPanel, Panel):
                 row.prop(bg.image, "name", text="", emboss=False)
             elif bg.source == 'MOVIE_CLIP' and bg.clip:
                 row.prop(bg.clip, "name", text="", emboss=False)
+            elif bg.source and bg.use_camera_clip:
+                row.label(text="Camera Clip")
             else:
                 row.label(text="Not Set")
 
-            if bg.show_background_image:
-                row.prop(bg, "show_background_image", text="", emboss=False, icon='RESTRICT_VIEW_OFF')
-            else:
-                row.prop(bg, "show_background_image", text="", emboss=False, icon='RESTRICT_VIEW_ON')
+            row.prop(
+                bg,
+                "show_background_image",
+                text="",
+                emboss=False,
+                icon='RESTRICT_VIEW_OFF' if bg.show_background_image else 'RESTRICT_VIEW_ON',
+            )
 
             row.operator("view3d.background_image_remove", text="", emboss=False, icon='X').index = i
 

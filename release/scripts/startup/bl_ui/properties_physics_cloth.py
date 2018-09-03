@@ -74,20 +74,38 @@ class PHYSICS_PT_cloth(PhysicButtonsPanel, Panel):
         col = flow.column()
         col.prop(cloth, "quality", text="Quality Steps")
         col.prop(cloth, "time_scale", text="Speed Multiplier")
+        col.prop(cloth, "bending_model")
 
         col.separator()
 
         col = flow.column()
         col.prop(cloth, "mass", text="Material Mass")
-        col.prop(cloth, "structural_stiffness", text="Structural")
+        col.prop(cloth, "air_damping", text="Air")
+        col.prop(cloth, "vel_damping", text="Velocity")
+
+        col.separator()
+
+        col = flow.column()
+        if cloth.bending_model == 'ANGULAR':
+            col.prop(cloth, "tension_stiffness", text="Stiffness Tension")
+            col.prop(cloth, "compression_stiffness", text="Compression")
+        else:
+            col.prop(cloth, "tension_stiffness", text="Stiffness Structural")
+
+        col.prop(cloth, "shear_stiffness", text="Shear")
         col.prop(cloth, "bending_stiffness", text="Bending")
 
         col.separator()
 
         col = flow.column()
-        col.prop(cloth, "spring_damping", text="Damping Spring")
-        col.prop(cloth, "air_damping", text="Air")
-        col.prop(cloth, "vel_damping", text="Velocity")
+        if cloth.bending_model == 'ANGULAR':
+            col.prop(cloth, "tension_damping", text="Damping Tension")
+            col.prop(cloth, "compression_damping", text="Compression")
+        else:
+            col.prop(cloth, "tension_damping", text="Damping Structural")
+
+        col.prop(cloth, "shear_damping", text="Shear")
+        col.prop(cloth, "bending_damping", text="Bending")
 
         col = flow.column()
         col.prop(cloth, "use_dynamic_mesh", text="Dynamic Mesh")
@@ -95,11 +113,9 @@ class PHYSICS_PT_cloth(PhysicButtonsPanel, Panel):
         key = ob.data.shape_keys
 
         if key:
-            # Note: TODO prop_search doesn't align on the right.
             row = col.row(align=True)
             row.active = not cloth.use_dynamic_mesh
             row.prop_search(cloth, "rest_shape_key", key, "key_blocks", text="Rest Shape Key")
-            row.label(text="", icon='BLANK1')
 
 
 class PHYSICS_PT_cloth_pinning(PhysicButtonsPanel, Panel):
@@ -112,7 +128,7 @@ class PHYSICS_PT_cloth_pinning(PhysicButtonsPanel, Panel):
         md = context.cloth
         cloth = md.settings
 
-        self.layout.active = cloth_panel_enabled(md) and cloth.use_pin_cloth
+        self.layout.active = cloth_panel_enabled(md)
         self.layout.prop(cloth, "use_pin_cloth", text="")
 
     def draw(self, context):
@@ -129,10 +145,7 @@ class PHYSICS_PT_cloth_pinning(PhysicButtonsPanel, Panel):
 
         col = flow.column()
 
-        # Note: TODO prop_search doesn't align on the right.
-        row = col.row(align=True)
-        row.prop_search(cloth, "vertex_group_mass", ob, "vertex_groups", text="Mass Group")
-        row.label(text="", icon='BLANK1')
+        col.prop_search(cloth, "vertex_group_mass", ob, "vertex_groups", text="Mass Group")
 
         col = flow.column()
         col.prop(cloth, "pin_stiffness", text="Stiffness")
@@ -221,10 +234,7 @@ class PHYSICS_PT_cloth_self_collision(PhysicButtonsPanel, Panel):
         col.prop(cloth, "self_distance_min", slider=True, text="Distance")
 
         col = flow.column()
-        # Note: TODO prop_search doesn't align on the right.
-        row = col.row(align=True)
-        row.prop_search(cloth, "vertex_group_self_collisions", ob, "vertex_groups", text="Vertex Group")
-        row.label(text="", icon='BLANK1')
+        col.prop_search(cloth, "vertex_group_self_collisions", ob, "vertex_groups", text="Vertex Group")
 
 
 class PHYSICS_PT_cloth_stiffness(PhysicButtonsPanel, Panel):
@@ -252,24 +262,29 @@ class PHYSICS_PT_cloth_stiffness(PhysicButtonsPanel, Panel):
         flow = layout.grid_flow(row_major=True, columns=0, even_columns=True, even_rows=False, align=True)
 
         col = flow.column()
-        # Note: TODO prop_search doesn't align on the right.
-        row = col.row(align=True)
-        row.prop_search(
+        col.prop_search(
             cloth, "vertex_group_structural_stiffness", ob, "vertex_groups",
             text="Structural Group"
         )
-        row.label(text="", icon='BLANK1')
-        col.prop(cloth, "structural_stiffness_max", text="Max")
+        col.prop(cloth, "tension_stiffness_max", text="Max Tension")
+        col.prop(cloth, "compression_stiffness_max", text="Compression")
 
         col.separator()
 
         col = flow.column()
-        row = col.row(align=True)
-        row.prop_search(
+        col.prop_search(
+            cloth, "vertex_group_shear_stiffness", ob, "vertex_groups",
+            text="Shear Group"
+        )
+        col.prop(cloth, "shear_stiffness_max", text="Max")
+
+        col.separator()
+
+        col = flow.column()
+        col.prop_search(
             cloth, "vertex_group_bending", ob, "vertex_groups",
             text="Bending Group"
         )
-        row.label(text="", icon='BLANK1')
         col.prop(cloth, "bending_stiffness_max", text="Max")
 
 
@@ -302,10 +317,7 @@ class PHYSICS_PT_cloth_sewing(PhysicButtonsPanel, Panel):
         col.separator()
 
         col = col.column()
-        # Note: TODO prop_search doesn't align on the right.
-        row = col.row(align=True)
-        row.prop_search(cloth, "vertex_group_shrink", ob, "vertex_groups", text="Shrinking Group")
-        row.label(text="", icon='BLANK1')
+        col.prop_search(cloth, "vertex_group_shrink", ob, "vertex_groups", text="Shrinking Group")
 
         col = flow.column(align=True)
         col.prop(cloth, "shrink_min", text="Min")

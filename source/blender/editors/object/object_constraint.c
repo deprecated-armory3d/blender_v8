@@ -613,8 +613,11 @@ static bool edit_constraint_poll(bContext *C)
 
 static void edit_constraint_properties(wmOperatorType *ot)
 {
-	RNA_def_string(ot->srna, "constraint", NULL, MAX_NAME, "Constraint", "Name of the constraint to edit");
-	RNA_def_enum(ot->srna, "owner", constraint_owner_items, 0, "Owner", "The owner of this constraint");
+	PropertyRNA *prop;
+	prop = RNA_def_string(ot->srna, "constraint", NULL, MAX_NAME, "Constraint", "Name of the constraint to edit");
+	RNA_def_property_flag(prop, PROP_HIDDEN);
+	prop = RNA_def_enum(ot->srna, "owner", constraint_owner_items, 0, "Owner", "The owner of this constraint");
+	RNA_def_property_flag(prop, PROP_HIDDEN);
 }
 
 static int edit_constraint_invoke_properties(bContext *C, wmOperator *op)
@@ -796,10 +799,10 @@ static void child_get_inverse_matrix(const bContext *C, Scene *scene, Object *ob
 		if (ob && ob->pose && (pchan = BKE_pose_channel_active(ob))) {
 			bConstraint *con_last;
 			/* calculate/set inverse matrix:
-			 *  We just calculate all transform-stack eval up to but not including this constraint.
-			 *  This is because inverse should just inverse correct for just the constraint's influence
-			 *  when it gets applied; that is, at the time of application, we don't know anything about
-			 *  what follows.
+			 * We just calculate all transform-stack eval up to but not including this constraint.
+			 * This is because inverse should just inverse correct for just the constraint's influence
+			 * when it gets applied; that is, at the time of application, we don't know anything about
+			 * what follows.
 			 */
 			float imat[4][4], tmat[4][4];
 			float pmat[4][4];

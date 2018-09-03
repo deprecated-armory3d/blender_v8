@@ -410,7 +410,7 @@ static bool view3d_ruler_to_gpencil(bContext *C, wmGizmoGroup *gzgroup)
 		gpl->flag |= GP_LAYER_HIDE;
 	}
 
-	gpf = BKE_gpencil_layer_getframe(gpl, CFRA, true);
+	gpf = BKE_gpencil_layer_getframe(gpl, CFRA, GP_GETFRAME_ADD_NEW);
 	BKE_gpencil_free_strokes(gpf);
 
 	for (ruler_item = gzgroup->gizmos.first; ruler_item; ruler_item = (RulerItem *)ruler_item->gz.next) {
@@ -422,7 +422,6 @@ static bool view3d_ruler_to_gpencil(bContext *C, wmGizmoGroup *gzgroup)
 		if (ruler_item->flag & RULERITEM_USE_ANGLE) {
 			gps->totpoints = 3;
 			pt = gps->points = MEM_callocN(sizeof(bGPDspoint) * gps->totpoints, "gp_stroke_points");
-			gps->dvert = MEM_callocN(sizeof(MDeformVert) * gps->totpoints, "gp_stroke_weights");
 			for (j = 0; j < 3; j++) {
 				copy_v3_v3(&pt->x, ruler_item->co[j]);
 				pt->pressure = 1.0f;
@@ -433,7 +432,6 @@ static bool view3d_ruler_to_gpencil(bContext *C, wmGizmoGroup *gzgroup)
 		else {
 			gps->totpoints = 2;
 			pt = gps->points = MEM_callocN(sizeof(bGPDspoint) * gps->totpoints, "gp_stroke_points");
-			gps->dvert = MEM_callocN(sizeof(MDeformVert) * gps->totpoints, "gp_stroke_weights");
 			for (j = 0; j < 3; j += 2) {
 				copy_v3_v3(&pt->x, ruler_item->co[j]);
 				pt->pressure = 1.0f;
@@ -462,7 +460,7 @@ static bool view3d_ruler_from_gpencil(const bContext *C, wmGizmoGroup *gzgroup)
 		gpl = BLI_findstring(&scene->gpd->layers, ruler_name, offsetof(bGPDlayer, info));
 		if (gpl) {
 			bGPDframe *gpf;
-			gpf = BKE_gpencil_layer_getframe(gpl, CFRA, false);
+			gpf = BKE_gpencil_layer_getframe(gpl, CFRA, GP_GETFRAME_USE_PREV);
 			if (gpf) {
 				bGPDstroke *gps;
 				for (gps = gpf->strokes.first; gps; gps = gps->next) {

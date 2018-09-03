@@ -349,7 +349,7 @@ INFO_DOCS = (
      "Tips and Tricks: Hints to help you while writing scripts for Blender"),
     ("info_gotcha.rst",
      "Gotcha's: some of the problems you may come up against when writing scripts"),
-     ("change_log.rst", "List of changes since last Blender release"),
+    ("change_log.rst", "List of changes since last Blender release"),
 )
 
 # only support for properties atm.
@@ -461,7 +461,7 @@ if ARGS.sphinx_build_pdf:
 
 # --------------------------------API DUMP--------------------------------------
 
-# lame, python wont give some access
+# lame, python won't give some access
 ClassMethodDescriptorType = type(dict.__dict__['fromkeys'])
 MethodDescriptorType = type(dict.get)
 GetSetDescriptorType = type(int.real)
@@ -645,7 +645,7 @@ def pyfunc2sphinx(ident, fw, module_name, type_name, identifier, py_func, is_cla
     if not is_class:
         func_type = "function"
 
-        # ther rest are class methods
+        # the rest are class methods
     elif arg_str.startswith("(self, ") or arg_str == "(self)":
         arg_str = "()" if (arg_str == "(self)") else ("(" + arg_str[7:])
         func_type = "method"
@@ -779,7 +779,7 @@ def pymodule2sphinx(basepath, module_name, module, title):
     fw(".. module:: %s\n\n" % module_name)
 
     if module.__doc__:
-        # Note, may contain sphinx syntax, dont mangle!
+        # Note, may contain sphinx syntax, don't mangle!
         fw(module.__doc__.strip())
         fw("\n\n")
 
@@ -808,8 +808,7 @@ def pymodule2sphinx(basepath, module_name, module, title):
 
             for submod_name, submod in submod_ls:
                 submod_name_full = "%s.%s" % (module_name, submod_name)
-                fw("   %s.rst\n" % submod_name_full)
-            fw("\n")
+                fw("   %s.rst\n\n" % submod_name_full)
 
                 pymodule2sphinx(basepath, submod_name_full, submod, "%s submodule" % module_name)
         del submod_ls
@@ -983,8 +982,6 @@ context_type_map = {
     "active_gpencil_brush": ("GPencilSculptBrush", False),
     "active_gpencil_frame": ("GreasePencilLayer", True),
     "active_gpencil_layer": ("GPencilLayer", True),
-    "active_gpencil_palette": ("GPencilPalette", True),
-    "active_gpencil_palettecolor": ("GPencilPaletteColor", True),
     "active_node": ("Node", False),
     "active_object": ("Object", False),
     "active_operator": ("Operator", False),
@@ -1013,7 +1010,7 @@ context_type_map = {
     "gpencil_data": ("GreasePencel", False),
     "gpencil_data_owner": ("ID", False),
     "image_paint_object": ("Object", False),
-    "lamp": ("Lamp", False),
+    "light": ("Light", False),
     "lattice": ("Lattice", False),
     "lightprobe": ("LightProbe", False),
     "line_style": ("FreestyleLineStyle", False),
@@ -1027,7 +1024,6 @@ context_type_map = {
     "particle_system": ("ParticleSystem", False),
     "particle_system_editable": ("ParticleSystem", False),
     "pose_bone": ("PoseBone", False),
-    "render_layer": ("SceneLayer", False),
     "scene": ("Scene", False),
     "sculpt_object": ("Object", False),
     "selectable_bases": ("ObjectBase", True),
@@ -1059,6 +1055,7 @@ context_type_map = {
     "visible_pose_bones": ("PoseBone", True),
     "weight_paint_object": ("Object", False),
     "world": ("World", False),
+    "view_layer": ("ViewLayer", False),
 }
 
 
@@ -1079,7 +1076,7 @@ def pycontext2sphinx(basepath):
     def write_contex_cls():
 
         fw(title_string("Global Context", "-"))
-        fw("These properties are avilable in any contexts.\n\n")
+        fw("These properties are available in any contexts.\n\n")
 
         # very silly. could make these global and only access once.
         # structs, funcs, ops, props = rna_info.BuildRNAInfo()
@@ -1103,7 +1100,7 @@ def pycontext2sphinx(basepath):
             if prop.description:
                 fw("   %s\n\n" % prop.description)
 
-            # special exception, cant use genric code here for enums
+            # special exception, can't use generic code here for enums
             if prop.type == "enum":
                 enum_text = pyrna_enum2sphinx(prop)
                 if enum_text:
@@ -1225,7 +1222,7 @@ def pyrna2sphinx(basepath):
             if prop.name or prop.description:
                 fw(ident + "   " + ", ".join(val for val in (prop.name, prop.description) if val) + "\n\n")
 
-            # special exception, cant use genric code here for enums
+            # special exception, can't use generic code here for enums
             if enum_text:
                 write_indented_lines(ident + "   ", fw, enum_text)
                 fw("\n")
@@ -1324,7 +1321,7 @@ def pyrna2sphinx(basepath):
             if prop.description:
                 fw("      %s\n\n" % prop.description)
 
-            # special exception, cant use genric code here for enums
+            # special exception, can't use generic code here for enums
             if prop.type == "enum":
                 enum_text = pyrna_enum2sphinx(prop)
                 if enum_text:
@@ -1357,7 +1354,7 @@ def pyrna2sphinx(basepath):
             elif func.return_values:  # multiple return values
                 fw("      :return (%s):\n" % ", ".join(prop.identifier for prop in func.return_values))
                 for prop in func.return_values:
-                    # TODO, pyrna_enum2sphinx for multiple return values... actually dont
+                    # TODO, pyrna_enum2sphinx for multiple return values... actually don't
                     # think we even use this but still!!!
                     type_descr = prop.get_type_description(
                         as_ret=True, class_fmt=":class:`%s`", collection_id=_BPY_PROP_COLLECTION_ID)
@@ -1833,7 +1830,8 @@ def write_rst_importable_modules(basepath):
         "bpy.app": "Application Data",
         "bpy.app.handlers": "Application Handlers",
         "bpy.app.translations": "Application Translations",
-        "bpy.app.icons": "Application Icons",
+        # TODO(campbell)
+        # "bpy.app.icons": "Application Icons",
         "bpy.props": "Property Definitions",
         "idprop.types": "ID Property Access",
         "mathutils": "Math Types & Utilities",

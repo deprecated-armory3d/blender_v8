@@ -40,6 +40,8 @@
 #include "ED_object.h"
 #include "ED_mesh.h"
 #include "ED_screen.h"
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 
 #include "mesh_intern.h"  /* own include */
 
@@ -166,7 +168,6 @@ void ED_operatortypes_mesh(void)
 	WM_operatortype_append(MESH_OT_customdata_skin_clear);
 	WM_operatortype_append(MESH_OT_customdata_custom_splitnormals_add);
 	WM_operatortype_append(MESH_OT_customdata_custom_splitnormals_clear);
-	WM_operatortype_append(MESH_OT_drop_named_image);
 
 	WM_operatortype_append(MESH_OT_edgering_select);
 	WM_operatortype_append(MESH_OT_loopcut);
@@ -233,14 +234,12 @@ void ED_operatormacros_mesh(void)
 	ot = WM_operatortype_append_macro("MESH_OT_loopcut_slide", "Loop Cut and Slide", "Cut mesh loop and slide it",
 	                                  OPTYPE_UNDO | OPTYPE_REGISTER);
 	WM_operatortype_macro_define(ot, "MESH_OT_loopcut");
-	otmacro = WM_operatortype_macro_define(ot, "TRANSFORM_OT_edge_slide");
-	RNA_boolean_set(otmacro->ptr, "release_confirm", false);
+	WM_operatortype_macro_define(ot, "TRANSFORM_OT_edge_slide");
 
 	ot = WM_operatortype_append_macro("MESH_OT_offset_edge_loops_slide", "Offset Edge Slide", "Offset edge loop slide",
 	                                  OPTYPE_UNDO | OPTYPE_REGISTER);
 	WM_operatortype_macro_define(ot, "MESH_OT_offset_edge_loops");
 	otmacro = WM_operatortype_macro_define(ot, "TRANSFORM_OT_edge_slide");
-	RNA_boolean_set(otmacro->ptr, "release_confirm", false);
 	RNA_boolean_set(otmacro->ptr, "single_side", true);
 
 	ot = WM_operatortype_append_macro("MESH_OT_duplicate_move", "Add Duplicate", "Duplicate mesh and move",
@@ -330,11 +329,20 @@ void ED_keymap_mesh(wmKeyConfig *keyconf)
 	wmKeyMap *keymap;
 	wmKeyMapItem *kmi;
 
-	keymap = WM_keymap_find(keyconf, "Mesh", 0, 0);
+	keymap = WM_keymap_ensure(keyconf, "Mesh", 0, 0);
 	keymap->poll = ED_operator_editmesh;
 
-	WM_keymap_add_item(keymap, "MESH_OT_loopcut_slide", RKEY, KM_PRESS, KM_CTRL, 0);
-	WM_keymap_add_item(keymap, "MESH_OT_offset_edge_loops_slide", RKEY, KM_PRESS, KM_CTRL | KM_SHIFT, 0);
+	kmi = WM_keymap_add_item(keymap, "MESH_OT_loopcut_slide", RKEY, KM_PRESS, KM_CTRL, 0);
+	{
+		PointerRNA macro_ptr = RNA_pointer_get(kmi->ptr, "TRANSFORM_OT_edge_slide");
+		RNA_boolean_set(&macro_ptr, "release_confirm", false);
+	}
+	kmi = WM_keymap_add_item(keymap, "MESH_OT_offset_edge_loops_slide", RKEY, KM_PRESS, KM_CTRL | KM_SHIFT, 0);
+	{
+		PointerRNA macro_ptr = RNA_pointer_get(kmi->ptr, "TRANSFORM_OT_edge_slide");
+		RNA_boolean_set(&macro_ptr, "release_confirm", false);
+	}
+
 	WM_keymap_add_item(keymap, "MESH_OT_inset", IKEY, KM_PRESS, 0, 0);
 #ifdef USE_WM_KEYMAP_27X
 	WM_keymap_add_item(keymap, "MESH_OT_poke", PKEY, KM_PRESS, KM_ALT, 0);
@@ -372,12 +380,7 @@ void ED_keymap_mesh(wmKeyConfig *keyconf)
 	kmi = WM_keymap_add_item(keymap, "MESH_OT_shortest_path_pick", SELECTMOUSE, KM_PRESS, KM_CTRL | KM_SHIFT, 0);
 	RNA_boolean_set(kmi->ptr, "use_fill", true);
 
-	kmi = WM_keymap_add_item(keymap, "MESH_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "MESH_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-	kmi = WM_keymap_add_item(keymap, "MESH_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "MESH_OT_select_all");
 
 	WM_keymap_add_item(keymap, "MESH_OT_select_more", PADPLUSKEY, KM_PRESS, KM_CTRL, 0);
 	WM_keymap_add_item(keymap, "MESH_OT_select_less", PADMINUS, KM_PRESS, KM_CTRL, 0);
@@ -468,7 +471,7 @@ void ED_keymap_mesh(wmKeyConfig *keyconf)
 //	WM_keymap_add_item(keymap, "MESH_OT_skin", FKEY, KM_PRESS, KM_CTRL|KM_ALT, 0); /* python, removed */
 	WM_keymap_add_item(keymap, "MESH_OT_duplicate_move", DKEY, KM_PRESS, KM_SHIFT, 0);
 
-	WM_keymap_add_menu(keymap, "INFO_MT_mesh_add", AKEY, KM_PRESS, KM_SHIFT, 0);
+	WM_keymap_add_menu(keymap, "VIEW3D_MT_mesh_add", AKEY, KM_PRESS, KM_SHIFT, 0);
 
 	WM_keymap_add_item(keymap, "MESH_OT_separate", PKEY, KM_PRESS, 0, 0);
 	WM_keymap_add_item(keymap, "MESH_OT_split", YKEY, KM_PRESS, 0, 0);

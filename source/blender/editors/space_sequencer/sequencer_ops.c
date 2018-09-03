@@ -39,6 +39,8 @@
 #include "ED_sequencer.h"
 #include "ED_markers.h"
 #include "ED_transform.h" /* transform keymap */
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 
 #include "BKE_sequencer.h"
 
@@ -137,7 +139,7 @@ void sequencer_keymap(wmKeyConfig *keyconf)
 	wmKeyMapItem *kmi;
 
 	/* Common items ------------------------------------------------------------------ */
-	keymap = WM_keymap_find(keyconf, "SequencerCommon", SPACE_SEQ, 0);
+	keymap = WM_keymap_ensure(keyconf, "SequencerCommon", SPACE_SEQ, 0);
 
 	WM_keymap_add_item(keymap, "SEQUENCER_OT_properties", NKEY, KM_PRESS, 0, 0);
 
@@ -148,14 +150,9 @@ void sequencer_keymap(wmKeyConfig *keyconf)
 	WM_keymap_add_item(keymap, "SEQUENCER_OT_view_toggle", TABKEY, KM_PRESS, KM_CTRL, 0);
 
 	/* Strips Region --------------------------------------------------------------- */
-	keymap = WM_keymap_find(keyconf, "Sequencer", SPACE_SEQ, 0);
+	keymap = WM_keymap_ensure(keyconf, "Sequencer", SPACE_SEQ, 0);
 
-	kmi = WM_keymap_add_item(keymap, "SEQUENCER_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "SEQUENCER_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-	kmi = WM_keymap_add_item(keymap, "SEQUENCER_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "SEQUENCER_OT_select_all");
 
 	kmi = WM_keymap_add_item(keymap, "SEQUENCER_OT_cut", KKEY, KM_PRESS, 0, 0);
 	RNA_enum_set(kmi->ptr, "type", SEQ_CUT_SOFT);
@@ -342,7 +339,7 @@ void sequencer_keymap(wmKeyConfig *keyconf)
 
 
 	/* Preview Region ----------------------------------------------------------- */
-	keymap = WM_keymap_find(keyconf, "SequencerPreview", SPACE_SEQ, 0);
+	keymap = WM_keymap_ensure(keyconf, "SequencerPreview", SPACE_SEQ, 0);
 	WM_keymap_add_item(keymap, "SEQUENCER_OT_view_all_preview", HOMEKEY, KM_PRESS, 0, 0);
 #ifdef WITH_INPUT_NDOF
 	WM_keymap_add_item(keymap, "SEQUENCER_OT_view_all_preview", NDOF_BUTTON_FIT, KM_PRESS, 0, 0);

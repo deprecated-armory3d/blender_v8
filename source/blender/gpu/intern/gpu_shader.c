@@ -25,6 +25,10 @@
  * ***** END GPL LICENSE BLOCK *****
  */
 
+/** \file blender/gpu/intern/gpu_shader.c
+ *  \ingroup gpu
+ */
+
 #include "MEM_guardedalloc.h"
 
 #include "BLI_utildefines.h"
@@ -63,6 +67,7 @@ extern char datatoc_gpu_shader_simple_lighting_smooth_color_alpha_frag_glsl[];
 extern char datatoc_gpu_shader_flat_color_frag_glsl[];
 extern char datatoc_gpu_shader_flat_color_alpha_test_0_frag_glsl[];
 extern char datatoc_gpu_shader_flat_id_frag_glsl[];
+extern char datatoc_gpu_shader_2D_area_borders_vert_glsl[];
 extern char datatoc_gpu_shader_2D_vert_glsl[];
 extern char datatoc_gpu_shader_2D_flat_color_vert_glsl[];
 extern char datatoc_gpu_shader_2D_smooth_color_uniform_alpha_vert_glsl[];
@@ -158,10 +163,6 @@ extern char datatoc_gpu_shader_keyframe_diamond_frag_glsl[];
 extern char datatoc_gpu_shader_fire_frag_glsl[];
 extern char datatoc_gpu_shader_smoke_vert_glsl[];
 extern char datatoc_gpu_shader_smoke_frag_glsl[];
-extern char datatoc_gpu_shader_vsm_store_vert_glsl[];
-extern char datatoc_gpu_shader_vsm_store_frag_glsl[];
-extern char datatoc_gpu_shader_sep_gaussian_blur_vert_glsl[];
-extern char datatoc_gpu_shader_sep_gaussian_blur_frag_glsl[];
 
 extern char datatoc_gpu_shader_gpencil_stroke_vert_glsl[];
 extern char datatoc_gpu_shader_gpencil_stroke_frag_glsl[];
@@ -226,7 +227,17 @@ static void gpu_shader_standard_extensions(char defines[MAX_EXT_DEFINE_LENGTH])
 		 * is reported to be supported but yield a compile error (see T55802). */
 		if (!GPU_type_matches(GPU_DEVICE_NVIDIA, GPU_OS_ANY, GPU_DRIVER_ANY) || GLEW_VERSION_4_0) {
 			strcat(defines, "#extension GL_ARB_texture_gather: enable\n");
-			strcat(defines, "#define GPU_ARB_texture_gather\n");
+
+			/* Some drivers don't agree on GLEW_ARB_texture_gather and the actual support in the
+			 * shader so double check the preprocessor define (see T56544). */
+			if (!GPU_type_matches(GPU_DEVICE_NVIDIA, GPU_OS_ANY, GPU_DRIVER_ANY) && !GLEW_VERSION_4_0) {
+				strcat(defines, "#ifdef GL_ARB_texture_gather\n");
+				strcat(defines, "#  define GPU_ARB_texture_gather\n");
+				strcat(defines, "#endif\n");
+			}
+			else {
+				strcat(defines, "#define GPU_ARB_texture_gather\n");
+			}
 		}
 	}
 	if (GLEW_ARB_texture_query_lod) {
@@ -722,9 +733,6 @@ GPUShader *GPU_shader_get_builtin_shader(GPUBuiltinShader shader)
 	BLI_assert(shader != GPU_NUM_BUILTIN_SHADERS); /* don't be a troll */
 
 	static const GPUShaderStages builtin_shader_stages[GPU_NUM_BUILTIN_SHADERS] = {
-		[GPU_SHADER_VSM_STORE] = { datatoc_gpu_shader_vsm_store_vert_glsl, datatoc_gpu_shader_vsm_store_frag_glsl },
-		[GPU_SHADER_SEP_GAUSSIAN_BLUR] = { datatoc_gpu_shader_sep_gaussian_blur_vert_glsl,
-		                                   datatoc_gpu_shader_sep_gaussian_blur_frag_glsl },
 		[GPU_SHADER_SMOKE] = { datatoc_gpu_shader_smoke_vert_glsl, datatoc_gpu_shader_smoke_frag_glsl },
 		[GPU_SHADER_SMOKE_FIRE] = { datatoc_gpu_shader_smoke_vert_glsl, datatoc_gpu_shader_smoke_frag_glsl },
 		[GPU_SHADER_SMOKE_COBA] = { datatoc_gpu_shader_smoke_vert_glsl, datatoc_gpu_shader_smoke_frag_glsl },
@@ -885,6 +893,8 @@ GPUShader *GPU_shader_get_builtin_shader(GPUBuiltinShader shader)
 		                                               datatoc_gpu_shader_flat_color_frag_glsl,
 		                                               datatoc_gpu_shader_instance_edges_variying_color_geom_glsl},
 
+		[GPU_SHADER_2D_AREA_EDGES] = { datatoc_gpu_shader_2D_area_borders_vert_glsl,
+		                               datatoc_gpu_shader_uniform_color_frag_glsl},
 		[GPU_SHADER_2D_WIDGET_BASE] = { datatoc_gpu_shader_2D_widget_base_vert_glsl,
 		                                datatoc_gpu_shader_2D_widget_base_frag_glsl},
 		[GPU_SHADER_2D_WIDGET_BASE_INST] = { datatoc_gpu_shader_2D_widget_base_vert_glsl,

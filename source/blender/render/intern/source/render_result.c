@@ -882,7 +882,8 @@ bool RE_WriteRenderResult(ReportList *reports, RenderResult *rr, const char *fil
 			/* Skip non-RGBA and Z passes if not using multi layer. */
 			if (!multi_layer && !(STREQ(rp->name, RE_PASSNAME_COMBINED) ||
 			                      STREQ(rp->name, "") ||
-			                      (STREQ(rp->name, RE_PASSNAME_Z) && write_z))) {
+			                      (STREQ(rp->name, RE_PASSNAME_Z) && write_z)))
+			{
 				continue;
 			}
 
@@ -1370,14 +1371,6 @@ void render_result_rect_get_pixels(RenderResult *rr, unsigned int *rect, int rec
                                    const int view_id)
 {
 	RenderView *rv = RE_RenderViewGetById(rr, view_id);
-
-	/* TODO: armory */
-	if (rv == NULL) {
-		/* else fill with black */
-		memset(rect, 0, sizeof(int) * rectx * recty);
-		return;
-	}
-	/**/
 
 	if (rv->rect32)
 		memcpy(rect, rv->rect32, sizeof(int) * rr->rectx * rr->recty);

@@ -39,6 +39,8 @@
 #include "ED_anim_api.h"
 #include "ED_markers.h"
 #include "ED_screen.h"
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 #include "ED_transform.h"
 
 #include "WM_api.h"
@@ -224,12 +226,7 @@ static void nla_keymap_main(wmKeyConfig *keyconf, wmKeyMap *keymap)
 	RNA_enum_set(kmi->ptr, "mode", NLAEDIT_LRSEL_RIGHT);
 
 	/* deselect all */
-	kmi = WM_keymap_add_item(keymap, "NLA_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "NLA_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-	kmi = WM_keymap_add_item(keymap, "NLA_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "NLA_OT_select_all");
 
 	/* borderselect */
 	kmi = WM_keymap_add_item(keymap, "NLA_OT_select_border", BKEY, KM_PRESS, 0, 0);
@@ -313,7 +310,7 @@ void nla_keymap(wmKeyConfig *keyconf)
 	wmKeyMapItem *kmi;
 
 	/* keymap for all regions ------------------------------------------- */
-	keymap = WM_keymap_find(keyconf, "NLA Generic", SPACE_NLA, 0);
+	keymap = WM_keymap_ensure(keyconf, "NLA Generic", SPACE_NLA, 0);
 
 	/* region management */
 	WM_keymap_add_item(keymap, "NLA_OT_properties", NKEY, KM_PRESS, 0, 0);
@@ -345,10 +342,10 @@ void nla_keymap(wmKeyConfig *keyconf)
 	 *
 	 * However, those operations which involve clicking on channels and/or the placement of them in the view are implemented here instead
 	 */
-	keymap = WM_keymap_find(keyconf, "NLA Channels", SPACE_NLA, 0);
+	keymap = WM_keymap_ensure(keyconf, "NLA Channels", SPACE_NLA, 0);
 	nla_keymap_channels(keymap);
 
 	/* data ------------------------------------------------------------- */
-	keymap = WM_keymap_find(keyconf, "NLA Editor", SPACE_NLA, 0);
+	keymap = WM_keymap_ensure(keyconf, "NLA Editor", SPACE_NLA, 0);
 	nla_keymap_main(keyconf, keymap);
 }

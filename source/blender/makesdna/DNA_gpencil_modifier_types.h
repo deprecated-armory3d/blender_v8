@@ -50,6 +50,7 @@ typedef enum GpencilModifierType {
 	eGpencilModifierType_Hook      = 12,
 	eGpencilModifierType_Offset    = 13,
 	eGpencilModifierType_Mirror    = 14,
+	eGpencilModifierType_Armature  = 15,
 	NUM_GREASEPENCIL_MODIFIER_TYPES
 } GpencilModifierType;
 
@@ -217,7 +218,6 @@ typedef enum eInstanceGpencil_Flag {
 	GP_INSTANCE_RANDOM_ROT    = (1 << 1),
 	GP_INSTANCE_INVERT_LAYER  = (1 << 2),
 	GP_INSTANCE_INVERT_PASS   = (1 << 3),
-	GP_INSTANCE_MAKE_OBJECTS  = (1 << 4),
 } eInstanceGpencil_Flag;
 
 typedef struct BuildGpencilModifierData {
@@ -409,7 +409,14 @@ typedef enum eSmoothGpencil_Flag {
 	GP_SMOOTH_MOD_UV         = (1 << 6),
 } eSmoothGpencil_Flag;
 
-#define MOD_MESHSEQ_READ_ALL \
-	(MOD_MESHSEQ_READ_VERT | MOD_MESHSEQ_READ_POLY | MOD_MESHSEQ_READ_UV | MOD_MESHSEQ_READ_COLOR)
+typedef struct ArmatureGpencilModifierData {
+	GpencilModifierData modifier;
+	short deformflag, multi;  /* deformflag replaces armature->deformflag */
+	int pad2;
+	struct Object *object;
+	float *prevCos;           /* stored input of previous modifier, for vertexgroup blending */
+	char vgname[64];         /* MAX_VGROUP_NAME */
+
+} ArmatureGpencilModifierData;
 
 #endif  /* __DNA_GPENCIL_MODIFIER_TYPES_H__ */

@@ -39,10 +39,10 @@
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_camera_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_gpencil_types.h"
 #include "DNA_gpencil_modifier_types.h"
-#include "DNA_group_types.h"
 #include "DNA_key_types.h"
 #include "DNA_lamp_types.h"
 #include "DNA_lattice_types.h"
@@ -1246,6 +1246,12 @@ void BKE_object_copy_data(Main *bmain, Object *ob_dst, const Object *ob_src, con
 		ob_dst->matbits = MEM_dupallocN(ob_src->matbits);
 		ob_dst->totcol = ob_src->totcol;
 	}
+	else if (ob_dst->mat != NULL || ob_dst->matbits != NULL) {
+		/* This shall not be needed, but better be safe than sorry. */
+		BLI_assert(!"Object copy: non-NULL material pointers with zero counter, should not happen.");
+		ob_dst->mat = NULL;
+		ob_dst->matbits = NULL;
+	}
 
 	if (ob_src->iuser) ob_dst->iuser = MEM_dupallocN(ob_src->iuser);
 
@@ -1833,6 +1839,11 @@ static bool ob_parcurve(Depsgraph *depsgraph, Scene *UNUSED(scene), Object *ob, 
 		}
 		BKE_displist_make_curveTypes(depsgraph, scene, par, 0);
 	}
+#else
+	/* See: T56619 */
+	if (par->runtime.curve_cache == NULL) {
+		return false;
+	}
 #endif
 
 	if (par->runtime.curve_cache->path == NULL) {
@@ -2302,8 +2313,8 @@ void BKE_object_where_is_calc(Depsgraph *depsgraph, Scene *scene, Object *ob)
  *
  * It assumes the object parent is already in the depsgraph.
  * Otherwise, after changing ob->parent you need to call:
- *  DEG_relations_tag_update(bmain);
- *  BKE_scene_graph_update_tagged(depsgraph, bmain);
+ * - #DEG_relations_tag_update(bmain);
+ * - #BKE_scene_graph_update_tagged(depsgraph, bmain);
  */
 void BKE_object_workob_calc_parent(Depsgraph *depsgraph, Scene *scene, Object *ob, Object *workob)
 {
@@ -2436,7 +2447,7 @@ BoundBox *BKE_object_boundbox_get(Object *ob)
 		bb = BKE_curve_boundbox_get(ob);
 	}
 	else if (ob->type == OB_MBALL) {
-		bb = ob->bb;
+		bb = BKE_mball_boundbox_get(ob);
 	}
 	else if (ob->type == OB_LATTICE) {
 		bb = BKE_lattice_boundbox_get(ob);
@@ -3923,7 +3934,7 @@ bool BKE_object_modifier_update_subframe(
 		if (ob->track) no_update |= BKE_object_modifier_update_subframe(depsgraph, scene, ob->track, 0, recursion, frame, type);
 
 		/* skip subframe if object is parented
-		 *  to vertex of a dynamic paint canvas */
+		 * to vertex of a dynamic paint canvas */
 		if (no_update && (ob->partype == PARVERT1 || ob->partype == PARVERT3))
 			return false;
 
@@ -3952,7 +3963,7 @@ bool BKE_object_modifier_update_subframe(
 	BKE_animsys_evaluate_animdata(depsgraph, scene, &ob->id, ob->adt, frame, ADT_RECALC_ANIM);
 	if (update_mesh) {
 		/* ignore cache clear during subframe updates
-		 *  to not mess up cache validity */
+		 * to not mess up cache validity */
 		object_cacheIgnoreClear(ob, 1);
 		BKE_object_handle_update(depsgraph, scene, ob);
 		object_cacheIgnoreClear(ob, 0);

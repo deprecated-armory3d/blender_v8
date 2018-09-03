@@ -48,6 +48,8 @@
 #include "ED_anim_api.h"
 #include "ED_markers.h"
 #include "ED_screen.h"
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 #include "ED_transform.h"
 #include "ED_object.h"
 
@@ -551,12 +553,7 @@ static void graphedit_keymap_keyframes(wmKeyConfig *keyconf, wmKeyMap *keymap)
 	RNA_enum_set(kmi->ptr, "mode", GRAPHKEYS_LRSEL_RIGHT);
 
 	/* deselect all */
-	kmi = WM_keymap_add_item(keymap, "GRAPH_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "GRAPH_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-	kmi = WM_keymap_add_item(keymap, "GRAPH_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "GRAPH_OT_select_all");
 
 	/* borderselect */
 	kmi = WM_keymap_add_item(keymap, "GRAPH_OT_select_border", BKEY, KM_PRESS, 0, 0);
@@ -692,7 +689,7 @@ void graphedit_keymap(wmKeyConfig *keyconf)
 	wmKeyMapItem *kmi;
 
 	/* keymap for all regions */
-	keymap = WM_keymap_find(keyconf, "Graph Editor Generic", SPACE_IPO, 0);
+	keymap = WM_keymap_ensure(keyconf, "Graph Editor Generic", SPACE_IPO, 0);
 	WM_keymap_add_item(keymap, "GRAPH_OT_properties", NKEY, KM_PRESS, 0, 0);
 
 	/* extrapolation works on channels, not keys */
@@ -718,6 +715,6 @@ void graphedit_keymap(wmKeyConfig *keyconf)
 	 */
 
 	/* keyframes */
-	keymap = WM_keymap_find(keyconf, "Graph Editor", SPACE_IPO, 0);
+	keymap = WM_keymap_ensure(keyconf, "Graph Editor", SPACE_IPO, 0);
 	graphedit_keymap_keyframes(keyconf, keymap);
 }

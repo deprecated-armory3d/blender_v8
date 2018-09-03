@@ -47,7 +47,7 @@ extern "C" {
 #include "DNA_ID.h"
 #include "DNA_freestyle_types.h"
 #include "DNA_gpu_types.h"
-#include "DNA_group_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_layer_types.h"
 #include "DNA_material_types.h"
 #include "DNA_userdef_types.h"
@@ -113,7 +113,7 @@ typedef enum eFFMpegPreset {
 	/* Used by WEBM/VP9 and h.264 to control encoding speed vs. file size.
 	 * WEBM/VP9 use these values directly, whereas h.264 map those to
 	 * respectively the MEDIUM, SLOWER, and SUPERFAST presets.
-	*/
+	 */
 	FFM_PRESET_GOOD = 10, /* the default and recommended for most applications */
 	FFM_PRESET_BEST, /* recommended if you have lots of time and want the best compression efficiency */
 	FFM_PRESET_REALTIME, /* recommended for live / fast encoding */
@@ -367,8 +367,8 @@ typedef enum eStereo3dInterlaceType {
  * this is used for NodeImageFile and IMAGE_OT_save_as operator too.
  *
  * note: its a bit strange that even though this is an image format struct
- *  the imtype can still be used to select video formats.
- *  RNA ensures these enum's are only selectable for render output.
+ * the imtype can still be used to select video formats.
+ * RNA ensures these enum's are only selectable for render output.
  */
 typedef struct ImageFormatData {
 	char imtype;   /* R_IMF_IMTYPE_PNG, R_... */
@@ -1109,9 +1109,9 @@ typedef struct UnifiedPaintSettings {
 	float brush_rotation;
 	float brush_rotation_sec;
 
-	/*********************************************************************************
-	 *  all data below are used to communicate with cursor drawing and tex sampling  *
-	 *********************************************************************************/
+	/*******************************************************************************
+	 * all data below are used to communicate with cursor drawing and tex sampling *
+	 *******************************************************************************/
 	int anchored_size;
 
 	float overlap_factor; /* normalization factor due to accumulated value of curve along spacing.
@@ -1490,7 +1490,7 @@ typedef struct Scene {
 
 	unsigned int lay;			/* bitflags for layer visibility */
 	int layact;		/* active layer */
-	unsigned int lay_updated;       /* runtime flag, has layer ever been updated since load? */
+	unsigned int pad1;
 
 	short flag;								/* various settings */
 
@@ -1580,15 +1580,15 @@ typedef struct Scene {
 /* RenderData.mode */
 #define R_OSA			0x0001
 /* #define R_SHADOW		0x0002 */
-/* #define R_GAMMA			0x0004 */
-#define R_ORTHO			0x0008
+/* #define R_GAMMA		0x0004 */
+/* #define R_ORTHO		0x0008 */
 /* #define R_ENVMAP		0x0010 */
-/* #define R_EDGE			0x0020 */
+/* #define R_EDGE		0x0020 */
 /* #define R_FIELDS		0x0040 */
 /*#define R_FIELDSTILL	0x0080 */
-/*#define R_RADIO			0x0100 */ /* deprecated */
+/*#define R_RADIO		0x0100 */ /* deprecated */
 #define R_BORDER		0x0200
-#define R_PANORAMA		0x0400
+#define R_PANORAMA		0x0400 /* deprecated */
 #define R_CROP			0x0800
 		/* Disable camera switching: runtime (DURIAN_CAMERA_SWITCH) */
 #define R_NO_CAMERA_SWITCH	0x1000
@@ -1744,7 +1744,6 @@ enum {
 extern const char *RE_engine_id_BLENDER_EEVEE;
 extern const char *RE_engine_id_BLENDER_OPENGL;
 extern const char *RE_engine_id_CYCLES;
-extern const char *RE_engine_id_ARMORY;
 
 /* **************** SCENE ********************* */
 
@@ -2069,7 +2068,9 @@ typedef enum eGPencil_Flags {
 	/* Add the strokes below all strokes in the layer */
 	GP_TOOL_FLAG_PAINT_ONBACK           = (1 << 2),
 	/* Show compact list of colors */
-	GP_TOOL_FLAG_THUMBNAIL_LIST           = (1 << 3),
+	GP_TOOL_FLAG_THUMBNAIL_LIST         = (1 << 3),
+	/* Generate wheight data for new strokes */
+	GP_TOOL_FLAG_CREATE_WEIGHTS         = (1 << 4),
 } eGPencil_Flags;
 
 /* scene->r.simplify_gpencil */

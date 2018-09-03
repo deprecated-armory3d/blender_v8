@@ -335,6 +335,7 @@ void GPENCIL_OT_layer_add(struct wmOperatorType *ot);
 void GPENCIL_OT_layer_remove(struct wmOperatorType *ot);
 void GPENCIL_OT_layer_move(struct wmOperatorType *ot);
 void GPENCIL_OT_layer_duplicate(struct wmOperatorType *ot);
+void GPENCIL_OT_layer_duplicate_object(struct wmOperatorType *ot);
 
 void GPENCIL_OT_hide(struct wmOperatorType *ot);
 void GPENCIL_OT_reveal(struct wmOperatorType *ot);
@@ -351,6 +352,7 @@ void GPENCIL_OT_active_frame_delete(struct wmOperatorType *ot);
 void GPENCIL_OT_active_frames_delete_all(struct wmOperatorType *ot);
 void GPENCIL_OT_frame_duplicate(struct wmOperatorType *ot);
 void GPENCIL_OT_frame_clean_fill(struct wmOperatorType *ot);
+void GPENCIL_OT_frame_clean_loose(struct wmOperatorType *ot);
 
 void GPENCIL_OT_convert(struct wmOperatorType *ot);
 
@@ -420,6 +422,9 @@ void GPENCIL_OT_color_select(struct wmOperatorType *ot);
 /* convert old 2.7 files to 2.8 */
 void GPENCIL_OT_convert_old_files(struct wmOperatorType *ot);
 
+/* armatures */
+void GPENCIL_OT_generate_weights(struct wmOperatorType *ot);
+
 /* ****************************************************** */
 /* FILTERED ACTION DATA - TYPES  ---> XXX DEPRECEATED OLD ANIM SYSTEM CODE! */
 
@@ -469,15 +474,15 @@ typedef enum ACTCONT_TYPES {
 /* Stroke Iteration Utilities */
 
 /**
-* Iterate over all editable strokes in the current context,
-* stopping on each usable layer + stroke pair (i.e. gpl and gps)
-* to perform some operations on the stroke.
-*
-* \param gpl  The identifier to use for the layer of the stroke being processed.
-*                    Choose a suitable value to avoid name clashes.
-* \param gps The identifier to use for current stroke being processed.
-*                    Choose a suitable value to avoid name clashes.
-*/
+ * Iterate over all editable strokes in the current context,
+ * stopping on each usable layer + stroke pair (i.e. gpl and gps)
+ * to perform some operations on the stroke.
+ *
+ * \param gpl  The identifier to use for the layer of the stroke being processed.
+ *                    Choose a suitable value to avoid name clashes.
+ * \param gps The identifier to use for current stroke being processed.
+ *                    Choose a suitable value to avoid name clashes.
+ */
 #define GP_EDITABLE_STROKES_BEGIN(C, gpl, gps)                                          \
 {                                                                                       \
 	Depsgraph *depsgraph_ = CTX_data_depsgraph(C);                                      \

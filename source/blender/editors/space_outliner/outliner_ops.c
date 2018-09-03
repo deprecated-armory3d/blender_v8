@@ -33,7 +33,7 @@
 #include "BLI_listbase.h"
 #include "BLI_math.h"
 
-#include "DNA_group_types.h"
+#include "DNA_collection_types.h"
 
 #include "BLT_translation.h"
 
@@ -52,6 +52,8 @@
 #include "WM_types.h"
 
 #include "ED_screen.h"
+#include "ED_select_utils.h"
+#include "ED_keymap_templates.h"
 
 #include "outliner_intern.h"
 
@@ -119,7 +121,7 @@ void outliner_operatortypes(void)
 
 void outliner_keymap(wmKeyConfig *keyconf)
 {
-	wmKeyMap *keymap = WM_keymap_find(keyconf, "Outliner", SPACE_OUTLINER, 0);
+	wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Outliner", SPACE_OUTLINER, 0);
 	wmKeyMapItem *kmi;
 
 	WM_keymap_add_item(keymap, "OUTLINER_OT_highlight_update", MOUSEMOVE, KM_ANY, KM_ANY, 0);
@@ -169,12 +171,7 @@ void outliner_keymap(wmKeyConfig *keyconf)
 	kmi = WM_keymap_add_item(keymap, "OUTLINER_OT_show_one_level", PADMINUS, KM_PRESS, 0, 0);
 	RNA_boolean_set(kmi->ptr, "open", false); /* close */
 
-	kmi = WM_keymap_add_item(keymap, "OUTLINER_OT_select_all", AKEY, KM_PRESS, 0, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_SELECT);
-	kmi = WM_keymap_add_item(keymap, "OUTLINER_OT_select_all", AKEY, KM_PRESS, KM_ALT, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_DESELECT);
-	kmi = WM_keymap_add_item(keymap, "OUTLINER_OT_select_all", IKEY, KM_PRESS, KM_CTRL, 0);
-	RNA_enum_set(kmi->ptr, "action", SEL_INVERT);
+	ED_keymap_template_select_all(keymap, "OUTLINER_OT_select_all");
 
 	WM_keymap_add_item(keymap, "OUTLINER_OT_expanded_toggle", AKEY, KM_PRESS, KM_SHIFT, 0);
 
