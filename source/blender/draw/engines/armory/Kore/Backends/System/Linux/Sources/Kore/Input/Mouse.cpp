@@ -12,6 +12,7 @@
 using namespace Kore;
 
 void Mouse::_lock(int windowId, bool truth) {
+	return;
 	show(!truth);
 	if (truth) {
 		int width = System::windowWidth(windowId);
@@ -48,7 +49,8 @@ void Mouse::_lock(int windowId, bool truth) {
 }
 
 bool Mouse::canLock(int windowId) {
-	return true;
+	return false;
+	//return true;
 }
 
 void Mouse::show(bool truth) {

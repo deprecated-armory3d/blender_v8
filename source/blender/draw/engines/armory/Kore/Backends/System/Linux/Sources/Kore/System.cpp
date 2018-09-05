@@ -762,7 +762,7 @@ void Kore::System::makeCurrent(int contextId) {
 	}
 	currentDeviceId = contextId;
 #ifdef KORE_OPENGL
-	glXMakeCurrent(dpy, windowimpl::windows[contextId]->handle, windowimpl::windows[contextId]->context);
+	//glXMakeCurrent(dpy, windowimpl::windows[contextId]->handle, windowimpl::windows[contextId]->context);
 #endif
 }
 
